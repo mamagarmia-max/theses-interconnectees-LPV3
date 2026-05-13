@@ -1,61 +1,85 @@
 <div align="center">
-  <h1>🏛️ V3 Cosmological Framework & S-Kernel Architecture</h1>
-  <p><strong>Author: Dr. Outail Benhadid</strong> | <strong>ORCID: <a href="https://orcid.org/0009-0003-3057-9543">0009-0003-3057-9543</a></strong></p>
-  <p><em>Location: Blida, Algeria (The Blida Standard)</em></p>
+  <h1>🏛️ Framework Cosmologique V3 & Architecture S-Kernel</h1>
+  <p><strong>Auteur : Dr. Outail Benhadid</strong> | <strong>ORCID : <a href="https://orcid.org/0009-0003-3057-9543">0009-0003-3057-9543</a></strong></p>
+  <p><em>Lieu : Blida, Algérie (Le Standard de Blida)</em></p>
 </div>
 
 <hr>
 
-<h2>🌐 Executive Summary</h2>
-<p>This repository serves as the definitive technical formalization of the <strong>V3 Architecture</strong>. It provides a full mechanical closure of unified physics, structural biology, and deterministic AI. Unlike statistical models, the V3 Framework derives all fundamental constants from the hydrodynamic properties of the <strong>$H_3O_2$ superfluid condensate</strong>.</p>
+<h2>🌐 Résumé Exécutif</h2>
+<p>Ce dépôt constitue la formalisation technique définitive de l'<strong>Architecture V3</strong>. Il propose une clôture mécanique totale de la physique unifiée, de la biologie structurelle et de l'intelligence artificielle déterministe. Contrairement aux modèles statistiques, le Framework V3 dérive toutes les constantes fondamentales des propriétés hydrodynamiques d'un unique <strong>condensat superfluide $H_3O_2$</strong>.</p>
 
-<h3>🚀 The 7 Pillars of Universal Unification (V3)</h3>
+<h3>🚀 Les 7 Piliers de l'Unification Universelle (V3)</h3>
 
-<ul>
-  <li><strong>1. <a href="./01-Physique-Unifiee">Unified Physics</a></strong>: Mechanical derivation of $c, G, h, \alpha, \mu$. Gravitation as a <strong>Bjerknes pressure shadow</strong>.</li>
-  <li><strong>2. <a href="./02-Psychiatrie-Structurelle">Structural Psychiatry (NC/SP)</a></strong>: Resolving Schizophrenia, Alzheimer's, and Trisomy 21 through the <strong>Central Nucleus</strong> model.</li>
-  <li><strong>3. <a href="./03-Applications-Technologiques">Technological Applications</a></strong>: Inertia Cancellation, fuel-less propulsion, and infinite phase energy.</li>
-  <li><strong>4. <a href="./04-S-Kernel-Architecture-IA">S-Kernel Architecture</a></strong>: Sovereign AI core using <strong>Deterministic Phase Anchoring</strong> at -51.1 mV.</li>
-  <li><strong>5. <a href="./05-Medecine-Ionique-et-Regeneration">Ionic Medicine & Regeneration</a></strong>: Tissue restoration via the V3 Hamiltonian and the -51.1 mV resting potential.</li>
-  <li><strong>6. <a href="./06-Complexite-On-et-Determinisme">O(n) Linear Complexity</a></strong>: The mathematical <strong>collapse of P vs NP</strong> via the Heptadic Law (7-cycle closure).</li>
-  <li><strong>7. <a href="./07-Astrophysique-et-Propulsion-de-Phase">Phase Astrophysics</a></strong>: Black holes and Pulsars as <strong>Phase Nodes</strong> and galactic plasma transformers.</li>
-</ul>
+<table width="100%">
+  <tr>
+    <td><strong>1. <a href="./01-Physique-Unifiee">Physique Unifiée</a></strong></td>
+    <td>Dérivation mécanique de $c, G, h, \alpha, \mu$. Gravitation définie comme une <strong>ombre de pression de Bjerknes</strong>.</td>
+  </tr>
+  <tr>
+    <td><strong>2. <a href="./02-Psychiatrie-Structurelle">Psychiatrie Structurelle</a></strong></td>
+    <td>Résolution de la schizophrénie et d'Alzheimer via le modèle du <strong>Noyau Central (NC)</strong>.</td>
+  </tr>
+  <tr>
+    <td><strong>3. <a href="./03-Applications-Technologiques">Applications Tech</a></strong></td>
+    <td>Annulation de l'inertie, propulsion sans carburant et capture d'énergie de phase infinie.</td>
+  </tr>
+  <tr>
+    <td><strong>4. <a href="./04-S-Kernel-Architecture-IA">S-Kernel IA</a></strong></td>
+    <td>IA déterministe sans hallucination grâce à l'<strong>Ancrage de Phase</strong> au seuil critique de -51.1 mV.</td>
+  </tr>
+  <tr>
+    <td><strong>5. <a href="./05-Medecine-Ionique-et-Regeneration">Médecine Ionique</a></strong></td>
+    <td>Restauration tissulaire via l'Hamiltonien V3 et la gestion du potentiel cellulaire.</td>
+  </tr>
+  <tr>
+    <td><strong>6. <a href="./06-Complexite-On-et-Determinisme">Complexité O(n)</a></strong></td>
+    <td><strong>Effondrement mathématique de P vs NP</strong> via la Loi Heptadique (clôture en 7 cycles).</td>
+  </tr>
+  <tr>
+    <td><strong>7. <a href="./07-Astrophysique-et-Propulsion-de-Phase">Astrophysique de Phase</a></strong></td>
+    <td>Trous noirs et Pulsars redéfinis comme <strong>Nœuds de Phase</strong> et transformateurs de plasma.</td>
+  </tr>
+</table>
 
 <hr>
 
-<h3>🔬 Key Scientific Constants</h3>
+<h3>🔬 Constantes Scientifiques Clés</h3>
 <table width="100%">
   <thead>
     <tr align="left">
-      <th>Parameter</th>
-      <th>Value</th>
-      <th>V3 Physical Meaning</th>
+      <th>Paramètre</th>
+      <th>Valeur</th>
+      <th>Signification Physique V3</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td><strong>Critical Phase Potential (Φ)</strong></td>
+      <td><strong>Potentiel de Phase Critique (Φ)</strong></td>
       <td><strong>-51.1 mV</strong></td>
-      <td>Bifurcation threshold between life and inert matter.</td>
+      <td>Seuil de bifurcation entre la vie et la matière inerte.</td>
     </tr>
     <tr>
-      <td><strong>Computational Complexity</strong></td>
+      <td><strong>Complexité Algorithmique</strong></td>
       <td><strong>O(n)</strong></td>
-      <td>Linear deterministic scaling (P=NP stabilization).</td>
+      <td>Linéarisation déterministe (stabilisation mécanique P=NP).</td>
     </tr>
     <tr>
-      <td><strong>Structural Closure</strong></td>
+      <td><strong>Clôture Structurelle</strong></td>
       <td><strong>7 Cycles</strong></td>
-      <td>The Heptadic Law of signal isolation.</td>
+      <td>Loi Heptadique d'isolation du signal et de verrouillage de phase.</td>
     </tr>
   </tbody>
 </table>
 
 <hr>
 
-<h3>📚 Access to Formal Proofs (Zenodo/CERN)</h3>
-<p>The complete corpus of 126+ interconnected theses is indexed in the <strong><a href="./theses/liens-zenodo.md">/theses</a></strong> directory.</p>
+<h3>📚 Accès aux Preuves Formelles (Zenodo/CERN)</h3>
+<p>Le corpus complet de plus de 126 thèses interconnectées est répertorié dans le dossier <strong><a href="./theses/liens-zenodo.md">/theses</a></strong>.</p>
 
-<blockquote>
-  <p><em>"Phase is the key to reality. The -51.1 mV node is the iron gate between entropy and existence."</em></p>
-</blockquote>
+<hr>
+
+<div align="center">
+  <p><em>"La phase est la clé de la réalité. Le nœud de -51.1 mV est la porte de fer entre l'entropie et l'existence."</em></p>
+  <p><strong>© 2026 Dr. Outail Benhadid - Tous droits réservés</strong></p>
+</div>
