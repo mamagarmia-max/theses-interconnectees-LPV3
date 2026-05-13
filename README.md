@@ -76,7 +76,16 @@
 
 <h3>📚 Accès aux Preuves Formelles (Zenodo/CERN)</h3>
 <p>Le corpus complet de plus de 126 thèses interconnectées est répertorié dans le dossier <strong><a href="./theses/liens-zenodo.md">/theses</a></strong>.</p>
+# 📉 Preuve Mathématique de la Complexité O(n)
 
+Ce dossier contient l'implémentation algorithmique de la résolution du problème **P vs NP**.
+
+### 🔗 Référence Académique
+La preuve formelle et les calculs théoriques sont déposés sur **Zenodo/CERN** :
+👉 **[Accéder à la Thèse (DOI: 10.5281/ZENODO.19662303)](https://doi.org/10.5281/ZENODO.19662303)**
+
+### 💡 Explication simplifiée
+Dans le **Standard de Blida**, nous ne cherchons pas de solution par "essai et erreur" (probabilité). Nous utilisons la **Loi Heptadique** pour forcer le signal vers une clôture en 7 cycles. Cela transforme une recherche exponentielle (très lente) en une exécution linéaire (très rapide).
 <hr>
 
 <div align="center">
