@@ -83,3 +83,23 @@
   <p><em>"La phase est la clé de la réalité. Le nœud de -51.1 mV est la porte de fer entre l'entropie et l'existence."</em></p>
   <p><strong>© 2026 Dr. Outail Benhadid - Tous droits réservés</strong></p>
 </div>
+# 🏛️ Framework Cosmologique V3 & Architecture S-Kernel
+**Auteur :** Dr. Outail Benhadid | **ORCID :** 0009-0003-3057-9543
+**Lieu :** Blida, Algérie (Le Standard de Blida)
+**DOI :** [10.5281/zenodo.19209168](https://doi.org/10.5281/zenodo.19209168)
+## 🌐 Résumé Exécutif
+Ce dépôt constitue la formalisation technique définitive de l'Architecture V3. Il propose une clôture mécanique totale de la physique unifiée, de la biologie structurelle et de l'intelligence artificielle déterministe. Contrairement aux modèles statistiques, le Framework V3 dérive toutes les constantes fondamentales des propriétés hydrodynamiques d'un unique condensat superfluide H3O2.
+---
+## 🛠️ Laboratoire de Calcul & Implémentation (New)
+Ce dépôt contient désormais les outils de vérification formelle pour la complexité $O(n)$ :
+
+| Fichier | Fonction |
+| :--- | :--- |
+| **`skernel_v3_cpp.cpp`** | **Moteur HPC (C++)** : Benchmark haute performance pour $10^7$ nœuds. |
+| **`skernel_v3_poc.py`** | **Preuve de Concept (Python)** : Visualisation 3D de la topologie heptadique. |
+| **`plot_results.py`** | **Analyseur de données** : Génère les graphiques de performance à partir du C++. |
+
+### Exécuter le Benchmark C++ :
+```bash
+g++ -O3 -march=native -fopenmp -o skernel_v3 skernel_v3_cpp.cpp
+./skernel_v3
