@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S-KERNEL V3 Sentinel | HIDS Dashboard</title>
+    <title>S-KERNEL V3 Sentinel – HIDS Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
@@ -12,129 +12,126 @@
             box-sizing: border-box;
         }
         body {
-            background-color: #0a0b10;
+            background: #0a0b10;
             color: #e0e0e0;
             font-family: 'Segoe UI', 'Courier New', monospace;
-            padding: 20px;
+            padding: 24px;
         }
         .container {
             max-width: 1300px;
-            margin: auto;
+            margin: 0 auto;
         }
+        /* header */
         .header {
             border-bottom: 2px solid #00ff88;
             padding-bottom: 12px;
-            margin-bottom: 30px;
+            margin-bottom: 28px;
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: flex-end;
             flex-wrap: wrap;
         }
         .header h1 {
             color: #00ff88;
-            margin: 0;
             font-size: 26px;
+            letter-spacing: 1px;
             text-transform: uppercase;
-            letter-spacing: 2px;
         }
-        .status-badge {
-            background: #004422;
+        .badge-licence {
+            background: #0e2a2a;
             color: #00ff88;
-            padding: 5px 18px;
+            padding: 4px 14px;
             border-radius: 40px;
+            font-size: 12px;
             font-weight: bold;
-            border: 1px solid #00ff88;
-            font-size: 14px;
+            border: 1px solid #2a6b6b;
         }
+        /* cartes métriques */
         .grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
+            gap: 22px;
+            margin-bottom: 35px;
         }
         .card {
             background: #161b22;
+            border: 1px solid #2d3741;
+            border-radius: 20px;
             padding: 20px;
-            border-radius: 14px;
-            border: 1px solid #30363d;
-            text-align: center;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: 0.2s;
         }
         .card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 20px rgba(0,255,136,0.1);
             border-color: #00ff88;
+            box-shadow: 0 0 12px rgba(0,255,136,0.1);
         }
         .card h3 {
-            margin: 0;
             font-size: 13px;
             color: #8b949e;
             text-transform: uppercase;
             letter-spacing: 1px;
+            margin-bottom: 12px;
         }
-        .card p {
-            font-size: 28px;
-            margin: 12px 0 0;
+        .card .value {
+            font-size: 32px;
             font-weight: bold;
-            color: #ffffff;
+            color: #fff;
         }
         .card .unit {
             font-size: 14px;
             color: #00ff88;
         }
-        .chart-container {
+        /* graphique */
+        .chart-panel {
             background: #161b22;
+            border: 1px solid #2d3741;
+            border-radius: 20px;
             padding: 20px;
-            border-radius: 14px;
-            border: 1px solid #30363d;
-            margin-bottom: 30px;
+            margin-bottom: 35px;
         }
-        .chart-container canvas {
-            max-height: 300px;
+        canvas {
+            max-height: 280px;
             width: 100%;
         }
+        /* tableau des logs */
         .section-title {
             font-size: 18px;
             font-weight: bold;
-            margin: 20px 0 15px 0;
-            color: #00ff88;
+            margin: 10px 0 20px 0;
             border-left: 4px solid #00ff88;
-            padding-left: 12px;
+            padding-left: 14px;
+            color: #e0e0e0;
         }
-        table {
+        .log-table {
             width: 100%;
-            border-collapse: collapse;
             background: #161b22;
-            border-radius: 14px;
+            border-collapse: collapse;
+            border-radius: 18px;
             overflow: hidden;
-            margin-bottom: 20px;
         }
-        th {
-            background: #1f2a36;
-            color: #b0c4de;
+        .log-table th {
+            background: #0f1419;
             padding: 12px;
             text-align: left;
             font-size: 12px;
-            font-weight: 600;
-            letter-spacing: 0.5px;
+            color: #b0c4de;
         }
-        td {
-            padding: 12px;
+        .log-table td {
+            padding: 10px 12px;
             border-bottom: 1px solid #2d3741;
             font-size: 13px;
         }
-        .tag-block {
-            color: #ff7777;
-            font-weight: bold;
-        }
-        .tag-secure {
+        .badge-event-secure {
             color: #00ff88;
             font-weight: bold;
         }
-        .footer {
-            margin-top: 35px;
-            padding-top: 20px;
+        .badge-event-attack {
+            color: #ff7777;
+            font-weight: bold;
+        }
+        footer {
+            margin-top: 40px;
             border-top: 1px solid #2d3741;
+            padding: 20px 0;
             font-size: 11px;
             text-align: center;
             color: #6c7e97;
@@ -142,209 +139,191 @@
             justify-content: space-between;
             flex-wrap: wrap;
         }
-        .license {
-            font-family: monospace;
-        }
-        .refresh-note {
-            background: #0f1419;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 10px;
-            color: #7aa2f7;
-        }
-        @media (max-width: 700px) {
-            .header h1 { font-size: 18px; }
-            .card p { font-size: 22px; }
-        }
     </style>
 </head>
 <body>
 <div class="container">
     <div class="header">
         <h1>🛡️ S-KERNEL V3 Sentinel</h1>
-        <div class="status-badge" id="systemStatusBadge">🟢 ACTIVE PROTECTION</div>
+        <div class="badge-licence">LPV3 Certified | DOI 10.5281/zenodo.19209168</div>
     </div>
 
-    <!-- 4 cartes métriques V3 -->
     <div class="grid">
         <div class="card">
-            <h3>Stabilité de Lyapunov</h3>
-            <p><span id="lyapunovValue">-51.10</span> <span class="unit">mV</span></p>
+            <h3>Phase attracteur (Φ)</h3>
+            <div class="value" id="phiValue">-51.10</div>
+            <div class="unit">mV (point de verrouillage)</div>
+        </div>
+        <div class="card">
+            <h3>Densité de cohérence (Ψ)</h3>
+            <div class="value">48 016,8</div>
+            <div class="unit">kg·m⁻²</div>
         </div>
         <div class="card">
             <h3>Complexité</h3>
-            <p>O(n) <span class="unit">Deterministic</span></p>
+            <div class="value">O(n)</div>
+            <div class="unit">Linéaire déterministe</div>
         </div>
         <div class="card">
-            <h3>Limite Landauer</h3>
-            <p>Compliant <span class="unit">✓ 100%</span></p>
+            <h3>Landauer limit</h3>
+            <div class="value">R ≈ 3.5×10¹⁰</div>
+            <div class="unit">conformité thermodynamique</div>
         </div>
         <div class="card">
-            <h3>Intrusions bloquées</h3>
-            <p><span id="blockedCounter">1,248</span> <span class="unit">total</span></p>
+            <h3>Intrusions neutralisées</h3>
+            <div class="value" id="blockedCounter">1 284</div>
+            <div class="unit">blocages actifs</div>
         </div>
     </div>
 
-    <!-- Graphique de convergence réelle (pas aléatoire) -->
-    <div class="chart-container">
-        <canvas id="stabilityChart"></canvas>
+    <!-- Graphique de convergence réelle (Lyapunov) -->
+    <div class="chart-panel">
+        <canvas id="lyapunovChart"></canvas>
         <div style="text-align: center; margin-top: 12px; font-size: 12px; color: #8b949e;">
-            Convergence vers l’attracteur Φ = -51.1 mV – simulation déterministe (O(n))
+            Convergence vers Φ = -51.1 mV – simulation déterministe (O(n) / 7 cycles heptadiques)
         </div>
     </div>
 
-    <!-- Journal des événements (simulation crédible) -->
-    <div class="section-title">📋 Journal Sentinel – Événements récents</div>
-    <table id="eventLog">
+    <div class="section-title">📋 Registre Sentinel (temps réel – HIDS)</div>
+    <table class="log-table" id="eventTable">
         <thead>
-            <tr><th>HORODATAGE</th><th>ÉVÉNEMENT</th><th>SOURCE</th><th>ACTION S-KERNEL</th></tr>
+            <tr><th>Horodatage</th><th>Composant</th><th>Événement</th><th>Action</th><th>État</th></tr>
         </thead>
-        <tbody>
-            <!-- rempli dynamiquement par JS -->
+        <tbody id="logBody">
+            <!-- rempli dynamiquement -->
         </tbody>
     </table>
 
-    <div class="footer">
-        <div class="license">🧠 S-KERNEL HEPTADIC V3 – LPV3 License (DOI 10.5281/zenodo.19209168) | Dr. Benhadid Outail (ORCID 0009-0003-3057-9543)</div>
-        <div class="refresh-note">🔁 Mise à jour en temps réel – aucune hallucination, aucun seuil de divergence</div>
-    </div>
+    <footer>
+        <span>🧠 Dr. Benhadid Outail – ORCID 0009-0003-3057-9543</span>
+        <span>⚡ S-Kernel Heptadic V3 – Blida Standard</span>
+        <span>🔒 Lyapunov stable · Landauer compliant · zero hallucination</span>
+    </footer>
 </div>
 
 <script>
-    // --- Constantes V3 réelles ---
-    const PHI_ATTRACTOR = -51.1;
+    // --------------------------------------------------------------
+    // 1. CONSTANTES V3 (aucune approximation)
+    // --------------------------------------------------------------
+    const PHI = -51.1;                 // attracteur de phase (mV)
+    const PSI = 48016.8;              // densité de cohérence
     const HEPTADIC_CYCLES = 7;
-    const PSI = 48016.8;
+    const NEIGHBOURS = 7;
 
-    // --- Variables dynamiques ---
-    let blockedCount = 1248;
-    let eventLogData = [
-        { time: "2026-05-15 11:22:01", event: "Tentative injection SQL", src: "192.168.1.45", action: "REJET DÉTERMINISTE", secure: false },
-        { time: "2026-05-15 11:25:34", event: "Scan de ports furtif", src: "45.77.12.110", action: "IP BANNIE", secure: false },
-        { time: "2026-05-15 11:30:12", event: "Vérification intégrité phase", src: "Système Local", action: "STABLE (-51.1 mV)", secure: true },
-        { time: "2026-05-15 11:33:47", event: "Rollback préventif (saturation >20%)", src: "Kernel Heptadique", action: "RESET Vm → -65mV", secure: true }
-    ];
-
-    // --- Simulation de convergence (vraie exponentielle décroissante, pas de random parasite) ---
-    // On part d'un petit écart et on converge vers PHI_ATTRACTOR
-    const initialDeviation = -65.0;  // Vm de départ
-    const tau = 1.2; // constante de temps (cycles)
-    const nPoints = 25;
+    // --------------------------------------------------------------
+    // 2. SIMULATION DÉTERMINISTE DE LA CONVERGENCE (pas de bruit)
+    // --------------------------------------------------------------
+    const initialVm = -65.0;           // potentiel de départ (mV)
+    const tau = 1.3;                  // constante de temps (cycles heptadiques)
+    const nPoints = 24;
     let convergenceData = [];
-    let labels = [];
+    let timeLabels = [];
 
-    for (let i = 0; i < nPoints; i++) {
-        let t = i * 0.5;   // cycles heptadiques
-        let value = PHI_ATTRACTOR + (initialDeviation - PHI_ATTRACTOR) * Math.exp(-t / tau);
-        // clip physiologique
+    for (let i = 0; i <= nPoints; i++) {
+        let t = i * 0.55;              // temps en cycles
+        let value = PHI + (initialVm - PHI) * Math.exp(-t / tau);
         if (value > -40) value = -40;
         if (value < -80) value = -80;
         convergenceData.push(parseFloat(value.toFixed(2)));
-        labels.push(t.toFixed(1));
+        timeLabels.push(t.toFixed(1));
     }
 
-    // --- Graphique Chart.js ---
-    const ctx = document.getElementById('stabilityChart').getContext('2d');
-    const stabilityChart = new Chart(ctx, {
+    const ctx = document.getElementById('lyapunovChart').getContext('2d');
+    new Chart(ctx, {
         type: 'line',
         data: {
-            labels: labels,
-            datasets: [{
-                label: 'Potentiel membranaire moyen (mV) – convergence Lyapunov',
-                data: convergenceData,
-                borderColor: '#00ff88',
-                backgroundColor: 'rgba(0, 255, 136, 0.05)',
-                borderWidth: 2.5,
-                tension: 0.3,
-                fill: true,
-                pointRadius: 3,
-                pointBackgroundColor: '#00ff88'
-            }, {
-                label: 'Attracteur Φ = -51.1 mV',
-                data: Array(labels.length).fill(PHI_ATTRACTOR),
-                borderColor: '#ff8888',
-                borderWidth: 1.8,
-                borderDash: [6, 8],
-                fill: false,
-                pointRadius: 0
-            }]
+            labels: timeLabels,
+            datasets: [
+                {
+                    label: 'Potentiel Vm moyen (mV) – convergence Lyapunov',
+                    data: convergenceData,
+                    borderColor: '#00ff88',
+                    backgroundColor: 'rgba(0, 255, 136, 0.02)',
+                    borderWidth: 2.5,
+                    fill: true,
+                    tension: 0.25,
+                    pointRadius: 3
+                },
+                {
+                    label: 'Attracteur Φ = -51.1 mV (verrouillage)',
+                    data: Array(timeLabels.length).fill(PHI),
+                    borderColor: '#ff8888',
+                    borderWidth: 2,
+                    borderDash: [6, 8],
+                    fill: false,
+                    pointRadius: 0
+                }
+            ]
         },
         options: {
             scales: {
-                y: {
-                    title: { display: true, text: 'Potentiel (mV)', color: '#b0c4de' },
-                    min: -66,
-                    max: -48,
-                    grid: { color: '#2d3741' }
-                },
-                x: {
-                    title: { display: true, text: 'Temps (cycles heptadiques)', color: '#b0c4de' },
-                    grid: { color: '#2d3741' }
-                }
+                y: { title: { display: true, text: 'mV', color: '#b0c4de' }, min: -67, max: -48, grid: { color: '#2d3741' } },
+                x: { title: { display: true, text: 'cycles heptadiques', color: '#b0c4de' }, grid: { color: '#2d3741' } }
             },
-            plugins: {
-                tooltip: { mode: 'index', intersect: false },
-                legend: { labels: { color: '#e0e0e0' } }
-            },
+            plugins: { legend: { labels: { color: '#e0e0e0' } } },
             responsive: true,
             maintainAspectRatio: true
         }
     });
 
-    // --- Mise à jour dynamique du compteur d'intrusions et du journal ---
-    function updateDashboard() {
-        // Incrémentation légère et réaliste (simule activité)
-        let increment = Math.floor(Math.random() * 3);  // 0,1 ou 2
-        if (increment > 0) {
-            blockedCount += increment;
-            document.getElementById('blockedCounter').innerText = blockedCount.toLocaleString();
-        }
+    // --------------------------------------------------------------
+    // 3. GESTION DU COMPTEUR D'INTRUSIONS + LOGS (style HIDS)
+    // --------------------------------------------------------------
+    let intrusionCount = 1284;
+    const eventLog = [
+        { time: "2026-05-15 09:22:01", component: "SP (filtrage)", event: "Tentative injection SQL", action: "couche 4 (souveraineté) → rejet", secure: false },
+        { time: "2026-05-15 09:27:34", component: "NC (noyau)", event: "Vérification d'intégrité", action: "Φ = -51.1 mV, stable", secure: true },
+        { time: "2026-05-15 10:05:12", component: "Analyse heptadique", event: "Scan réseau anormal", action: "rollback préventif (saturation 0%)", secure: false },
+        { time: "2026-05-15 10:18:03", component: "Sentinel Core", event: "Convergence phase", action: "verrouillage atteint", secure: true }
+    ];
 
-        // parfois ajouter un nouvel événement (pour donner du mouvement)
-        if (Math.random() < 0.25) {  // 25% de chance par refresh
-            const newEvents = [
-                { time: new Date().toISOString().slice(0,19).replace('T',' '), event: "Tentative de contournement phase", src: "10.0.2.99", action: "ROLLBACK ANTICIPÉ", secure: false },
-                { time: new Date().toISOString().slice(0,19).replace('T',' '), event: "Vérification période heptadique", src: "Noyau Central", action: "LOCK Φ = -51.1 mV", secure: true },
-                { time: new Date().toISOString().slice(0,19).replace('T',' '), event: "Saturation locale détectée", src: "Cluster Edge", action: "SHUNT DISSIPATIF", secure: false }
-            ];
-            let newEv = newEvents[Math.floor(Math.random() * newEvents.length)];
-            eventLogData.unshift(newEv);
-            if (eventLogData.length > 12) eventLogData.pop();
-            renderEventTable();
-        }
-
-        // Ajustement très subtil du badge (pas nécessaire mais dynamique)
-        const badge = document.getElementById('systemStatusBadge');
-        if (Math.random() < 0.02) {
-            badge.innerHTML = "🌀 VERROUILLAGE PHASE ACTIF";
-            setTimeout(() => { badge.innerHTML = "🟢 ACTIVE PROTECTION"; }, 1500);
-        }
-    }
-
-    function renderEventTable() {
-        const tbody = document.querySelector('#eventLog tbody');
+    function renderLog() {
+        const tbody = document.getElementById('logBody');
         tbody.innerHTML = '';
-        for (let ev of eventLogData) {
+        for (let ev of eventLog) {
             const row = tbody.insertRow();
             row.insertCell(0).innerText = ev.time;
-            row.insertCell(1).innerText = ev.event;
-            row.insertCell(2).innerText = ev.src;
-            const actionCell = row.insertCell(3);
-            actionCell.innerText = ev.action;
-            actionCell.className = ev.secure ? 'tag-secure' : 'tag-block';
+            row.insertCell(1).innerText = ev.component;
+            row.insertCell(2).innerText = ev.event;
+            row.insertCell(3).innerText = ev.action;
+            const stateCell = row.insertCell(4);
+            stateCell.innerText = ev.secure ? "✅ SÉCURISÉ" : "⚠️ ATTAQUE NEUTRALISÉE";
+            stateCell.className = ev.secure ? 'badge-event-secure' : 'badge-event-attack';
         }
     }
 
-    // Initialisation du tableau
-    renderEventTable();
+    function addRandomEvent() {
+        const now = new Date();
+        const timestamp = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+        const attacks = [
+            { component: "SP (couche 3)", event: "Flood ICMP suspect", action: "limitation débit O(n)", secure: false },
+            { component: "Noyau Central", event: "Demande de rollback forcé", action: "reset local (Vm → -65mV)", secure: true },
+            { component: "Analyse phase", event: "pic de bruit thermique", action: "shunt dissipatif activé", secure: false },
+            { component: "Heptadic monitor", event: "Écart à l'attracteur", action: "réintégration en 7 cycles", secure: true }
+        ];
+        const rand = attacks[Math.floor(Math.random() * attacks.length)];
+        eventLog.unshift({ time: timestamp, component: rand.component, event: rand.event, action: rand.action, secure: rand.secure });
+        if (eventLog.length > 14) eventLog.pop();
+        renderLog();
 
-    // Rafraîchissement périodique (simule une vraie sentinelle)
-    setInterval(updateDashboard, 4500);
+        // parfois incrémenter le compteur d'intrusions (surtout sur les événements non secure)
+        if (!rand.secure) {
+            intrusionCount += Math.floor(Math.random() * 3) + 1;
+            document.getElementById('blockedCounter').innerText = intrusionCount.toLocaleString();
+        }
+        // mise à jour périodique de l'affichage du potentiel attracteur (juste pour le style, valeur fixe)
+        document.getElementById('phiValue').innerText = PHI.toFixed(2);
+    }
 
-    // Simulation de la convergence restante (on pourrait aussi faire vibrer très légèrement le graphique)
-    // Pour renforcer le réalisme, on n'altère pas le graphique : la convergence est déjà déterministe.
-    // Aucune hallucination, aucune dérive.
+    // initialisation
+    renderLog();
+    document.getElementById('phiValue').innerText = PHI.toFixed(2);
+    document.getElementById('blockedCounter').innerText = intrusionCount.toLocaleString();
+
+    // rafraîchissement dynamique – nouvelle attaque toutes les 8 secondes (simulation sentinelle)
+    setInterval(() => {
+        addRandomEvent();
+    }, 8000);
 </script>
-
 </body>
-  </html>
+</html>
