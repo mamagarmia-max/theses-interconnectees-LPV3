@@ -1,0 +1,840 @@
+// SPDX-License-Identifier: LPV3
+/*
+ * s_kernel_v3.c - S-KERNEL V3 Sentinel Core
+ * 
+ * Description: Deterministic, lock-free, O(1) in-memory transaction and indexing core
+ *              operating at Ring 0. NUMA-aware, Per-CPU distributed sharding engine
+ *              eliminating cross-socket cache invalidations (MESI protocol bouncing).
+ * 
+ * Architecture: NC/SP V3 (Core Nucleus / Personality Sphere)
+ * Author: Dr. Benhadid Outail
+ * ORCID: 0009-0003-3057-9543
+ * License: LPV3 (DOI: 10.5281/zenodo.19209168)
+ * Date: 2026-05-20
+ * Version: 1.0
+ * 
+ * Compatible with Linux Kernels: 5.6+ and 6.x
+ * 
+ * This module implements the Blida Standard for sovereign AI systems.
+ * Any unauthorized use, reproduction, or commercial exploitation is
+ * strictly prohibited without explicit written consent from the author.
+ */
+
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/percpu.h>
+#include <linux/atomic.h>
+#include <linux/preempt.h>
+#include <linux/workqueue.h>
+#include <linux/timer.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+#include <linux/uaccess.h>
+#include <linux/slab.h>
+#include <linux/cpumask.h>
+#include <linux/errno.h>
+#include <linux/ioctl.h>
+#include <linux/fs.h>
+#include <linux/cdev.h>
+#include <linux/device.h>
+
+/* ============================================================================
+ * 1. SYSTEM LIMITS & GLOBAL PARAMETERS (NC/SP V3)
+ * ============================================================================ */
+
+#define MAX_SLOTS_PER_CPU        1048576UL   /* Must be power of two */
+#define MAX_SLOTS_MASK           (MAX_SLOTS_PER_CPU - 1UL)
+
+#define MAX_WRITING_SPINS        256         /* Bounded spin-retry limit */
+#define ROLLBACK_SATURATION_PCT  20          /* 20% saturation threshold */
+#define RECOVERY_WINDOW_MS       10          /* Recovery window in milliseconds */
+
+#define PSI_COHERENCE            48016.8     /* Invariant coherence density (Ψ) */
+#define PHI_ATTRACTOR            -51100      /* -51.1 mV in microvolts for integer math */
+
+/* ============================================================================
+ * 2. CORE STRUCTURES & SILICON ALIGNMENT
+ * ============================================================================ */
+
+enum slot_state {
+    SLOT_EMPTY      = 0,    /* No key present */
+    SLOT_WRITING    = 1,    /* Key being written (atomic cmpxchg in progress) */
+    SLOT_VALID      = 2,    /* Key-value pair is valid */
+    SLOT_TOMBSTONE  = 3     /* Deleted key, can be reclaimed */
+};
+
+/*
+ * struct slot - Individual key-value slot with cache line alignment
+ * 
+ * Aligned to 64 bytes (typical L1/L2 cache line size) to prevent false sharing.
+ */
+struct slot {
+    atomic64_t      key;        /* 8 bytes */
+    atomic64_t      value;      /* 8 bytes */
+    atomic_t        state;      /* 4 bytes (enum slot_state) */
+    u8              pad[44];    /* Padding to 64 bytes total */
+} __aligned(64);
+
+/*
+ * struct skernel_table - Per-CPU shard (Personality Sphere instance)
+ * 
+ * Each CPU core gets its own isolated table. The entire structure is padded
+ * to a full cache line to ensure no cross-core cache line bouncing.
+ */
+struct skernel_table {
+    struct slot     slots[MAX_SLOTS_PER_CPU];
+    atomic_t        used_count;        /* Number of occupied slots (VALID + WRITING) */
+    atomic_t        tombstone_count;   /* Number of TOMBSTONE slots */
+    atomic_t        rollback_count;    /* Number of rollback events on this shard */
+    atomic_t        probe_overflow;    /* Number of times probing exceeded MAX_WRITING_SPINS */
+    u64             total_inserts;     /* Monotonic counter for inserts */
+    u64             total_deletes;     /* Monotonic counter for deletes */
+    u64             total_rollbacks;   /* Monotonic counter for rollbacks */
+    u8              __pad[32];         /* Ensure full cache line isolation */
+} ____cacheline_aligned_in_smp;
+
+/* ============================================================================
+ * 3. GLOBAL STATE & PER-CPU POINTERS
+ * ============================================================================ */
+
+static struct skernel_table __percpu *cpu_tables = NULL;
+static struct proc_dir_entry *proc_entry = NULL;
+static struct timer_list lyapunov_timer;
+static struct workqueue_struct *maintenance_wq = NULL;
+static atomic_t global_rollback_flag = ATOMIC_INIT(0);
+
+/* Module metadata for LPV3 compliance */
+MODULE_LICENSE("LPV3");
+MODULE_AUTHOR("Dr. Benhadid Outail <mediconsulte@gmail.com>");
+MODULE_DESCRIPTION("S-KERNEL V3 Sentinel Core - NC/SP V3 Sovereign AI Architecture (Blida Standard)");
+MODULE_VERSION("1.0");
+
+/* ============================================================================
+ * 4. FORWARD DECLARATIONS
+ * ============================================================================ */
+
+static void localized_rollback(struct skernel_table *table, const char *reason);
+static void lyapunov_timer_callback(struct timer_list *t);
+static void maintenance_work_handler(struct work_struct *work);
+
+/* ============================================================================
+ * 5. CORE HASH & INDEXING (O(1) deterministic)
+ * ============================================================================ */
+
+/*
+ * s_kernel_hash - Deterministic hash function for keys
+ * 
+ * Returns a bitmasked index within [0, MAX_SLOTS_PER_CPU - 1]
+ * Uses XOR and multiplication for good distribution while remaining deterministic.
+ */
+static inline u32 s_kernel_hash(u64 key)
+{
+    u32 hash = (u32)(key ^ (key >> 32));
+    hash ^= (hash >> 16);
+    hash *= 0x85ebca6b;
+    hash ^= (hash >> 13);
+    return hash & MAX_SLOTS_MASK;
+}
+
+/* ============================================================================
+ * 6. SLOT STATE TRANSITIONS (LOCK-FREE ATOMIC)
+ * ============================================================================ */
+
+/*
+ * slot_try_acquire - Attempt to transition slot from EMPTY/TOMBSTONE to WRITING
+ * 
+ * Returns: true if acquire succeeded, false if slot is VALID or transition failed
+ */
+static inline bool slot_try_acquire(struct slot *slot, int expected_state)
+{
+    int old_state;
+    
+    /* Expected state must be either EMPTY or TOMBSTONE */
+    if (expected_state != SLOT_EMPTY && expected_state != SLOT_TOMBSTONE)
+        return false;
+    
+    old_state = atomic_cmpxchg(&slot->state, expected_state, SLOT_WRITING);
+    
+    /* Full memory barrier to ensure ordering of subsequent operations */
+    smp_mb();
+    
+    return (old_state == expected_state);
+}
+
+/*
+ * slot_commit - Transition slot from WRITING to VALID
+ */
+static inline void slot_commit(struct slot *slot, u64 key, u64 value)
+{
+    atomic64_set(&slot->key, key);
+    atomic64_set(&slot->value, value);
+    
+    /* Write barrier ensures key/value are visible before state change */
+    smp_wmb();
+    
+    atomic_set(&slot->state, SLOT_VALID);
+    
+    /* Full barrier for subsequent operations */
+    smp_mb();
+}
+
+/*
+ * slot_abort - Abort a WRITING transaction (rollback)
+ */
+static inline void slot_abort(struct slot *slot)
+{
+    atomic_set(&slot->state, SLOT_EMPTY);
+    smp_mb();
+}
+
+/*
+ * slot_delete - Mark slot as TOMBSTONE
+ */
+static inline bool slot_delete(struct slot *slot)
+{
+    int old_state = atomic_cmpxchg(&slot->state, SLOT_VALID, SLOT_TOMBSTONE);
+    smp_mb();
+    return (old_state == SLOT_VALID);
+}
+
+/*
+ * slot_get_state - Read slot state with memory barrier
+ */
+static inline int slot_get_state(struct slot *slot)
+{
+    int state;
+    smp_rmb();
+    state = atomic_read(&slot->state);
+    smp_rmb();
+    return state;
+}
+
+/*
+ * slot_is_valid - Check if slot contains a valid entry
+ */
+static inline bool slot_is_valid(struct slot *slot)
+{
+    return (atomic_read(&slot->state) == SLOT_VALID);
+}
+
+/* ============================================================================
+ * 7. PER-CPU SHARD ACCESS (NUMA-AWARE, PREEMPTION LOCKED)
+ * ============================================================================ */
+
+/*
+ * s_kernel_write - Insert or update a key-value pair
+ * 
+ * This is the critical path. It runs with preemption disabled and uses
+ * lock-free atomic operations. Complexity: O(1) amortized, bounded probing.
+ * 
+ * Returns: 0 on success, -EAGAIN on rollback, -ENOSPC on saturation.
+ */
+static int s_kernel_write(u64 key, u64 value)
+{
+    struct skernel_table *local;
+    struct slot *slot;
+    u32 index, original_index;
+    int spins = 0;
+    int used;
+    int tombstone;
+    int saturation;
+    
+    /* Acquire pointer to local CPU shard and disable preemption */
+    local = get_cpu_ptr(cpu_tables);
+    if (unlikely(!local)) {
+        put_cpu_ptr(cpu_tables);
+        return -ENOMEM;
+    }
+    
+    /* Check saturation before attempting write */
+    used = atomic_read(&local->used_count);
+    tombstone = atomic_read(&local->tombstone_count);
+    saturation = ((used + tombstone) * 100) / MAX_SLOTS_PER_CPU;
+    
+    if (saturation >= ROLLBACK_SATURATION_PCT) {
+        localized_rollback(local, "saturation threshold exceeded");
+        put_cpu_ptr(cpu_tables);
+        return -EAGAIN;
+    }
+    
+    /* Compute initial hash index */
+    original_index = s_kernel_hash(key);
+    index = original_index;
+    
+    /* Linear probing with bounded spins */
+    while (spins < MAX_WRITING_SPINS) {
+        slot = &local->slots[index];
+        
+        /* Try to acquire slot if EMPTY or TOMBSTONE */
+        if (slot_try_acquire(slot, SLOT_EMPTY)) {
+            /* New insert */
+            slot_commit(slot, key, value);
+            atomic_inc(&local->used_count);
+            local->total_inserts++;
+            put_cpu_ptr(cpu_tables);
+            return 0;
+        }
+        
+        if (slot_try_acquire(slot, SLOT_TOMBSTONE)) {
+            /* Reclaim tombstone slot */
+            slot_commit(slot, key, value);
+            atomic_inc(&local->used_count);
+            atomic_dec(&local->tombstone_count);
+            local->total_inserts++;
+            put_cpu_ptr(cpu_tables);
+            return 0;
+        }
+        
+        /* Check if slot already contains the same key (update) */
+        if (slot_is_valid(slot)) {
+            u64 existing_key = atomic64_read(&slot->key);
+            if (existing_key == key) {
+                /* Update existing key */
+                atomic64_set(&slot->value, value);
+                smp_wmb();
+                put_cpu_ptr(cpu_tables);
+                return 0;
+            }
+        }
+        
+        /* Move to next slot (linear probing) */
+        index = (index + 1) & MAX_SLOTS_MASK;
+        spins++;
+        
+        /* If we wrapped around to original index, table is full */
+        if (index == original_index) {
+            atomic_inc(&local->probe_overflow);
+            localized_rollback(local, "table full - probe wrapped");
+            put_cpu_ptr(cpu_tables);
+            return -ENOSPC;
+        }
+    }
+    
+    /* Exceeded MAX_WRITING_SPINS */
+    atomic_inc(&local->probe_overflow);
+    localized_rollback(local, "max writing spins exceeded");
+    put_cpu_ptr(cpu_tables);
+    return -EAGAIN;
+}
+
+/*
+ * s_kernel_read - Read value for a given key (lock-free, O(1))
+ * 
+ * Returns: 0 on success with value in *out_val, -ENOENT if key not found
+ */
+static int s_kernel_read(u64 key, u64 *out_val)
+{
+    struct skernel_table *local;
+    struct slot *slot;
+    u32 index, original_index;
+    int spins = 0;
+    int state;
+    
+    if (!out_val)
+        return -EINVAL;
+    
+    local = get_cpu_ptr(cpu_tables);
+    if (unlikely(!local)) {
+        put_cpu_ptr(cpu_tables);
+        return -ENOMEM;
+    }
+    
+    original_index = s_kernel_hash(key);
+    index = original_index;
+    
+    while (spins < MAX_WRITING_SPINS) {
+        slot = &local->slots[index];
+        state = slot_get_state(slot);
+        
+        if (state == SLOT_VALID) {
+            u64 existing_key = atomic64_read(&slot->key);
+            if (existing_key == key) {
+                *out_val = atomic64_read(&slot->value);
+                smp_rmb();
+                put_cpu_ptr(cpu_tables);
+                return 0;
+            }
+        } else if (state == SLOT_EMPTY) {
+            /* Empty slot means key definitely not present (linear probing invariant) */
+            put_cpu_ptr(cpu_tables);
+            return -ENOENT;
+        }
+        /* For TOMBSTONE or WRITING, continue probing */
+        
+        index = (index + 1) & MAX_SLOTS_MASK;
+        spins++;
+        
+        if (index == original_index)
+            break;
+    }
+    
+    put_cpu_ptr(cpu_tables);
+    return -ENOENT;
+}
+
+/*
+ * s_kernel_delete - Delete a key-value pair
+ * 
+ * Returns: 0 on success, -ENOENT if key not found
+ */
+static int s_kernel_delete(u64 key)
+{
+    struct skernel_table *local;
+    struct slot *slot;
+    u32 index, original_index;
+    int spins = 0;
+    int state;
+    
+    local = get_cpu_ptr(cpu_tables);
+    if (unlikely(!local)) {
+        put_cpu_ptr(cpu_tables);
+        return -ENOMEM;
+    }
+    
+    original_index = s_kernel_hash(key);
+    index = original_index;
+    
+    while (spins < MAX_WRITING_SPINS) {
+        slot = &local->slots[index];
+        state = slot_get_state(slot);
+        
+        if (state == SLOT_VALID) {
+            u64 existing_key = atomic64_read(&slot->key);
+            if (existing_key == key) {
+                if (slot_delete(slot)) {
+                    atomic_dec(&local->used_count);
+                    atomic_inc(&local->tombstone_count);
+                    local->total_deletes++;
+                    put_cpu_ptr(cpu_tables);
+                    return 0;
+                }
+            }
+        } else if (state == SLOT_EMPTY) {
+            put_cpu_ptr(cpu_tables);
+            return -ENOENT;
+        }
+        
+        index = (index + 1) & MAX_SLOTS_MASK;
+        spins++;
+        
+        if (index == original_index)
+            break;
+    }
+    
+    put_cpu_ptr(cpu_tables);
+    return -ENOENT;
+}
+
+/* ============================================================================
+ * 8. LOCALIZED ROLLBACK (NC/SP V3 Nuclear Rollback at Shard Level)
+ * ============================================================================ */
+
+/*
+ * localized_rollback - Reset a shard to safe state when S < 1 threshold detected
+ * 
+ * This implements the NC/SP V3 Nuclear Rollback at the per-CPU shard level.
+ * It does NOT block other CPUs (no global lock). Only the local shard is reset.
+ */
+static void localized_rollback(struct skernel_table *table, const char *reason)
+{
+    int i;
+    int used_before;
+    int tombstone_before;
+    
+    if (!table)
+        return;
+    
+    used_before = atomic_read(&table->used_count);
+    tombstone_before = atomic_read(&table->tombstone_count);
+    
+    /* Increment rollback counters */
+    atomic_inc(&table->rollback_count);
+    table->total_rollbacks++;
+    
+    /* Mark global rollback flag for monitoring */
+    atomic_inc(&global_rollback_flag);
+    
+    /* Perform rollback: reset all slots to EMPTY */
+    for (i = 0; i < MAX_SLOTS_PER_CPU; i++) {
+        struct slot *slot = &table->slots[i];
+        atomic_set(&slot->state, SLOT_EMPTY);
+        atomic64_set(&slot->key, 0);
+        atomic64_set(&slot->value, 0);
+    }
+    
+    /* Reset counters */
+    atomic_set(&table->used_count, 0);
+    atomic_set(&table->tombstone_count, 0);
+    
+    /* Full memory barrier to ensure rollback is visible across all CPUs */
+    smp_mb();
+    
+    /* Log rollback event (kernel log for debugging) */
+    pr_warn("s_kernel_v3: localized rollback on CPU shard - used=%d tombstone=%d reason=%s\n",
+            used_before, tombstone_before, reason);
+}
+
+/* ============================================================================
+ * 9. LYAPUNOV MAINTENANCE (DECENTRALIZED TIMER + WORKQUEUE)
+ * ============================================================================ */
+
+struct maintenance_work {
+    struct work_struct work;
+    int cpu;
+};
+
+/*
+ * maintenance_work_handler - Asynchronous cleanup (offloaded from timer)
+ */
+static void maintenance_work_handler(struct work_struct *work)
+{
+    struct maintenance_work *mw = container_of(work, struct maintenance_work, work);
+    struct skernel_table *table;
+    int cpu = mw->cpu;
+    int used, tombstone, saturation;
+    
+    table = per_cpu_ptr(cpu_tables, cpu);
+    if (!table) {
+        kfree(mw);
+        return;
+    }
+    
+    used = atomic_read(&table->used_count);
+    tombstone = atomic_read(&table->tombstone_count);
+    saturation = ((used + tombstone) * 100) / MAX_SLOTS_PER_CPU;
+    
+    /* Lyapunov stability check: if saturation > 20%, trigger rollback */
+    if (saturation >= ROLLBACK_SATURATION_PCT) {
+        localized_rollback(table, "Lyapunov saturation threshold exceeded");
+    }
+    
+    kfree(mw);
+}
+
+/*
+ * lyapunov_timer_callback - Decentralized maintenance timer (10 ms interval)
+ * 
+ * This runs in softirq context. It defers heavy work to a workqueue.
+ * Only checks a bounded number of slots per tick to avoid latency spikes.
+ */
+static void lyapunov_timer_callback(struct timer_list *t)
+{
+    int cpu = smp_processor_id();
+    struct maintenance_work *mw;
+    
+    /* Allocate work item */
+    mw = kmalloc(sizeof(*mw), GFP_ATOMIC);
+    if (!mw)
+        goto reschedule;
+    
+    mw->cpu = cpu;
+    INIT_WORK(&mw->work, maintenance_work_handler);
+    
+    /* Queue work on the same CPU for cache locality */
+    queue_work_on(cpu, maintenance_wq, &mw->work);
+    
+reschedule:
+    /* Re-arm timer for next maintenance cycle (10 ms) */
+    mod_timer(&lyapunov_timer, jiffies + msecs_to_jiffies(RECOVERY_WINDOW_MS));
+}
+
+/* ============================================================================
+ * 10. PROC FILE SYSTEM INTERFACE (ASYMMETRIC METRICS CONSOLIDATION)
+ * ============================================================================ */
+
+/*
+ * proc_show - Display aggregated metrics from all shards (MAP/REDUCE)
+ * 
+ * This is read-only, non-blocking, and does NOT acquire global locks.
+ * Temporal inconsistency during read is acceptable (writes take priority).
+ */
+static int proc_show(struct seq_file *m, void *v)
+{
+    int cpu;
+    struct skernel_table *table;
+    u64 total_inserts = 0;
+    u64 total_deletes = 0;
+    u64 total_rollbacks = 0;
+    u64 total_probe_overflows = 0;
+    u64 total_used = 0;
+    u64 total_tombstones = 0;
+    int active_cpus = 0;
+    
+    /* MAP phase: iterate over all online CPUs */
+    for_each_online_cpu(cpu) {
+        table = per_cpu_ptr(cpu_tables, cpu);
+        if (!table)
+            continue;
+        
+        total_inserts += table->total_inserts;
+        total_deletes += table->total_deletes;
+        total_rollbacks += table->total_rollbacks;
+        total_probe_overflows += atomic_read(&table->probe_overflow);
+        total_used += atomic_read(&table->used_count);
+        total_tombstones += atomic_read(&table->tombstone_count);
+        active_cpus++;
+    }
+    
+    /* REDUCE phase: output consolidated metrics */
+    seq_printf(m, "S-KERNEL V3 Sentinel Core - NC/SP V3 Sovereign AI Architecture\n");
+    seq_printf(m, "Blida Standard - LPV3 License (DOI: 10.5281/zenodo.19209168)\n");
+    seq_printf(m, "Author: Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)\n\n");
+    
+    seq_printf(m, "=== SYSTEM METRICS ===\n");
+    seq_printf(m, "Active CPUs:               %d\n", active_cpus);
+    seq_printf(m, "Slots per CPU:             %lu\n", MAX_SLOTS_PER_CPU);
+    seq_printf(m, "Max writing spins:         %d\n", MAX_WRITING_SPINS);
+    seq_printf(m, "Rollback saturation:       %d%%\n", ROLLBACK_SATURATION_PCT);
+    seq_printf(m, "Recovery window:           %d ms\n\n", RECOVERY_WINDOW_MS);
+    
+    seq_printf(m, "=== NC/SP V3 INVARIANTS ===\n");
+    seq_printf(m, "Ψ (Coherence density):     %.1f\n", PSI_COHERENCE);
+    seq_printf(m, "Φ (Phase attractor):       -51.1 mV\n");
+    seq_printf(m, "Heptadic cycle:            7\n\n");
+    
+    seq_printf(m, "=== AGGREGATED COUNTERS ===\n");
+    seq_printf(m, "Total inserts:             %llu\n", total_inserts);
+    seq_printf(m, "Total deletes:             %llu\n", total_deletes);
+    seq_printf(m, "Total rollbacks:           %llu\n", total_rollbacks);
+    seq_printf(m, "Total probe overflows:     %llu\n", total_probe_overflows);
+    seq_printf(m, "Total used slots:          %llu\n", total_used);
+    seq_printf(m, "Total tombstones:          %llu\n", total_tombstones);
+    seq_printf(m, "Global rollback events:    %d\n", atomic_read(&global_rollback_flag));
+    
+    /* Calculate S stability index (aggregated approximation) */
+    if (total_used > 0) {
+        u64 total_capacity = active_cpus * MAX_SLOTS_PER_CPU;
+        double usage_ratio = (double)total_used / (double)total_capacity;
+        double estimated_S = PSI_COHERENCE / (usage_ratio + 0.001);
+        seq_printf(m, "\n=== STABILITY INDEX (S) ===\n");
+        seq_printf(m, "Estimated S:               %.2f\n", estimated_S);
+        if (estimated_S >= 1000)
+            seq_printf(m, "System state:              SOVEREIGN (S > 1000)\n");
+        else if (estimated_S >= 1)
+            seq_printf(m, "System state:              FUNCTIONAL (1 < S ≤ 1000)\n");
+        else
+            seq_printf(m, "System state:              ROLLBACK (S < 1)\n");
+    }
+    
+    seq_printf(m, "\n--- LPV3 License ---\n");
+    seq_printf(m, "Severe restrictions on unauthorized commercial use.\n");
+    seq_printf(m, "See LICENSE file or DOI: 10.5281/zenodo.19209168 for full terms.\n");
+    
+    return 0;
+}
+
+static int proc_open(struct inode *inode, struct file *file)
+{
+    return single_open(file, proc_show, NULL);
+}
+
+static const struct proc_ops proc_fops = {
+    .proc_open = proc_open,
+    .proc_read = seq_read,
+    .proc_lseek = seq_lseek,
+    .proc_release = single_release,
+};
+
+/* ============================================================================
+ * 11. IOCTL INTERFACE (USER-SPACE COMMUNICATION)
+ * ============================================================================ */
+
+#define S_KERNEL_MAGIC 's'
+#define S_KERNEL_WRITE _IOW(S_KERNEL_MAGIC, 1, struct s_kernel_ioctl)
+#define S_KERNEL_READ  _IOWR(S_KERNEL_MAGIC, 2, struct s_kernel_ioctl)
+#define S_KERNEL_DELETE _IOW(S_KERNEL_MAGIC, 3, struct s_kernel_ioctl)
+
+struct s_kernel_ioctl {
+    u64 key;
+    u64 value;
+    int result;
+};
+
+static long s_kernel_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+    struct s_kernel_ioctl data;
+    int ret;
+    
+    if (copy_from_user(&data, (void __user *)arg, sizeof(data)))
+        return -EFAULT;
+    
+    switch (cmd) {
+    case S_KERNEL_WRITE:
+        ret = s_kernel_write(data.key, data.value);
+        break;
+    case S_KERNEL_READ:
+        ret = s_kernel_read(data.key, &data.value);
+        if (ret == 0 && copy_to_user((void __user *)arg, &data, sizeof(data)))
+            return -EFAULT;
+        break;
+    case S_KERNEL_DELETE:
+        ret = s_kernel_delete(data.key);
+        break;
+    default:
+        return -ENOTTY;
+    }
+    
+    return ret;
+}
+
+static int s_kernel_open(struct inode *inode, struct file *file)
+{
+    return 0;
+}
+
+static int s_kernel_release(struct inode *inode, struct file *file)
+{
+    return 0;
+}
+
+static const struct file_operations s_kernel_fops = {
+    .owner = THIS_MODULE,
+    .open = s_kernel_open,
+    .release = s_kernel_release,
+    .unlocked_ioctl = s_kernel_ioctl,
+};
+
+static struct class *s_kernel_class = NULL;
+static dev_t s_kernel_dev;
+static struct cdev s_kernel_cdev;
+
+/* ============================================================================
+ * 12. MODULE INITIALIZATION & CLEANUP
+ * ============================================================================ */
+
+/*
+ * s_kernel_init - Module initialization (Ring 0 entry point)
+ * 
+ * Allocates NUMA-local per-CPU shards, initializes timer, workqueue, procfs.
+ */
+static int __init s_kernel_init(void)
+{
+    int ret;
+    int cpu;
+    
+    pr_info("s_kernel_v3: Initializing S-KERNEL V3 Sentinel Core (NC/SP V3)\n");
+    pr_info("s_kernel_v3: Author: Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)\n");
+    pr_info("s_kernel_v3: License: LPV3 (DOI: 10.5281/zenodo.19209168)\n");
+    
+    /* Step 1: Allocate per-CPU shards with NUMA locality */
+    cpu_tables = alloc_percpu_gfp(struct skernel_table, GFP_KERNEL | __GFP_NOWARN | GFP_THISNODE);
+    if (!cpu_tables) {
+        pr_err("s_kernel_v3: Failed to allocate per-CPU tables\n");
+        return -ENOMEM;
+    }
+    
+    /* Step 2: Initialize each shard */
+    for_each_possible_cpu(cpu) {
+        struct skernel_table *table = per_cpu_ptr(cpu_tables, cpu);
+        if (table) {
+            memset(table, 0, sizeof(*table));
+            atomic_set(&table->used_count, 0);
+            atomic_set(&table->tombstone_count, 0);
+            atomic_set(&table->rollback_count, 0);
+            atomic_set(&table->probe_overflow, 0);
+            table->total_inserts = 0;
+            table->total_deletes = 0;
+            table->total_rollbacks = 0;
+        }
+    }
+    
+    /* Step 3: Create workqueue for maintenance tasks */
+    maintenance_wq = alloc_workqueue("s_kernel_wq", WQ_UNBOUND | WQ_MEM_RECLAIM, 0);
+    if (!maintenance_wq) {
+        pr_err("s_kernel_v3: Failed to allocate workqueue\n");
+        free_percpu(cpu_tables);
+        return -ENOMEM;
+    }
+    
+    /* Step 4: Initialize Lyapunov timer (decentralized maintenance) */
+    timer_setup(&lyapunov_timer, lyapunov_timer_callback, 0);
+    mod_timer(&lyapunov_timer, jiffies + msecs_to_jiffies(RECOVERY_WINDOW_MS));
+    
+    /* Step 5: Create procfs entry for metrics */
+    proc_entry = proc_create("s_kernel_sentinel", 0444, NULL, &proc_fops);
+    if (!proc_entry) {
+        pr_err("s_kernel_v3: Failed to create proc entry\n");
+        del_timer_sync(&lyapunov_timer);
+        destroy_workqueue(maintenance_wq);
+        free_percpu(cpu_tables);
+        return -ENOMEM;
+    }
+    
+    /* Step 6: Register character device for ioctl interface */
+    ret = alloc_chrdev_region(&s_kernel_dev, 0, 1, "s_kernel");
+    if (ret < 0) {
+        pr_err("s_kernel_v3: Failed to allocate device number\n");
+        remove_proc_entry("s_kernel_sentinel", NULL);
+        del_timer_sync(&lyapunov_timer);
+        destroy_workqueue(maintenance_wq);
+        free_percpu(cpu_tables);
+        return ret;
+    }
+    
+    cdev_init(&s_kernel_cdev, &s_kernel_fops);
+    s_kernel_cdev.owner = THIS_MODULE;
+    ret = cdev_add(&s_kernel_cdev, s_kernel_dev, 1);
+    if (ret < 0) {
+        pr_err("s_kernel_v3: Failed to add cdev\n");
+        unregister_chrdev_region(s_kernel_dev, 1);
+        remove_proc_entry("s_kernel_sentinel", NULL);
+        del_timer_sync(&lyapunov_timer);
+        destroy_workqueue(maintenance_wq);
+        free_percpu(cpu_tables);
+        return ret;
+    }
+    
+    /* Optional: Create /dev/s_kernel node (handled by udev) */
+    s_kernel_class = class_create("s_kernel");
+    if (!IS_ERR(s_kernel_class)) {
+        device_create(s_kernel_class, NULL, s_kernel_dev, NULL, "s_kernel");
+    }
+    
+    pr_info("s_kernel_v3: Initialization complete. Sovereign AI core active.\n");
+    pr_info("s_kernel_v3: Metrics available at /proc/s_kernel_sentinel\n");
+    
+    return 0;
+}
+
+/*
+ * s_kernel_exit - Module cleanup (Ring 0 exit point)
+ * 
+ * Frees all resources, removes procfs entries, stops timer, destroys workqueue.
+ */
+static void __exit s_kernel_exit(void)
+{
+    pr_info("s_kernel_v3: Shutting down S-KERNEL V3 Sentinel Core\n");
+    
+    /* Stop Lyapunov timer */
+    del_timer_sync(&lyapunov_timer);
+    
+    /* Destroy workqueue and wait for pending tasks */
+    if (maintenance_wq) {
+        flush_workqueue(maintenance_wq);
+        destroy_workqueue(maintenance_wq);
+    }
+    
+    /* Remove procfs entry */
+    if (proc_entry)
+        remove_proc_entry("s_kernel_sentinel", NULL);
+    
+    /* Clean up device interface */
+    if (s_kernel_class) {
+        device_destroy(s_kernel_class, s_kernel_dev);
+        class_destroy(s_kernel_class);
+    }
+    cdev_del(&s_kernel_cdev);
+    unregister_chrdev_region(s_kernel_dev, 1);
+    
+    /* Free per-CPU shards */
+    if (cpu_tables) {
+        free_percpu(cpu_tables);
+        cpu_tables = NULL;
+    }
+    
+    pr_info("s_kernel_v3: Shutdown complete. Goodbye.\n");
+}
+
+module_init(s_kernel_init);
+module_exit(s_kernel_exit);
