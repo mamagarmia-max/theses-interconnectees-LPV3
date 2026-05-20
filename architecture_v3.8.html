@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S-KERNEL V3.8 – Architecture NUMA & Per-CPU (Spécification Technique)</title>
+    <style>
+        :root {
+            --primary-color: #0f172a;
+            --secondary-color: #10b981;
+            --text-color: #1e293b;
+            --bg-code: #f8fafc;
+            --border-color: #e2e8f0;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            background: #ffffff;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 1.5rem;
+            box-shadow: 0 20px 35px -10px rgba(0,0,0,0.05);
+            padding: 2rem;
+            border: 1px solid #eef2f6;
+        }
+
+        header {
+            border-bottom: 3px solid var(--secondary-color);
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            letter-spacing: -0.01em;
+            margin-bottom: 0.5rem;
+        }
+
+        .badge {
+            background: #e6f7ec;
+            color: #0a5c2e;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.2rem 0.7rem;
+            border-radius: 20px;
+            display: inline-block;
+            margin-bottom: 0.8rem;
+        }
+
+        .meta-box {
+            background: var(--bg-code);
+            border: 1px solid var(--border-color);
+            padding: 1rem 1.2rem;
+            border-radius: 1rem;
+            font-size: 0.85rem;
+            margin: 1.2rem 0 0 0;
+            color: #2d3a4b;
+        }
+
+        h2 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            border-left: 4px solid var(--secondary-color);
+            padding-left: 0.75rem;
+            margin: 2rem 0 1rem 0;
+        }
+
+        .faq-item {
+            margin-bottom: 2rem;
+            border-bottom: 1px solid #edf2f7;
+            padding-bottom: 1.5rem;
+        }
+
+        .question {
+            font-weight: 700;
+            color: #0f172a;
+            font-size: 1.05rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .answer {
+            text-align: left;
+            color: #2c3e50;
+        }
+
+        code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            background: #f1f5f9;
+            color: #0c4a6e;
+            font-size: 0.85rem;
+            padding: 0.2rem 0.4rem;
+            border-radius: 6px;
+        }
+
+        pre {
+            background: #0f172a;
+            color: #f1f5f9;
+            padding: 1rem;
+            border-radius: 0.8rem;
+            overflow-x: auto;
+            font-size: 0.8rem;
+            margin: 1rem 0;
+        }
+
+        pre code {
+            background: transparent;
+            color: inherit;
+            padding: 0;
+        }
+
+        .code-keyword { color: #f97316; font-weight: 600; }
+        .code-type { color: #38bdf8; }
+        .code-call { color: #a5f3c3; }
+        .code-comment { color: #94a3b8; font-style: italic; }
+
+        .note {
+            background: #fef9e3;
+            border-left: 4px solid #eab308;
+            padding: 0.75rem 1rem;
+            border-radius: 0.75rem;
+            margin: 1rem 0;
+            font-size: 0.85rem;
+        }
+
+        hr {
+            margin: 2rem 0;
+            border: 0;
+            height: 1px;
+            background: #e2e8f0;
+        }
+
+        @media print {
+            body { background: white; padding: 0; }
+            .container { box-shadow: none; padding: 0; }
+            pre { background: #f4f4f4; color: black; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <div class="badge">🔷 BLIDA STANDARD – LPV3</div>
+        <h1>S-KERNEL V3.8 – NUMA & Per‑CPU Sharding</h1>
+        <p><strong>Version :</strong> 3.8.0 – Architecture distribuée pour l’IA déterministe<br>
+        <strong>Cible :</strong> Linux Kernel 5.6+ / x86_64 / ARM64 (multi‑socket / HPC)</p>
+        <div class="meta-box">
+            <strong>Auteur :</strong> Dr. Benhadid Outail – ORCID 0009‑0003‑3057‑9543<br>
+            <strong>Licence :</strong> LPV3 (voir 10.5281/zenodo.19209168)<br>
+            <strong>Référence corpus :</strong> V3 (133 thèses), S-Kernel 3.7, module noyau lock‑free
+        </div>
+    </header>
+
+    <main>
+        <h2>1. Pourquoi abandonner la table unique centralisée ?</h2>
+        <div class="faq-item">
+            <div class="question">Contention cachée sur les bus inter‑CPU (UPI / Infinity Fabric)</div>
+            <div class="answer">
+                Dans la version 3.7, bien que les opérations soient non‑bloquantes (<code>atomic_cmpxchg</code>), toutes les requêtes se concentrent sur la même table mémoire. Sur une machine multi‑socket (EPYC, Xeon), l’accès à cette table génère des invalidations de lignes de cache (MESI) et des traversées du bus inter‑processeur. En isolant physiquement les tables par CPU (<code>__percpu</code>), chaque cœur traite sa propre partition en local, supprimant toute contention mémoire entre cœurs.
+            </div>
+        </div>
+
+        <h2>2. Implémentation : structures alignées et accès sécurisé</h2>
+        <div class="faq-item">
+            <div class="question">Déclaration de la table distribuée et protection contre la migration CPU</div>
+            <div class="answer">
+                <pre><code><span class="code-comment">/* structure d’un slot (inchangée) */</span>
+<span class="code-type">struct</span> slot {
+    <span class="code-type">atomic64_t</span> key;
+    <span class="code-type">atomic64_t</span> value;
+    <span class="code-type">atomic_t</span> state;
+} <span class="code-keyword">__aligned(64)</span>;
+
+<span class="code-comment">/* table par CPU avec cache‑line padding (élimine false sharing) */</span>
+<span class="code-type">struct</span> skernel_table {
+    <span class="code-type">struct</span> slot slots[<span class="code-keyword">MAX_SLOTS_PER_CPU</span>];
+    <span class="code-type">atomic_t</span> used_count;
+    <span class="code-type">atomic_t</span> tombstone_count;
+    <span class="code-type">char</span> _pad[<span class="code-keyword">____cacheline_aligned_in_smp</span>];
+};
+
+<span class="code-comment">/* allocation centrale dans module_init */</span>
+<span class="code-type">static struct</span> skernel_table <span class="code-keyword">__percpu</span> *cpu_tables;
+
+cpu_tables = <span class="code-call">alloc_percpu</span>(<span class="code-type">struct</span> skernel_table);
+<span class="code-keyword">if</span> (!cpu_tables) <span class="code-keyword">return</span> -ENOMEM;
+
+<span class="code-comment">/* accès local : migration interdite */</span>
+<span class="code-type">struct</span> skernel_table *local = <span class="code-call">get_cpu_ptr</span>(cpu_tables);
+<span class="code-comment">/* … opération sur la table locale … */</span>
+<span class="code-call">put_cpu_ptr</span>(cpu_tables);</code></pre>
+                <div class="note">
+                    ⚠️ <strong>Important :</strong> <code>get_cpu_ptr()</code> désactive la préemption et lie le thread au CPU courant. La migration est bloquée pendant l’accès, garantissant une affinité parfaite.
+                </div>
+            </div>
+        </div>
+
+        <h2>3. Élimination du « cache‑line bouncing »</h2>
+        <div class="faq-item">
+            <div class="question">Chaque cœur écrit dans sa propre ligne de cache – plus d’invalidation MESI</div>
+            <div class="answer">
+                Avec la table unique, un <code>atomic_cmpxchg</code> sur une ligne de cache la porte en « Modified » sur le cœur écrivain et invalide toutes les copies des autres cœurs. Avec <code>__percpu</code>, chaque modification reste locale à la ligne de cache du cœur concerné. Le protocole MESI ne sollicite plus le bus inter‑socket. La scalabilité devient linéaire.
+            </div>
+        </div>
+
+        <h2>4. API utilisateur – routage par affinité</h2>
+        <div class="faq-item">
+            <div class="question">Comment l’appel système <code>ioctl</code> trouve‑t‑il la bonne table ?</div>
+            <div class="answer">
+                À chaque requête <code>ioctl</code> (insertion, recherche, suppression), le module identifie le CPU appelant (via <code>get_cpu_ptr</code>) et redirige l’opération vers la table associée à ce CPU. Aucune logique de hachage répartie ni d’équilibrage n’est nécessaire : le noyau utilise naturellement la localité des threads de l’espace utilisateur.
+            </div>
+        </div>
+
+        <h2>5. Consolidation des résultats (phase MAP/REDUCE)</h2>
+        <div class="faq-item">
+            <div class="question">Comment obtenir une vue globale sans contention ?</div>
+            <div class="answer">
+                Les métriques globales (ex. nombre total d’insertions) sont calculées uniquement lors de l’arrêt du module ou à la demande explicite via <code>/proc/s_kernel_sentinel</code>. Le module itère alors séquentiellement sur chaque table <code>__percpu</code> et somme les compteurs locaux. Pendant cette phase, aucune nouvelle insertion n’est bloquée – la cohérence finale est garantie par la conception monotone des compteurs.
+            </div>
+        </div>
+
+        <h2>6. Benchmarks prévus (validation expérimentale)</h2>
+        <div class="faq-item">
+            <div class="question">Métriques de performance pour comparer v3.7 vs v3.8</div>
+            <div class="answer">
+                <ul>
+                    <li><strong>Latence p99 / p99.9</strong> (insertion & recherche) – mesurée avec <code>ktime_get_ns()</code>.</li>
+                    <li><strong>Cache misses</strong> (<code>perf stat -e cache-misses,cache-references</code>).</li>
+                    <li><strong>Scalabilité</strong> : montée en charge sur 2, 8, 32, 64 cœurs (EPYC / Xeon).</li>
+                    <li><strong>Contention mémoire</strong> – suivi des cycles UPI/Infinity Fabric via les compteurs PMU.</li>
+                </ul>
+                Les résultats bruts et les graphiques seront publiés dans un rapport de validation séparé (annexe technique).
+            </div>
+        </div>
+
+        <h2>7. Limites explicites et travaux futurs</h2>
+        <div class="faq-item">
+            <div class="question">Ce que cette version ne couvre pas (assumé)</div>
+            <div class="answer">
+                <ul>
+                    <li><strong>Hotplug CPU :</strong> non géré – le module doit être rechargé après changement de topologie.</li>
+                    <li><strong>RCU / epoch reclamation :</strong> hors scope pour une preuve de concept déterministe.</li>
+                    <li><strong>Clustering multi‑machine :</strong> le sharding est intra‑serveur (une seule instance du module).</li>
+                </ul>
+                Ces aspects pourront être ajoutés dans des versions ultérieures si l’architecture est validée sur des clusters massifs.
+            </div>
+        </div>
+    </main>
+    <hr>
+    <div style="font-size: 0.75rem; text-align: center; color: #4b5563; margin-top: 1rem;">
+        © 2026 Dr. Benhadid Outail – LPV3 – Blida Standard.<br>
+        Code source, DOIs et preuves d’antériorité : <a href="https://orcid.org/0009-0003-3057-9543" target="_blank">ORCID 0009‑0003‑3057‑9543</a>
+    </div>
+</div>
+</body>
+      </html>
