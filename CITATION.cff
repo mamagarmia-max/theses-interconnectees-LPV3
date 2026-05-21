@@ -1,0 +1,12 @@
+CITATION.cff
+cff-version: 1.2.0
+message: "Si vous utilisez ce travail, veuillez le citer comme suit :"
+authors:
+  - family-names: "Benhadid"
+    given-names: "Outail"
+    orcid: "https://orcid.org/0009-0003-3057-9543"
+title: "Framework Cosmologique V3 & Architecture S-Kernel"
+version: 1.0.0
+doi: 10.5281/zenodo.19209168
+date-released: 2026-05-21
+url: "https://github.com/mamagarmia-max/theses-interconnectees-LPV3"
