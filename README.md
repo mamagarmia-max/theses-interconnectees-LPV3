@@ -124,3 +124,4 @@ g++ -O3 -march=native -fopenmp -o skernel_v3 skernel_v3_cpp.cpp
 - [ ] Traces ftrace/perf
 - [ ] Tests multi-socket
 - [ ] Mesures TSC cross-core
+[![Actions Status](https://github.com/mamagarmia-max/theses-interconnectees-LPV3/actions/workflows/main.yml/badge.svg)](https://github.com/mamagarmia-max/theses-interconnectees-LPV3/actions)
