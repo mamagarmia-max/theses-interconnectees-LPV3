@@ -103,3 +103,24 @@ Ce dépôt contient désormais les outils de vérification formelle pour la comp
 ```bash
 g++ -O3 -march=native -fopenmp -o skernel_v3 skernel_v3_cpp.cpp
 ./skernel_v3
+
+---
+
+## ⚠️ Limitations connues (RC2)
+
+### ✅ Validé
+- Compilation et analyse statique (CodeQL) : PASS
+- Absence de patterns dangereux (use-after-free, null deref)
+- Correction harmonique (6.4 THz → 64 MHz observable)
+
+### 🔄 À valider (prochains benchmarks)
+- Stabilité temps réel sous charge
+- Robustesse NUMA multi-socket
+- Jitter effectif sur matériel réel
+- Déterminisme HPC à grande échelle
+
+### 📋 Prochaines étapes
+- [ ] Benchmarks cyclictest
+- [ ] Traces ftrace/perf
+- [ ] Tests multi-socket
+- [ ] Mesures TSC cross-core
