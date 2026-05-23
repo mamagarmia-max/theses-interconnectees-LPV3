@@ -152,3 +152,32 @@ Un module révolutionnaire pour constellations satellitaires, compatible avec l'
 Le code contient une signature Ψ_V3 = 48,016.8 kg·m⁻² détectable automatiquement.
 
 📧 Contact licence: **mediconsulte@gmail.com**
+## 🌦️ WEATHER V3 PHASE CORE (Nouveau)
+
+Un module noyau déterministe pour modélisation météo/climatique basé sur l'Architecture V3.
+
+### Problèmes météo résolus
+
+| Problème | Solution V3 |
+|----------|-------------|
+| Chaos turbulent | Rollback localisé par cellule |
+| Effet papillon | Invariant Ψ_V3 = 48,016.8 kg·m⁻² |
+| Assimilation asynchrone | Phase lock à 10 ms |
+| Coût ensembliste | Déterminisme pur (1 run, pas 50) |
+| Divergence numérique | Clôture heptadique (7 cycles max) |
+
+### Spécifications
+
+| Paramètre | Valeur |
+|-----------|--------|
+| Tuilage | 128×128×32 (524,288 cellules/tuile) |
+| Max tuiles actives | 16 |
+| Arithmétique | Fixed-point (s64, pas de double) |
+| Mémoire | vmalloc (pas d'allocation contiguë) |
+| Phase lock | 10 ms |
+| Rollback | Localisé par cellule divergente |
+
+### Interface
+
+```bash
+cat /proc/weather_v3
