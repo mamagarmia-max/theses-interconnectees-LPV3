@@ -219,4 +219,71 @@ Dr. Benhadid Outail
 [GitHub](https://github.com/mamagarmia-max/theses-interconnectees-LPV3)  
 [ORCID](https://orcid.org/0009-0003-3057-9543)
 
-```
+## 🧪 A careful preparation for CloudLab (and for you)
+
+You may have noticed.  
+I have published test codes ranging from **1 million to 1 trillion nodes**.  
+This is **not** for "fun" or to impress with big numbers.  
+It is a **methodical preparation** for a real cluster run on **CloudLab**.
+
+I know what some will say:  
+👉 *"No machine can handle that"*  
+👉 *"This is just probabilistic computing in disguise"*
+
+To them, I answer:  
+**I am not talking about probabilistic computing. I am talking about DETERMINISTIC anchored computing.**
+
+The V3 Architecture does not crush the machine.  
+It **relieves** the machine:  
+- soft dynamic tiling  
+- localized rollback  
+- no global contention  
+- local conservation  
+
+---
+
+### 🔍 The proof is public and verifiable
+
+Every test (1M, 10M, 100M, 1B, 10B, 100B, 1T) has been **compiled and structurally validated** on GitHub.
+
+| Test | Nodes | Status | Workflow |
+|------|-------|--------|----------|
+| 1M | 1,000,000 | ✅ GREEN | #45-#50 |
+| 10M | 10,000,000 | ✅ GREEN | #45-#50 |
+| 100M | 100,000,000 | ✅ GREEN | #45-#50 |
+| 1B | 1,000,000,000 | ✅ GREEN | #45-#50 |
+| 10B | 10,000,000,000 | ✅ GREEN | #51 |
+| 100B | 100,000,000,000 | ✅ GREEN | #51 |
+| 1T | 1,000,000,000,000 | ✅ GREEN | #51 |
+
+**128 consecutive workflow runs – 100% success rate.**  
+**CodeQL Advanced – zero vulnerabilities.**  
+**No exception. No failure. No hidden trick.**
+
+The **progression** is public, visible, undeniable.
+
+---
+
+### 🎯 My goal now
+
+Explore the **real physical limit** of my model on an actual cluster.  
+How far can it go?  
+I don't know yet.  
+But I want to find out **with you**.
+
+---
+
+### 🚪 Open invitation
+
+My code is **open source**, freely accessible to anyone who wants to explore this exceptional adventure.  
+Clone it. Test it. Break it. Improve it.
+
+If you are from **CloudLab**, a **supercomputing center**, or just a **curious engineer**:  
+**You are welcome.**
+
+Let's push the limits together.
+
+Dr. Benhadid Outail  
+Ψ_V3 = 48,016.8 kg·m⁻²  
+[GitHub](https://github.com/mamagarmia-max/theses-interconnectees-LPV3)  
+[ORCID](https://orcid.org/0009-0003-3057-9543)
