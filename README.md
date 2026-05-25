@@ -172,6 +172,51 @@ When checking the status of the hypergraph via `/proc/hypergraph_omega7_v3`, the
 * **ROLLBACK State ($S < 1$):** Circuit breaker active. Localized topology reconfiguration is underway to preserve the $\Psi_{V3}$ structural integrity.
 ---
 
+## 🧪 A careful preparation for CloudLab (and for you)
+
+You may have noticed.  
+I have published test codes ranging from **1 million to 1 trillion nodes**.  
+This is **not** for "fun" or to impress with big numbers.  
+It is a **methodical preparation** for a real cluster run on **CloudLab**.
+
+I know what some will say:  
+👉 *"No machine can handle that"*  
+👉 *"This is just probabilistic computing in disguise"*
+
+To them, I answer:  
+**I am not talking about probabilistic computing. I am talking about DETERMINISTIC anchored computing.**
+
+The V3 Architecture does not crush the machine.  
+It **relieves** the machine:  
+- soft dynamic tiling  
+- localized rollback  
+- no global contention  
+- local conservation  
+
+Every test (1M, 10M, 100M, 1B, 10B, 100B, 1T) has been **compiled and structurally validated** on GitHub (128 green workflows, CodeQL zero vulnerabilities).  
+The **progression** is public, visible, undeniable.
+
+My goal now:  
+**Explore the real physical limit of my model** on an actual cluster.  
+How far can it go?  
+I don't know yet.  
+But I want to find out **with you**.
+
 ---
+
+### 🚪 Open invitation
+
+My code is **open source**, freely accessible to anyone who wants to explore this exceptional adventure.  
+Clone it. Test it. Break it. Improve it.
+
+If you are from CloudLab, a supercomputing center, or just a curious engineer:  
+**You are welcome.**
+
+Let's push the limits together.
+
+Dr. Benhadid Outail  
+Ψ_V3 = 48,016.8 kg·m⁻²  
+[GitHub](https://github.com/mamagarmia-max/theses-interconnectees-LPV3)  
+[ORCID](https://orcid.org/0009-0003-3057-9543)
 
 ```
