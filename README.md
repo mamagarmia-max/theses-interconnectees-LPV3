@@ -325,3 +325,25 @@ Blida, Algeria — The Blida Standard V3
 ---
 
 *Copyright © 2026 Dr. Outail Benhadid. All Rights Reserved.*
+## 🧠 V3 Surgical Protocol & Learning Layer
+
+**File:** `src/v3_surgical_protocol_learning.c`
+
+This module extends the V3 Architecture into **cognitive surgery**. It combines human expertise with deterministic AI to continuously improve surgical outcomes.
+
+### What it does
+
+| Feature | Description |
+|---------|-------------|
+| **Clinical case database** | Surgeons add cases (organ, pathology, tissue stiffness) via `/proc/surgical_protocol` |
+| **V3 protocol generation** | The system autonomously generates up to 7 optimal surgical sequences per case (heptadic closure) |
+| **Human approval loop** | Surgeons review and approve the best generated protocol before execution |
+| **Outcome optimization** | Success and rollback rates update automatically; low‑confidence protocols are flagged |
+
+### Surgical invariants (V3 anchored)
+
+```c
+Ψ_V₃ = 48,016.8 kg·m⁻²   → global safety anchor
+Φ_V₃ = -51.1 mV          → fragile zone threshold
+Heptadic cycle = 7       → max protocol variants per case
+Phase lock = 10 ms       → constant O(1) response time
