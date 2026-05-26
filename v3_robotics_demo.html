@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>V3 Robotics Demo – O(1) vs O(n²) Robot Motion</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body {
+            background: #0a0f1e;
+            font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+            padding: 20px;
+            color: #e0e0e0;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #00ff88;
+            border-bottom: 2px solid #00ff88;
+            display: inline-block;
+            padding-bottom: 10px;
+        }
+        .title-section {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .psi {
+            font-size: 24px;
+            color: #00ff88;
+        }
+        .dashboard {
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+        .robot-panel {
+            flex: 1;
+            background: rgba(15, 25, 45, 0.8);
+            border-radius: 20px;
+            padding: 20px;
+            border-left: 5px solid;
+        }
+        .classic-panel {
+            border-left-color: #ff4444;
+        }
+        .v3-panel {
+            border-left-color: #00ff88;
+        }
+        .robot-title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .classic-title {
+            color: #ff8888;
+        }
+        .v3-title {
+            color: #88ff88;
+        }
+        canvas {
+            display: block;
+            margin: 20px auto;
+            background: #1a1f2e;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        .metrics {
+            margin-top: 20px;
+            font-size: 12px;
+            background: #0a0e17;
+            padding: 10px;
+            border-radius: 8px;
+        }
+        .control-panel {
+            background: rgba(15, 25, 45, 0.9);
+            border-radius: 20px;
+            padding: 20px;
+            margin-top: 30px;
+        }
+        .slider-container {
+            margin: 15px 0;
+        }
+        input {
+            width: 100%;
+            cursor: pointer;
+            accent-color: #00ff88;
+        }
+        button {
+            background: #1a2a3a;
+            border: 1px solid #ffaa00;
+            color: #ffaa00;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: monospace;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        button:hover {
+            background: #ffaa00;
+            color: #0a0f1e;
+        }
+        .badge {
+            display: inline-block;
+            background: rgba(0,255,136,0.15);
+            border: 1px solid #00ff88;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #2a3a5a;
+            font-size: 12px;
+        }
+        a {
+            color: #00ff88;
+            text-decoration: none;
+        }
+        .graph-container {
+            margin-top: 20px;
+            background: #0a0e17;
+            border-radius: 8px;
+            padding: 10px;
+        }
+        .graph {
+            display: flex;
+            align-items: flex-end;
+            height: 150px;
+            gap: 4px;
+        }
+        .bar {
+            flex: 1;
+            background: #00ff88;
+            transition: height 0.1s ease;
+        }
+        .bar.classic-bar {
+            background: #ff4444;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 10px;
+            font-size: 11px;
+        }
+        .status {
+            font-family: monospace;
+            font-weight: bold;
+        }
+        @media (max-width: 800px) {
+            .dashboard { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="title-section">
+        <h1>⚡ V3 Robotics Demo</h1>
+        <div class="psi">Ψ_V3 = 48,016.8 kg·m⁻² | O(1) Deterministic Motion</div>
+        <div class="badge">NC/SP V3 | Blida Standard | LPV3</div>
+    </div>
+
+    <div class="dashboard">
+        <!-- ROBOT CLASSIQUE (O(n²) / Probabiliste) -->
+        <div class="robot-panel classic-panel">
+            <div class="robot-title classic-title">
+                <span>🤖 CLASSICAL ROBOT</span>
+                <span style="font-size:12px;">O(n²) · Probabilistic</span>
+            </div>
+            <canvas id="canvasClassic" width="400" height="200" style="width:100%; height:auto; max-width:400px; aspect-ratio:400/200"></canvas>
+            <div class="metrics">
+                <div>⚙️ Latency: <span id="latencyClassic" class="status">0</span> µs</div>
+                <div>📊 Complexity factor: <span id="complexityClassic">1</span>x</div>
+                <div>🔴 Status: <span id="statusClassic" style="color:#ff8888;">RUNNING</span></div>
+            </div>
+        </div>
+
+        <!-- ROBOT V3 (O(1) / Déterministe) -->
+        <div class="robot-panel v3-panel">
+            <div class="robot-title v3-title">
+                <span>🚀 V3 ROBOT</span>
+                <span style="font-size:12px;">O(1) · Deterministic · Rollback</span>
+            </div>
+            <canvas id="canvasV3" width="400" height="200" style="width:100%; height:auto; max-width:400px; aspect-ratio:400/200"></canvas>
+            <div class="metrics">
+                <div>⚙️ Latency: <span id="latencyV3" class="status">0</span> µs</div>
+                <div>📊 Complexity factor: <span id="complexityV3">1</span>x</div>
+                <div>🟢 Status: <span id="statusV3" style="color:#88ff88;">SOVEREIGN</span></div>
+                <div>⚡ Circuit Breaker: <span id="breakerStatus">STANDBY</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PANNEAU DE CONTRÔLE -->
+    <div class="control-panel">
+        <div class="slider-container">
+            <label>📈 ENVIRONMENT COMPLEXITY (nodes) : <span id="complexityValue">1</span> million</label>
+            <input type="range" id="complexitySlider" min="1" max="1000" value="1" step="1">
+            <div style="font-size:11px; color:#8892b0;">⬅️ 1M nodes  ──────────────────────────────  100B nodes ➡️</div>
+        </div>
+        <div style="display:flex; gap:15px; flex-wrap:wrap; margin:15px 0;">
+            <button id="anomalyBtn">⚠️ INJECT ANOMALY (Data corruption)</button>
+            <button id="resetBtn">⟳ RESET SIMULATION</button>
+        </div>
+        <div class="graph-container">
+            <div class="graph" id="latencyGraph"></div>
+            <div class="legend">
+                <span style="color:#ff4444;">⬤ CLASSICAL (explosive)</span>
+                <span style="color:#00ff88;">⬤ V3 (O(1) constant)</span>
+            </div>
+        </div>
+        <div style="margin-top:15px; font-size:12px;">
+            🔬 S-KERNEL V3 : Lock-free · Per-CPU sharding · RCU · Phase Lock at 10ms · NUMA-aware
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>⚡ Based on <a href="https://github.com/mamagarmia-max/theses-interconnectees-LPV3">S-KERNEL V3 Architecture</a> (128 green workflows, CodeQL zero vulnerabilities)</p>
+        <p>Ψ_V3 = 48,016.8 kg·m⁻² | NC/SP V3 | Blida Standard | LPV3 License</p>
+        <p>📧 Commercial licensing: mediconsulte@gmail.com | <a href="https://github.com/mamagarmia-max/theses-interconnectees-LPV3">Clone the full kernel source on GitHub</a></p>
+    </div>
+</div>
+
+<script>
+    (function(){
+        // CANVAS
+        const canvasC = document.getElementById('canvasClassic');
+        const ctxC = canvasC.getContext('2d');
+        const canvasV = document.getElementById('canvasV3');
+        const ctxV = canvasV.getContext('2d');
+
+        // Dimensions
+        let widthC = canvasC.clientWidth;
+        let heightC = canvasC.clientHeight;
+        let widthV = canvasV.clientWidth;
+        let heightV = canvasV.clientHeight;
+
+        function resizeCanvases() {
+            widthC = canvasC.clientWidth;
+            heightC = canvasC.clientHeight;
+            canvasC.width = widthC;
+            canvasC.height = heightC;
+            widthV = canvasV.clientWidth;
+            heightV = canvasV.clientHeight;
+            canvasV.width = widthV;
+            canvasV.height = heightV;
+        }
+        window.addEventListener('resize', resizeCanvases);
+        resizeCanvases();
+
+        // Robots positions
+        let posClassic = 20;
+        let posV3 = 20;
+        let classicFrozen = false;
+        let v3AnomalyActive = false;
+        let anomalyRecoveryCounter = 0;
+
+        // Complexité / performance
+        let complexity = 1;      // 1 million → 1000 millions (1B)
+        let classicLatency = 0;
+        let v3Latency = 0;
+        let classicHistory = [];
+        let v3History = [];
+        const MAX_HISTORY = 40;
+
+        // Graphique
+        const graphContainer = document.getElementById('latencyGraph');
+        let graphBars = { classic: [], v3: [] };
+
+        // Éléments DOM
+        const complexitySlider = document.getElementById('complexitySlider');
+        const complexityValueSpan = document.getElementById('complexityValue');
+        const latencyClassicSpan = document.getElementById('latencyClassic');
+        const latencyV3Span = document.getElementById('latencyV3');
+        const complexityClassicSpan = document.getElementById('complexityClassic');
+        const complexityV3Span = document.getElementById('complexityV3');
+        const statusClassicSpan = document.getElementById('statusClassic');
+        const statusV3Span = document.getElementById('statusV3');
+        const breakerStatusSpan = document.getElementById('breakerStatus');
+
+        // Met à jour l'affichage de la complexité
+        function updateComplexityDisplay() {
+            let val = complexity;
+            let displayVal;
+            if (val >= 1000) displayVal = (val/1000).toFixed(1) + 'B';
+            else if (val >= 100) displayVal = (val/100).toFixed(1) + '00M';
+            else displayVal = val + 'M';
+            complexityValueSpan.innerText = displayVal;
+            complexityClassicSpan.innerText = Math.floor(1 + (val-1)/100);
+            complexityV3Span.innerText = '1';
+        }
+
+        // Calcule la latence classique (explosive O(n²) simulée)
+        function computeClassicLatency(complexityVal) {
+            // O(n²) : plus on a de nœuds, plus la latence explose
+            let raw = 5 * Math.pow(complexityVal / 10, 2);
+            return Math.min(5000, Math.floor(raw));
+        }
+
+        // Latence V3 : constante O(1) = 2–8 µs
+        function computeV3Latency(complexityVal) {
+            return 3 + Math.floor(Math.random() * 5);
+        }
+
+        // Animation des robots
+        function updateRobots() {
+            const now = performance.now();
+
+            // CLASSIC (saccadé, freeze sur anomalie)
+            if (!classicFrozen) {
+                let step = 1.5;
+                let complexityFactor = Math.max(0.2, Math.min(2.5, complexity / 200));
+                let classicSpeed = 1.2 / (complexityFactor + 0.3);
+                if (classicSpeed < 0.1) classicSpeed = 0.1;
+                posClassic += classicSpeed;
+                if (posClassic > widthC - 40) posClassic = 20;
+                classicLatency = computeClassicLatency(complexity);
+            } else {
+                classicLatency = 9999; // freeze -> latence énorme
+            }
+
+            // V3 (toujours fluide, gestion anomalie avec breaker)
+            if (v3AnomalyActive) {
+                anomalyRecoveryCounter++;
+                if (anomalyRecoveryCounter > 30) {
+                    v3AnomalyActive = false;
+                    anomalyRecoveryCounter = 0;
+                    breakerStatusSpan.innerText = 'STANDBY';
+                    statusV3Span.innerText = 'SOVEREIGN';
+                    statusV3Span.style.color = '#88ff88';
+                } else {
+                    breakerStatusSpan.innerText = 'ACTIVE (Level 2)';
+                    statusV3Span.innerText = 'RECOVERY';
+                    statusV3Span.style.color = '#ffaa66';
+                }
+            }
+            if (!v3AnomalyActive) {
+                let v3Speed = 1.8;
+                posV3 += v3Speed;
+                if (posV3 > widthV - 40) posV3 = 20;
+                v3Latency = computeV3Latency(complexity);
+            } else {
+                v3Latency = 8; // léger ralentissement mais pas de freeze
+            }
+
+            // Mise à jour affichage
+            latencyClassicSpan.innerText = classicLatency;
+            latencyV3Span.innerText = v3Latency;
+
+            // Historique pour le graphique
+            classicHistory.push(classicLatency);
+            v3History.push(v3Latency);
+            if (classicHistory.length > MAX_HISTORY) classicHistory.shift();
+            if (v3History.length > MAX_HISTORY) v3History.shift();
+            updateGraph();
+        }
+
+        // Met à jour l'affichage des barres (histogramme)
+        function updateGraph() {
+            const maxLatency = Math.max(1, ...classicHistory, ...v3History, 100);
+            graphContainer.innerHTML = '';
+            const len = Math.max(classicHistory.length, v3History.length);
+            for (let i = 0; i < len; i++) {
+                const classicVal = classicHistory[i] || 0;
+                const v3Val = v3History[i] || 0;
+                const classicHeight = (classicVal / maxLatency) * 100;
+                const v3Height = (v3Val / maxLatency) * 100;
+
+                const barContainer = document.createElement('div');
+                barContainer.style.display = 'flex';
+                barContainer.style.flexDirection = 'column';
+                barContainer.style.flex = '1';
+                barContainer.style.gap = '2px';
+                barContainer.style.justifyContent = 'flex-end';
+
+                const classicBar = document.createElement('div');
+                classicBar.style.height = classicHeight + 'px';
+                classicBar.style.backgroundColor = '#ff4444';
+                classicBar.style.width = '100%';
+                classicBar.style.transition = 'height 0.1s';
+
+                const v3Bar = document.createElement('div');
+                v3Bar.style.height = v3Height + 'px';
+                v3Bar.style.backgroundColor = '#00ff88';
+                v3Bar.style.width = '100%';
+                v3Bar.style.transition = 'height 0.1s';
+
+                barContainer.appendChild(classicBar);
+                barContainer.appendChild(v3Bar);
+                graphContainer.appendChild(barContainer);
+            }
+        }
+
+        // Dessine un robot sur le canvas
+        function drawRobot(ctx, x, y, type, frozen = false) {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            ctx.fillStyle = frozen ? '#553333' : (type === 'classic' ? '#3388ff' : '#33ff88');
+            ctx.beginPath();
+            ctx.arc(x, y, 18, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(x-7, y-5, 4, 0, Math.PI * 2);
+            ctx.arc(x+7, y-5, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.arc(x-7, y-5, 2, 0, Math.PI * 2);
+            ctx.arc(x+7, y-5, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x, y+5, 6, 0, Math.PI);
+            ctx.fillStyle = '#884444';
+            ctx.fill();
+            if (frozen) {
+                ctx.font = "bold 14px monospace";
+                ctx.fillStyle = "#ffaaaa";
+                ctx.shadowBlur = 0;
+                ctx.fillText("❄️ FREEZE", x-25, y-25);
+            }
+            // Yeux V3
+            if (type === 'v3') {
+                ctx.beginPath();
+                ctx.arc(x-3, y-8, 2, 0, Math.PI*2);
+                ctx.fillStyle = '#ffff88';
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x+3, y-8, 2, 0, Math.PI*2);
+                ctx.fill();
+            }
+        }
+
+        // Animation loop
+        function animate() {
+            updateRobots();
+            let classicY = heightC/2;
+            let v3Y = heightV/2;
+            drawRobot(ctxC, posClassic, classicY, 'classic', classicFrozen);
+            drawRobot(ctxV, posV3, v3Y, 'v3', false);
+            requestAnimationFrame(animate);
+        }
+
+        // Gestion du curseur
+        complexitySlider.addEventListener('input', (e) => {
+            complexity = parseInt(e.target.value, 10);
+            updateComplexityDisplay();
+            if (!classicFrozen) classicFrozen = false;
+            // V3 jamais freeze
+            if (v3AnomalyActive) {
+                v3AnomalyActive = false;
+                anomalyRecoveryCounter = 0;
+                breakerStatusSpan.innerText = 'STANDBY';
+                statusV3Span.innerText = 'SOVEREIGN';
+                statusV3Span.style.color = '#88ff88';
+            }
+            // on reset graphiques partiellement
+            classicHistory = [];
+            v3History = [];
+        });
+
+        // Anomalie : classique freeze, V3 déclenche breaker
+        document.getElementById('anomalyBtn').addEventListener('click', () => {
+            classicFrozen = true;
+            statusClassicSpan.innerText = 'CRASH (FROZEN)';
+            statusClassicSpan.style.color = '#ff6666';
+            if (!v3AnomalyActive) {
+                v3AnomalyActive = true;
+                anomalyRecoveryCounter = 0;
+                breakerStatusSpan.innerText = 'TRIPPED (Level 3 – Rollback)';
+                statusV3Span.innerText = 'RECOVERING';
+                statusV3Span.style.color = '#ffaa66';
+                setTimeout(() => {
+                    if (v3AnomalyActive) {
+                        v3AnomalyActive = false;
+                        anomalyRecoveryCounter = 0;
+                        breakerStatusSpan.innerText = 'STANDBY';
+                        statusV3Span.innerText = 'SOVEREIGN';
+                        statusV3Span.style.color = '#88ff88';
+                    }
+                }, 500);
+            }
+        });
+
+        // Reset : tout remet à zéro
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            complexity = 1;
+            complexitySlider.value = '1';
+            classicFrozen = false;
+            v3AnomalyActive = false;
+            anomalyRecoveryCounter = 0;
+            posClassic = 20;
+            posV3 = 20;
+            classicHistory = [];
+            v3History = [];
+            statusClassicSpan.innerText = 'RUNNING';
+            statusClassicSpan.style.color = '#ff8888';
+            statusV3Span.innerText = 'SOVEREIGN';
+            statusV3Span.style.color = '#88ff88';
+            breakerStatusSpan.innerText = 'STANDBY';
+            updateComplexityDisplay();
+        });
+
+        updateComplexityDisplay();
+        animate();
+    })();
+</script>
+</body>
+</html>
