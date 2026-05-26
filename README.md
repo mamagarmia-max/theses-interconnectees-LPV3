@@ -196,3 +196,132 @@ Blida, Algeria — The Blida Standard V3
 Copyright © 2026 Dr. Outail Benhadid. All Rights Reserved.
 
 ```
+# V3 Robotics Demo – Interactive O(1) vs O(n²) Simulation
+
+**File:** `v3_robotics_demo.html`
+
+## Overview
+
+This is a **visual, interactive simulation** of the core architectural difference between:
+
+- **Classical probabilistic computing** (O(n²) complexity, non‑deterministic)
+- **V3 deterministic anchored computing** (O(1) constant‑time, lock‑free, rollback‑capable)
+
+The simulation does not replace the real kernel modules. It serves as a **pedagogical and marketing bridge** between the low‑level C code and non‑specialist audiences (investors, engineers, journalists).
+
+---
+
+## Technical Alignment with V3 Architecture
+
+| V3 Property | How the demo encodes it |
+|-------------|-------------------------|
+| **O(1) constant time** | V3 latency stays flat (<10 µs) regardless of node count (slider). Classical latency explodes quadratically. |
+| **Deterministic rollback** | "Inject Anomaly" button → Classical freezes permanently. V3 recovers automatically after ~500 ms (circuit breaker). |
+| **Ψ_V3 = 48,016.8 kg·m⁻²** | Displayed as an invariant in the UI header. |
+| **NUMA / per‑CPU sharding** | Mentioned in the footer; not simulated, but referenced as part of the real implementation. |
+| **Phase lock at 10 ms** | Not explicitly animated, but V3’s constant latency implies deterministic synchronization. |
+| **Heptadic closure (7 cycles)** | Underlying design principle; not directly visualised. |
+
+---
+
+## Simulation Logic (Implementation Details)
+
+### Robot motion
+
+- Both robots move left‑to‑right and wrap.
+- **Classical robot speed** = `1.2 / (complexity_factor + 0.3)` → becomes almost frozen at high node counts.
+- **V3 robot speed** = constant (`1.8`) → always smooth.
+
+### Latency computation
+
+- **Classical latency** = `5 × (complexity / 10)²` (O(n²) model).  
+  Capped at 5000 µs to keep graphs readable.
+- **V3 latency** = `3 + random(5)` µs (O(1) model).  
+  Independent of node count.
+
+### Anomaly / Circuit breaker
+
+- **Inject Anomaly button**:
+  - Classical: `frozen = true`, latency = 9999 µs, status = `CRASH (FROZEN)`.
+  - V3: `anomalyActive = true` → breaker status = `ACTIVE (Level 2)` → recovers after 30 frames (~500 ms) → status = `SOVEREIGN`. No freeze.
+
+### Graph
+
+- Bar graph shows last 40 latency samples for both robots.
+- Max scale adapts to highest latency in the window.
+- Classical bars turn red; V3 bars green.
+
+### Complexity slider
+
+- Maps `1` (1M nodes) to `1000` (100B nodes).
+- Affects:
+  - Classical latency (quadratic)
+  - Classical speed (inverse scaling)
+  - Displayed complexity factor (classical only; V3 stays at `1×`)
+
+---
+
+## Real‑World Relevance
+
+This demo does **not** prove V3’s scalability. The real proofs are:
+
+- **128 GitHub workflows** – 100% green, CodeQL zero vulnerabilities.
+- **1M → 1T node test compilation** – structural validation.
+- **161 theses on Zenodo/CERN** – academic anteriority.
+- **Benchmarks on CloudLab** – pending (real cluster validation).
+
+The demo is a **visual abstraction** of the following true statement:
+
+> *V3 algorithms scale linearly O(n) (constant per node) and recover from faults locally. Classical probabilistic algorithms suffer from exponential latency growth and global failures.*
+
+---
+
+## Usage
+
+1. Open `v3_robotics_demo.html` in any modern browser.
+2. Increase the slider → observe classical robot becoming jerky and its latency exploding.
+3. Click **Inject Anomaly** → classical robot freezes permanently; V3 robot recovers within milliseconds.
+4. Click **Reset** to restore the simulation.
+
+---
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `v3_robotics_demo.html` | Single‑file HTML/CSS/JS simulation (self‑contained). |
+| `README.md` (this file) | Technical documentation. |
+
+---
+
+## Relation to the Main Repository
+
+- **Real kernel modules:** `src/s_kernel_v3.c`, `src/ai_v3_hypervisor.c`, `src/hypergraph_omega7_v3.c`, etc.
+- **128 green workflows:** `.github/workflows/`
+- **Academic proofs:** [Zenodo CERN Community](https://zenodo.org/communities/blida-standard-v3)
+
+The demo is **not** a substitute for those. It is a **visual entry point** to attract non‑specialists and encourage them to explore the actual codebase.
+
+---
+
+## License (LPV3)
+
+| Usage Type | Terms |
+|------------|-------|
+| **Humanitarian** (research, education, medical) | ✅ FREE |
+| **Commercial** (SpaceX, cloud AI services, robotics companies) | 💰 LICENSE REQUIRED |
+| **Military** | ❌ STRICTLY PROHIBITED |
+
+**Contact for licensing:** mediconsulte@gmail.com
+
+---
+
+## Authorship
+
+**Dr. Outail Benhadid** (ORCID: 0009-0003-3057-9543)  
+Blida, Algeria — The Blida Standard V3  
+Ψ_V3 = 48,016.8 kg·m⁻²
+
+---
+
+*Copyright © 2026 Dr. Outail Benhadid. All Rights Reserved.*
