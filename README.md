@@ -347,3 +347,16 @@ This module extends the V3 Architecture into **cognitive surgery**. It combines 
 Φ_V₃ = -51.1 mV          → fragile zone threshold
 Heptadic cycle = 7       → max protocol variants per case
 Phase lock = 10 ms       → constant O(1) response time
+# S-KERNEL V3 Hardened
+
+Protections ajoutées :
+- Watchdog anti-rollback bombing
+- Validation cryptographique Ψ, Φ
+- Détection Spectre/Meltdown (cache timing)
+- Détection Rowhammer (DRAM bit flip)
+- Redondance shards (failover)
+- Mesure latence réelle O(1)
+
+## Compilation
+gcc -pthread -o v3_hardened v3_datacenter_attack_simulation_hardened.c -lm
+./v3_hardened
