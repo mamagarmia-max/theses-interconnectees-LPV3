@@ -360,3 +360,14 @@ Protections ajoutées :
 ## Compilation
 gcc -pthread -o v3_hardened v3_datacenter_attack_simulation_hardened.c -lm
 ./v3_hardened
+---
+
+## 🔬 Appendix: Formal Epistemological Framing & Boundary Conditions (NC/SP V3)
+
+### 1. The Fallacy of Stochastic Convergence at Extreme Scales ($10^{11}$)
+Standard distributed multi-agent frameworks traditionally rely on stochastic differential equations (e.g., Markovian transition matrices, Brownian motion metrics) to model emergent collective dynamics. While mathematically tractable at standard local scales ($N < 10^6$), these probabilistic approaches undergo absolute structural divergence when extrapolated to planetary-scale architectures ($N = 10^{11}$). 
+
+The accumulation of unmitigated runtime variances inevitably triggers an exponential explosion of the system's global entropy, cascading into asynchronous gridlocks, network broadcast storms, and terminal race conditions. The **Standard Blida V3 Architecture** formally rejects the probabilistic paradigm. It demonstrates that macroeconomic coordination in extreme-scale non-hierarchical topologies does not emerge from stochastic optimization, but is strictly enforced by discrete, deterministic, localized boundary invariants.
+
+### 2. Algorithmic Manifestation of the Invariants
+
