@@ -1,0 +1,559 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+===========================================================================
+MYRMECOLOGICAL STANDARD MODEL (MS)
+===========================================================================
+
+Stochastic multi-agent ant simulation inspired by classical myrmecology.
+
+IMPORTANT SCIENTIFIC NOTE
+-------------------------
+This simulation models a planetary-scale ecosystem:
+
+    - 10^11 theoretical ants
+    - 100,000 stochastic clusters
+
+A literal instantiation of 100 billion Python objects is physically
+impossible on a conventional machine.
+
+Therefore:
+    - the topology and behaviors remain biologically stochastic,
+    - but only a sampled active subset is materialized in memory.
+
+Unlike the previous deterministic architecture:
+    - this model is intentionally probabilistic,
+    - unstable,
+    - capable of positive feedback collapse,
+    - capable of memory growth,
+    - supervised centrally.
+
+===========================================================================
+
+FEATURES
+===========================================================================
+
+✔ Markovian role transitions
+✔ Brownian/random motion
+✔ Variable topology (2–12 neighbors)
+✔ Pheromone stigmergy
+✔ Poisson queen reproduction
+✔ Centralized environment supervisor
+✔ Spiral-of-death emergence
+✔ Latency monitoring
+✔ MemoryError monitoring
+✔ Saturation tracking
+
+===========================================================================
+
+"""
+
+from __future__ import annotations
+
+import asyncio
+import random
+import time
+import tracemalloc
+import math
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Dict, List, Optional
+
+# ============================================================================
+# GLOBAL PARAMETERS
+# ============================================================================
+
+THEORETICAL_POPULATION = 100_000_000_000
+TOTAL_CLUSTERS = 100_000
+
+# Active sampled population actually instantiated
+ACTIVE_SAMPLE_SIZE = 50_000
+
+MIN_NEIGHBORS = 2
+MAX_NEIGHBORS = 12
+
+INITIAL_PHEROMONE = 1.0
+
+CHAOS_TRIGGER_PROBABILITY = 0.0005
+
+MAX_ENERGY = 100
+MIN_ENERGY = 0
+
+# Poisson reproduction parameter
+QUEEN_LAMBDA = 4.0
+
+# Pheromone diffusion
+PHEROMONE_DECAY = 0.985
+PHEROMONE_DEPOSIT = 0.5
+
+# Runtime
+TICK_INTERVAL = 0.001
+
+# ============================================================================
+# ENUMS
+# ============================================================================
+
+class Role(Enum):
+    WORKER = "worker"
+    FORAGER = "forager"
+    SOLDIER = "soldier"
+
+
+# ============================================================================
+# ANT AGENT
+# ============================================================================
+
+@dataclass
+class AntAgent:
+
+    aid: int
+
+    role: Role
+
+    energy: int
+
+    cluster_id: int
+
+    pheromone_bias: float
+
+    alive: bool = True
+
+    async def stochastic_transition(
+        self,
+        cluster: "ClusterNode"
+    ) -> None:
+
+        if not self.alive:
+            return
+
+        # Markovian role transition
+        p = random.random()
+
+        if p < 0.05:
+            self.role = Role.WORKER
+
+        elif p < 0.10:
+            self.role = Role.FORAGER
+
+        elif p < 0.15:
+            self.role = Role.SOLDIER
+
+        # Random movement influenced by pheromones
+        if cluster.neighbors:
+
+            weighted_neighbors = []
+
+            for n in cluster.neighbors:
+
+                score = (
+                    n.pheromone_level *
+                    random.random()
+                )
+
+                weighted_neighbors.append((score, n))
+
+            weighted_neighbors.sort(
+                key=lambda x: x[0],
+                reverse=True
+            )
+
+            chosen = weighted_neighbors[0][1]
+
+            self.cluster_id = chosen.cid
+
+        # Pheromone deposition
+        cluster.pheromone_level += (
+            PHEROMONE_DEPOSIT *
+            self.pheromone_bias
+        )
+
+        # Energy fluctuations
+        delta = random.randint(-3, 2)
+
+        self.energy += delta
+
+        if self.energy <= MIN_ENERGY:
+            self.alive = False
+
+        if self.energy > MAX_ENERGY:
+            self.energy = MAX_ENERGY
+
+
+# ============================================================================
+# QUEEN
+# ============================================================================
+
+@dataclass
+class QueenAnt:
+
+    qid: int
+
+    cluster_id: int
+
+    fertility_bias: float
+
+    async def spawn(
+        self,
+        cluster: "ClusterNode",
+        global_manager: "GlobalEnvironmentManager"
+    ) -> None:
+
+        births = poisson(QUEEN_LAMBDA)
+
+        for _ in range(births):
+
+            aid = global_manager.allocate_agent_id()
+
+            ant = AntAgent(
+                aid=aid,
+                role=random.choice(list(Role)),
+                energy=random.randint(40, 100),
+                cluster_id=cluster.cid,
+                pheromone_bias=random.random()
+            )
+
+            cluster.agents.append(ant)
+
+            global_manager.total_births += 1
+
+
+# ============================================================================
+# CLUSTER
+# ============================================================================
+
+@dataclass
+class ClusterNode:
+
+    cid: int
+
+    pheromone_level: float = INITIAL_PHEROMONE
+
+    neighbors: List["ClusterNode"] = field(default_factory=list)
+
+    agents: List[AntAgent] = field(default_factory=list)
+
+    queen: Optional[QueenAnt] = None
+
+    spiral_active: bool = False
+
+    async def tick(
+        self,
+        global_manager: "GlobalEnvironmentManager"
+    ) -> None:
+
+        # Pheromone evaporation
+        self.pheromone_level *= PHEROMONE_DECAY
+
+        if self.pheromone_level < 0.001:
+            self.pheromone_level = 0.001
+
+        # Chaos spiral activation
+        if random.random() < CHAOS_TRIGGER_PROBABILITY:
+            self.spiral_active = True
+
+        # Queen reproduction
+        if self.queen:
+            await self.queen.spawn(
+                self,
+                global_manager
+            )
+
+        # Agent dynamics
+        alive_agents = []
+
+        for ant in self.agents:
+
+            await ant.stochastic_transition(self)
+
+            if ant.alive:
+                alive_agents.append(ant)
+            else:
+                global_manager.total_deaths += 1
+
+        self.agents = alive_agents
+
+        # Spiral of death
+        if self.spiral_active:
+
+            self.pheromone_level *= 1.15
+
+            for ant in self.agents:
+
+                ant.pheromone_bias *= 1.02
+
+            if self.pheromone_level > 1_000_000:
+                self.spiral_active = False
+
+
+# ============================================================================
+# GLOBAL MANAGER
+# ============================================================================
+
+class GlobalEnvironmentManager:
+
+    def __init__(self) -> None:
+
+        self.clusters: Dict[int, ClusterNode] = {}
+
+        self.next_agent_id = 0
+
+        self.total_births = 0
+
+        self.total_deaths = 0
+
+        self.total_operations = 0
+
+        self.detected_memory_errors = 0
+
+        self.detected_deadlocks = 0
+
+        self.operation_latency_us = 0.0
+
+    def allocate_agent_id(self) -> int:
+
+        self.next_agent_id += 1
+
+        return self.next_agent_id
+
+    async def monitor(self) -> None:
+
+        while True:
+
+            total_agents = sum(
+                len(c.agents)
+                for c in self.clusters.values()
+            )
+
+            saturated = sum(
+                1
+                for c in self.clusters.values()
+                if c.pheromone_level > 10000
+            )
+
+            print(
+                "\n=============================="
+            )
+
+            print(
+                f"ACTIVE_AGENTS      : {total_agents}"
+            )
+
+            print(
+                f"THEORETICAL_AGENTS : {THEORETICAL_POPULATION}"
+            )
+
+            print(
+                f"BIRTHS             : {self.total_births}"
+            )
+
+            print(
+                f"DEATHS             : {self.total_deaths}"
+            )
+
+            print(
+                f"SATURATED_CLUSTERS : {saturated}"
+            )
+
+            print(
+                f"LATENCY_US         : "
+                f"{self.operation_latency_us:.2f}"
+            )
+
+            print(
+                f"MEMORY_ERRORS      : "
+                f"{self.detected_memory_errors}"
+            )
+
+            print(
+                f"DEADLOCK_ALERTS    : "
+                f"{self.detected_deadlocks}"
+            )
+
+            current, peak = tracemalloc.get_traced_memory()
+
+            print(
+                f"MEMORY_MB          : "
+                f"{current / (1024*1024):.2f}"
+            )
+
+            print(
+                f"PEAK_MEMORY_MB     : "
+                f"{peak / (1024*1024):.2f}"
+            )
+
+            print(
+                "=============================="
+            )
+
+            await asyncio.sleep(2.0)
+
+
+# ============================================================================
+# POISSON DISTRIBUTION
+# ============================================================================
+
+def poisson(lmbda: float) -> int:
+
+    L = math.exp(-lmbda)
+
+    k = 0
+
+    p = 1.0
+
+    while p > L:
+
+        k += 1
+
+        p *= random.random()
+
+    return k - 1
+
+
+# ============================================================================
+# TOPOLOGY GENERATION
+# ============================================================================
+
+def build_topology(
+    manager: GlobalEnvironmentManager
+) -> None:
+
+    for cid in range(TOTAL_CLUSTERS):
+
+        cluster = ClusterNode(cid=cid)
+
+        cluster.queen = QueenAnt(
+            qid=cid,
+            cluster_id=cid,
+            fertility_bias=random.random()
+        )
+
+        manager.clusters[cid] = cluster
+
+    all_clusters = list(manager.clusters.values())
+
+    # Random irregular topology
+    for cluster in all_clusters:
+
+        degree = random.randint(
+            MIN_NEIGHBORS,
+            MAX_NEIGHBORS
+        )
+
+        cluster.neighbors = random.sample(
+            all_clusters,
+            degree
+        )
+
+    # Initial sampled population
+    for _ in range(ACTIVE_SAMPLE_SIZE):
+
+        cid = random.randint(
+            0,
+            TOTAL_CLUSTERS - 1
+        )
+
+        ant = AntAgent(
+            aid=manager.allocate_agent_id(),
+            role=random.choice(list(Role)),
+            energy=random.randint(30, 100),
+            cluster_id=cid,
+            pheromone_bias=random.random()
+        )
+
+        manager.clusters[cid].agents.append(ant)
+
+
+# ============================================================================
+# CLUSTER RUNTIME
+# ============================================================================
+
+async def cluster_runtime(
+    cluster: ClusterNode,
+    manager: GlobalEnvironmentManager
+) -> None:
+
+    while True:
+
+        start = time.perf_counter_ns()
+
+        try:
+
+            await cluster.tick(manager)
+
+        except MemoryError:
+
+            manager.detected_memory_errors += 1
+
+        except Exception:
+
+            manager.detected_deadlocks += 1
+
+        elapsed = time.perf_counter_ns() - start
+
+        manager.operation_latency_us = (
+            elapsed / 1000.0
+        )
+
+        manager.total_operations += 1
+
+        await asyncio.sleep(TICK_INTERVAL)
+
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+async def main() -> None:
+
+    tracemalloc.start()
+
+    manager = GlobalEnvironmentManager()
+
+    print("Building stochastic topology...")
+
+    build_topology(manager)
+
+    print(
+        f"Clusters created: {TOTAL_CLUSTERS}"
+    )
+
+    tasks = []
+
+    # Active sampled clusters
+    sampled_clusters = random.sample(
+        list(manager.clusters.values()),
+        2048
+    )
+
+    for cluster in sampled_clusters:
+
+        tasks.append(
+            asyncio.create_task(
+                cluster_runtime(cluster, manager)
+            )
+        )
+
+    tasks.append(
+        asyncio.create_task(
+            manager.monitor()
+        )
+    )
+
+    await asyncio.gather(*tasks)
+
+
+# ============================================================================
+# ENTRY
+# ============================================================================
+
+if __name__ == "__main__":
+
+    try:
+
+        asyncio.run(main())
+
+    except KeyboardInterrupt:
+
+        print("\nSimulation interrupted.")
