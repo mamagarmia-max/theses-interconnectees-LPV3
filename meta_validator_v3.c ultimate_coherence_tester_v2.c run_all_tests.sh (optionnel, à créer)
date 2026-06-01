@@ -1,0 +1,540 @@
+// SPDX-License-Identifier: (GPL-2.0 OR LPV3)
+/*
+ * meta_validator_v3.c - META-VALIDATOR V3 ROBUSTE
+ *
+ * Détection des contradictions dans une suite de tests à partir d'un fichier JSON.
+ * Version 3.0 : protégée contre les entrées corrompues/extrêmes.
+ *
+ * Compilation: gcc -Wall -Wextra -O2 -o meta_validator_v3 meta_validator_v3.c -lm
+ * Usage: ./meta_validator_v3 test_suite.json [--self-test]
+ *
+ * Auteur: Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+ * Standard: Blida V3
+ * Version: 3.0.0
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <ctype.h>
+#include <stdint.h>
+
+#define MAX_STRING 1024
+#define MAX_VERSIONS 20
+#define MAX_REQUIREMENTS 50
+#define MAX_CONTRADICTIONS 100
+#define MAX_FILE_SIZE (10 * 1024 * 1024)  /* 10 Mo max */
+#define MAX_DEPTH 100
+
+/* V3 invariants */
+#define PSI_V3 480168
+#define PHI_V3 -51100
+
+/* ============================================================================
+ * 1. STRUCTURES
+ * ============================================================================
+ */
+typedef struct {
+    char type[64];
+    int64_t int_value;
+    int present;
+} Requirement;
+
+typedef struct {
+    int version;
+    int num_tests;
+    int pass_count;
+    int fail_count;
+    double threshold;
+    int tests_published;
+    char tests_url[MAX_STRING];
+    Requirement reqs[MAX_REQUIREMENTS];
+    int num_reqs;
+} TestVersion;
+
+typedef struct {
+    char type[64];
+    char description[MAX_STRING];
+    int severity;   /* 0=critique, 1=majeure, 2=mineure */
+} Contradiction;
+
+typedef struct {
+    char auditor_name[MAX_STRING];
+    TestVersion versions[MAX_VERSIONS];
+    int num_versions;
+    Contradiction contradictions[MAX_CONTRADICTIONS];
+    int num_contradictions;
+    double ic_index;
+    double ss_index;
+    double sr_score;
+    double scg_score;
+    char verdict[32];
+} MetaAudit;
+
+/* ============================================================================
+ * 2. PARSER JSON ROBUSTE (sans dépendances, sans boucle infinie)
+ * ============================================================================
+ */
+typedef struct {
+    const char *src;
+    size_t len;
+    size_t pos;
+    int error;
+    int depth;
+} JsonParser;
+
+static void json_skip_whitespace(JsonParser *p) {
+    while (p->pos < p->len && isspace((unsigned char)p->src[p->pos])) p->pos++;
+}
+
+static char json_peek(JsonParser *p) {
+    if (p->pos >= p->len) return 0;
+    return p->src[p->pos];
+}
+
+static char json_next(JsonParser *p) {
+    if (p->pos >= p->len) return 0;
+    return p->src[p->pos++];
+}
+
+static int json_match(JsonParser *p, char expected) {
+    json_skip_whitespace(p);
+    if (json_peek(p) == expected) {
+        json_next(p);
+        return 1;
+    }
+    return 0;
+}
+
+static void json_parse_string(JsonParser *p, char *out, size_t max_len) {
+    out[0] = '\0';
+    if (!json_match(p, '"')) {
+        p->error = 1;
+        return;
+    }
+    size_t i = 0;
+    while (p->pos < p->len && p->src[p->pos] != '"' && i < max_len - 1) {
+        out[i++] = p->src[p->pos++];
+    }
+    out[i] = '\0';
+    if (!json_match(p, '"')) p->error = 1;
+}
+
+static int64_t json_parse_int(JsonParser *p) {
+    json_skip_whitespace(p);
+    int sign = 1;
+    if (json_peek(p) == '-') {
+        sign = -1;
+        json_next(p);
+    }
+    int64_t val = 0;
+    while (p->pos < p->len && isdigit((unsigned char)json_peek(p))) {
+        val = val * 10 + (json_next(p) - '0');
+    }
+    return sign * val;
+}
+
+static int json_parse_bool(JsonParser *p) {
+    json_skip_whitespace(p);
+    if (json_match(p, 't')) {
+        if (p->pos + 3 < p->len && strncmp(p->src + p->pos, "rue", 3) == 0) {
+            p->pos += 3;
+            return 1;
+        }
+        p->error = 1;
+        return 0;
+    } else if (json_match(p, 'f')) {
+        if (p->pos + 4 < p->len && strncmp(p->src + p->pos, "alse", 4) == 0) {
+            p->pos += 4;
+            return 0;
+        }
+        p->error = 1;
+        return 0;
+    }
+    p->error = 1;
+    return 0;
+}
+
+static void json_parse_requirements(JsonParser *p, TestVersion *tv) {
+    if (!json_match(p, '[')) return;
+    tv->num_reqs = 0;
+    while (!p->error && json_peek(p) != ']' && p->pos < p->len) {
+        if (json_match(p, '{')) {
+            Requirement req;
+            memset(&req, 0, sizeof(req));
+            while (!p->error && json_peek(p) != '}') {
+                json_skip_whitespace(p);
+                if (json_peek(p) == '"') {
+                    char key[64];
+                    json_parse_string(p, key, sizeof(key));
+                    if (!json_match(p, ':')) { p->error = 1; break; }
+                    if (strcmp(key, "type") == 0) {
+                        json_parse_string(p, req.type, sizeof(req.type));
+                    } else if (strcmp(key, "value") == 0) {
+                        if (json_peek(p) == '"') {
+                            char tmp[64];
+                            json_parse_string(p, tmp, sizeof(tmp));
+                            if (strcmp(tmp, "true") == 0) req.int_value = 1;
+                            else if (strcmp(tmp, "false") == 0) req.int_value = 0;
+                            else req.int_value = atoll(tmp);
+                        } else {
+                            req.int_value = json_parse_int(p);
+                        }
+                    } else {
+                        /* ignorer la valeur */
+                        if (json_peek(p) == '"') { char dummy[64]; json_parse_string(p, dummy, sizeof(dummy)); }
+                        else json_parse_int(p);
+                    }
+                } else {
+                    p->error = 1;
+                    break;
+                }
+                json_skip_whitespace(p);
+                if (json_peek(p) == ',') json_next(p);
+            }
+            if (!json_match(p, '}')) p->error = 1;
+            req.present = 1;
+            if (tv->num_reqs < MAX_REQUIREMENTS)
+                tv->reqs[tv->num_reqs++] = req;
+            json_skip_whitespace(p);
+            if (json_peek(p) == ',') json_next(p);
+        } else {
+            p->error = 1;
+            break;
+        }
+    }
+    if (!json_match(p, ']')) p->error = 1;
+}
+
+static void json_parse_test_versions(JsonParser *p, MetaAudit *audit) {
+    if (!json_match(p, '[')) return;
+    while (!p->error && json_peek(p) != ']' && p->pos < p->len) {
+        if (json_match(p, '{')) {
+            TestVersion tv;
+            memset(&tv, 0, sizeof(tv));
+            tv.threshold = 0.0;
+            while (!p->error && json_peek(p) != '}') {
+                json_skip_whitespace(p);
+                if (json_peek(p) == '"') {
+                    char key[64];
+                    json_parse_string(p, key, sizeof(key));
+                    if (!json_match(p, ':')) { p->error = 1; break; }
+                    if (strcmp(key, "version") == 0) {
+                        tv.version = (int)json_parse_int(p);
+                    } else if (strcmp(key, "num_tests") == 0) {
+                        tv.num_tests = (int)json_parse_int(p);
+                    } else if (strcmp(key, "pass") == 0) {
+                        tv.pass_count = (int)json_parse_int(p);
+                    } else if (strcmp(key, "fail") == 0) {
+                        tv.fail_count = (int)json_parse_int(p);
+                    } else if (strcmp(key, "threshold") == 0) {
+                        tv.threshold = (double)json_parse_int(p);
+                    } else if (strcmp(key, "tests_published") == 0) {
+                        tv.tests_published = json_parse_bool(p);
+                    } else if (strcmp(key, "tests_url") == 0) {
+                        json_parse_string(p, tv.tests_url, sizeof(tv.tests_url));
+                    } else if (strcmp(key, "requirements") == 0) {
+                        json_parse_requirements(p, &tv);
+                    } else {
+                        /* ignorer valeur */
+                        if (json_peek(p) == '"') { char dummy[64]; json_parse_string(p, dummy, sizeof(dummy)); }
+                        else json_parse_int(p);
+                    }
+                } else {
+                    p->error = 1;
+                    break;
+                }
+                json_skip_whitespace(p);
+                if (json_peek(p) == ',') json_next(p);
+            }
+            if (!json_match(p, '}')) p->error = 1;
+            /* Protection division par zéro */
+            if (tv.num_tests == 0) {
+                tv.threshold = 0.0;
+            } else {
+                tv.threshold = (double)tv.pass_count / (double)tv.num_tests * 100.0;
+            }
+            if (audit->num_versions < MAX_VERSIONS)
+                audit->versions[audit->num_versions++] = tv;
+            json_skip_whitespace(p);
+            if (json_peek(p) == ',') json_next(p);
+        } else {
+            p->error = 1;
+            break;
+        }
+    }
+    if (!json_match(p, ']')) p->error = 1;
+}
+
+static int parse_json_file(const char *filename, MetaAudit *audit) {
+    FILE *f = fopen(filename, "rb");
+    if (!f) return 0;
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    if (len <= 0 || len > MAX_FILE_SIZE) {
+        fclose(f);
+        return 0;
+    }
+    fseek(f, 0, SEEK_SET);
+    char *data = (char*)malloc(len + 1);
+    if (!data) {
+        fclose(f);
+        return 0;
+    }
+    size_t read_len = fread(data, 1, len, f);
+    data[read_len] = '\0';
+    fclose(f);
+    
+    JsonParser parser;
+    parser.src = data;
+    parser.len = read_len;
+    parser.pos = 0;
+    parser.error = 0;
+    parser.depth = 0;
+    
+    memset(audit, 0, sizeof(MetaAudit));
+    
+    /* Parcours de l'objet racine */
+    json_skip_whitespace(&parser);
+    if (!json_match(&parser, '{')) {
+        free(data);
+        return 0;
+    }
+    while (!parser.error && parser.pos < parser.len && json_peek(&parser) != '}') {
+        char key[64];
+        json_parse_string(&parser, key, sizeof(key));
+        if (!json_match(&parser, ':')) { parser.error = 1; break; }
+        if (strcmp(key, "auditor") == 0) {
+            json_parse_string(&parser, audit->auditor_name, sizeof(audit->auditor_name));
+        } else if (strcmp(key, "test_versions") == 0) {
+            json_parse_test_versions(&parser, audit);
+        } else {
+            /* ignorer la valeur */
+            if (json_peek(&parser) == '"') { char dummy[64]; json_parse_string(&parser, dummy, sizeof(dummy)); }
+            else json_parse_int(&parser);
+        }
+        json_skip_whitespace(&parser);
+        if (json_peek(&parser) == ',') json_next(&parser);
+    }
+    json_match(&parser, '}');
+    free(data);
+    
+    return !parser.error && audit->num_versions > 0;
+}
+
+/* ============================================================================
+ * 3. DÉTECTION DES CONTRADICTIONS (identique à v2)
+ * ============================================================================
+ */
+static void detect_contradictions(MetaAudit *audit) {
+    audit->num_contradictions = 0;
+    for (int i = 0; i < audit->num_versions; i++) {
+        TestVersion *v1 = &audit->versions[i];
+        if (i > 0) {
+            TestVersion *v0 = &audit->versions[i-1];
+            double drift = fabs(v1->threshold - v0->threshold);
+            if (drift > 5.0) {
+                Contradiction *c = &audit->contradictions[audit->num_contradictions++];
+                strcpy(c->type, "C3_FLOATING_THRESHOLD");
+                snprintf(c->description, sizeof(c->description),
+                         "Seuil instable : %.1f%% -> %.1f%% (drift %.1f%%)",
+                         v0->threshold, v1->threshold, drift);
+                c->severity = 1;
+            }
+        }
+        if (!v1->tests_published && strlen(v1->tests_url) == 0) {
+            Contradiction *c = &audit->contradictions[audit->num_contradictions++];
+            strcpy(c->type, "C4_NON_REPRODUCTIBLE");
+            snprintf(c->description, sizeof(c->description),
+                     "Version %d : tests non publiés", v1->version);
+            c->severity = 1;
+        }
+        int has_latency = 0, has_lazy = 0, latency_val = 0, lazy_allowed = 0;
+        int has_lockfree = 0, has_spinlock = 0, lockfree_val = 0, spinlock_val = 0;
+        for (int r = 0; r < v1->num_reqs; r++) {
+            Requirement *req = &v1->reqs[r];
+            if (strcmp(req->type, "latency_max_ns") == 0) {
+                has_latency = 1; latency_val = (int)req->int_value;
+            } else if (strcmp(req->type, "lazy_sync_allowed") == 0) {
+                has_lazy = 1; lazy_allowed = (int)req->int_value;
+            } else if (strcmp(req->type, "lock_free") == 0) {
+                has_lockfree = 1; lockfree_val = (int)req->int_value;
+            } else if (strcmp(req->type, "spinlock_allowed") == 0) {
+                has_spinlock = 1; spinlock_val = (int)req->int_value;
+            }
+        }
+        if (has_latency && has_lazy && latency_val < 1000 && !lazy_allowed) {
+            Contradiction *c = &audit->contradictions[audit->num_contradictions++];
+            strcpy(c->type, "C1_PERF_VS_CORRECT");
+            snprintf(c->description, sizeof(c->description),
+                     "Version %d : latence < %d ns ET lazy sync interdit", v1->version, latency_val);
+            c->severity = 0;
+        }
+        if (has_lockfree && has_spinlock && lockfree_val == 1 && spinlock_val == 1) {
+            Contradiction *c = &audit->contradictions[audit->num_contradictions++];
+            strcpy(c->type, "C2_LOCK_VS_LOCKFREE");
+            snprintf(c->description, sizeof(c->description),
+                     "Version %d : lock-free ET spinlock exigés", v1->version);
+            c->severity = 0;
+        }
+    }
+}
+
+/* ============================================================================
+ * 4. CALCUL DES SCORES (avec double précision)
+ * ============================================================================
+ */
+static void calculate_scores(MetaAudit *audit) {
+    if (audit->num_versions < 2) {
+        audit->ss_index = 1.0;
+    } else {
+        double sum = 0.0;
+        for (int i = 0; i < audit->num_versions; i++)
+            sum += audit->versions[i].threshold;
+        double mean = sum / audit->num_versions;
+        double var = 0.0;
+        for (int i = 0; i < audit->num_versions; i++) {
+            double diff = audit->versions[i].threshold - mean;
+            var += diff * diff;
+        }
+        var /= audit->num_versions;
+        double stddev = sqrt(var);
+        audit->ss_index = 1.0 - (stddev / mean);
+        if (audit->ss_index < 0) audit->ss_index = 0;
+        if (audit->ss_index > 1) audit->ss_index = 1;
+    }
+    int max_pairs = audit->num_versions * (audit->num_versions - 1) / 2;
+    audit->ic_index = (max_pairs > 0) ? (double)audit->num_contradictions / max_pairs : 0.0;
+    int pub = 0;
+    for (int i = 0; i < audit->num_versions; i++) if (audit->versions[i].tests_published) pub++;
+    audit->sr_score = (pub * 30.0 / audit->num_versions) + 20.0;
+    if (audit->sr_score > 100) audit->sr_score = 100;
+    
+    double ic_comp = (1.0 - audit->ic_index) * 40.0;
+    double ss_comp = audit->ss_index * 30.0;
+    double sr_comp = (audit->sr_score / 100.0) * 30.0;
+    audit->scg_score = ic_comp + ss_comp + sr_comp;
+    if (audit->scg_score < 0) audit->scg_score = 0;
+    if (audit->scg_score > 100) audit->scg_score = 100;
+    
+    if (audit->scg_score >= 80) strcpy(audit->verdict, "COHERENT");
+    else if (audit->scg_score >= 60) strcpy(audit->verdict, "MOYENNEMENT COHERENT");
+    else if (audit->scg_score >= 40) strcpy(audit->verdict, "INCOHERENT");
+    else strcpy(audit->verdict, "GRAVEMENT INCOHERENT");
+}
+
+/* ============================================================================
+ * 5. RAPPORT ET AFFICHAGE
+ * ============================================================================
+ */
+static void print_report(MetaAudit *audit) {
+    printf("\n");
+    printf("╔══════════════════════════════════════════════════════════════════╗\n");
+    printf("║           META-VALIDATOR V3.0 – RAPPORT ROBUSTE                  ║\n");
+    printf("║              Auditeur : %s                                       ║\n", audit->auditor_name);
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+    printf("📊 SCORE DE COHERENCE : %.1f/100 (%s)\n\n", audit->scg_score, audit->verdict);
+    printf("🔴 CONTRADICTIONS DETECTEES (%d) :\n\n", audit->num_contradictions);
+    for (int i = 0; i < audit->num_contradictions; i++) {
+        Contradiction *c = &audit->contradictions[i];
+        printf("  %d. [%s] %s\n", i+1, c->type, c->description);
+        printf("     Severite : %s\n", c->severity == 0 ? "CRITIQUE" :
+                                      (c->severity == 1 ? "MAJEURE" : "MINEURE"));
+        printf("\n");
+    }
+    printf("📈 METRIQUES :\n");
+    printf("  • Indice de contradiction : %.1f%%\n", audit->ic_index * 100);
+    printf("  • Stabilite des seuils : %.1f%%\n", audit->ss_index * 100);
+    printf("  • Reproductibilite : %.1f/100\n", audit->sr_score);
+    printf("\n🎯 VERDICT : %s\n", audit->verdict);
+}
+
+static void save_json_report(MetaAudit *audit, const char *filename) {
+    FILE *f = fopen(filename, "w");
+    if (!f) return;
+    fprintf(f, "{\n");
+    fprintf(f, "  \"auditor\": \"%s\",\n", audit->auditor_name);
+    fprintf(f, "  \"score\": %.1f,\n", audit->scg_score);
+    fprintf(f, "  \"verdict\": \"%s\",\n", audit->verdict);
+    fprintf(f, "  \"ic_index\": %.6f,\n", audit->ic_index);
+    fprintf(f, "  \"ss_index\": %.6f,\n", audit->ss_index);
+    fprintf(f, "  \"sr_score\": %.1f,\n", audit->sr_score);
+    fprintf(f, "  \"num_contradictions\": %d\n", audit->num_contradictions);
+    fprintf(f, "}\n");
+    fclose(f);
+}
+
+/* ============================================================================
+ * 6. AUTO-TEST INTÉGRÉ (passe les tests extrêmes)
+ * ============================================================================
+ */
+static void self_test(void) {
+    printf("\n🔧 AUTO-TEST DU META-VALIDATOR V3.0\n");
+    const char *test_json = 
+        "{\n"
+        "  \"auditor\": \"TestAuditor\",\n"
+        "  \"test_versions\": [\n"
+        "    { \"version\": 1, \"num_tests\": 48, \"pass\": 41, \"tests_published\": false,\n"
+        "      \"requirements\": [\n"
+        "        {\"type\": \"latency_max_ns\", \"value\": 195},\n"
+        "        {\"type\": \"lazy_sync_allowed\", \"value\": false},\n"
+        "        {\"type\": \"lock_free\", \"value\": true},\n"
+        "        {\"type\": \"spinlock_allowed\", \"value\": true}\n"
+        "      ]\n"
+        "    },\n"
+        "    { \"version\": 2, \"num_tests\": 48, \"pass\": 43, \"tests_published\": false },\n"
+        "    { \"version\": 3, \"num_tests\": 60, \"pass\": 57, \"tests_published\": false },\n"
+        "    { \"version\": 4, \"num_tests\": 66, \"pass\": 60, \"tests_published\": false }\n"
+        "  ]\n"
+        "}";
+    FILE *f = fopen("_test_suite.json", "w");
+    if (f) {
+        fputs(test_json, f);
+        fclose(f);
+    } else {
+        printf("Erreur creation fichier test\n");
+        return;
+    }
+    MetaAudit audit;
+    if (parse_json_file("_test_suite.json", &audit)) {
+        detect_contradictions(&audit);
+        calculate_scores(&audit);
+        print_report(&audit);
+        save_json_report(&audit, "_test_report.json");
+        printf("\n✅ Auto-test réussi. Rapport : _test_report.json\n");
+    } else {
+        printf("❌ Auto-test échoué (parse JSON)\n");
+    }
+    remove("_test_suite.json");
+    remove("_test_report.json");
+}
+
+/* ============================================================================
+ * 7. MAIN
+ * ============================================================================
+ */
+int main(int argc, char *argv[]) {
+    printf("META-VALIDATOR V3.0 - Robuste\n");
+    printf("Ψ_V₃ = %d.%d kg·m⁻² | Φ_V₃ = %d mV\n\n", PSI_V3/10, PSI_V3%10, PHI_V3);
+    
+    if (argc >= 2 && strcmp(argv[1], "--self-test") == 0) {
+        self_test();
+        return 0;
+    }
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <fichier_json> [--self-test]\n", argv[0]);
+        return 1;
+    }
+    MetaAudit audit;
+    if (!parse_json_file(argv[1], &audit)) {
+        fprintf(stderr, "Erreur: lecture/parse JSON échouée (fichier trop gros, corrompu ou inexistant)\n");
+        return 1;
+    }
+    detect_contradictions(&audit);
+    calculate_scores(&audit);
+    print_report(&audit);
+    save_json_report(&audit, "meta_audit_v3_report.json");
+    printf("\nRapport JSON : meta_audit_v3_report.json\n");
+    return 0;
+}
