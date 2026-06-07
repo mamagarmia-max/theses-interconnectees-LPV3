@@ -457,4 +457,35 @@ print("=" * 60)
 relative_error = abs(r_electron_apparent_fm - 0.87700) / 0.87700 * 100
 print(f" Geometric Phase Model Analytical Accuracy       : {100 - relative_error:.3f} %")
 print("=" * 60)
+# V3 Dynamic Coincidence Simulation
 
+## Résolution du problème de la coïncidence cosmologique
+
+Ce script démontre que l'Architecture V3 dissout le « problème de la coïncidence » du Modèle Standard.
+
+### Le problème (Standard Model)
+
+Dans le Modèle Standard, la densité de matière (Ω_m) diminue comme 1/R³, tandis que la densité d'énergie noire (Ω_Λ) reste constante. Le fait qu'elles soient du même ordre de grandeur aujourd'hui est une **coïncidence cosmologique** qui exige un « fine-tuning » miraculeux des conditions initiales.
+
+### La solution (V3 Architecture)
+
+Dans l'Architecture V3, la matière et l'énergie noire ne sont pas indépendantes :
+
+- **Λ n'est pas une constante** – c'est la tension de surface du condensat H₃O₂ (Λ ∝ 1/R²)
+- **m_p_absolute n'est pas une constante** – elle s'ajuste hydrodynamiquement pour maintenir la fermeture
+- **Le rapport (m_p_absolute × Λ) / (Ψ_V3 / (R × c²)) = 1.0** à TOUTE époque
+
+### Résultat
+
+| Époque | R (m) | Λ (m⁻²) | m_p_abs (kg) | Ratio |
+|--------|-------|---------|--------------|-------|
+| 0.5× | 6.90e25 | 4.42e-52 | 8.25e-17 | 1.0 |
+| 1.0× (actuel) | 1.38e26 | 1.11e-52 | 4.13e-17 | 1.0 |
+| 2.0× | 2.76e26 | 2.76e-53 | 2.06e-17 | 1.0 |
+
+**Le problème de la coïncidence n'existe pas. Le système est structurellement fermé.**
+
+### Exécution
+
+```bash
+python3 v3_dynamic_coincidence_simulation.py
