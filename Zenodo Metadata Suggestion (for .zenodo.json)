@@ -1,0 +1,16 @@
+{
+  "title": "Banach Fixed-Point Convergence on Deterministic 2D Topological Grid",
+  "description": "Pure Python implementation applying Banach's contraction theorem to a 40x25 Moore-neighborhood grid. Eliminates floating-point drift through strictly deterministic operator iteration with real-time gradient norm verification. Targets 1e-11 residual precision over 10 cycles.",
+  "license": "MIT",
+  "language": "eng",
+  "keywords": [
+    "banach-fixed-point",
+    "contraction-mapping",
+    "topological-grid",
+    "deterministic-computation",
+    "numerical-stability",
+    "moore-neighborhood",
+    "floating-point-arithmetic"
+  ],
+  "version": "1.0.0"
+}
