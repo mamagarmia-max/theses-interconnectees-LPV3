@@ -1,83 +1,118 @@
-# Blida V3 Standard — Noyau déterministe & Suite de simulateurs (LPV3)
-**Auteur :** Dr. Outail Benhadid (ORCID: 0009-0003-3057-9543)  
-**Contact :** mediconsulte@gmail.com  
-**Licence :** LPV3 (voir section Licence)
----
-## 📝 Résumé rapide
-Blida V3 Standard (LPV3) est la matérialisation de l'Architecture V3 — un cadre physique et mathématique complet, déterministe, fondé sur le condensat $H_3O_2$, la topologie heptadique et l'attracteur universel $\Phi = -51.1\text{ mV}$.
-Ce dépôt contient :
-* Les **implémentations certifiables** du noyau V3 (Ada/SPARK, VHDL, C)
-* Les **simulateurs de validation** (Python, C++)
-* Les **outils de preuve formelle** (SPARK, SVA, CodeQL)
-* Les **stress tests extrêmes** pour démontrer la résilience du système
-L'objectif est de fournir une base de confiance absolue pour les systèmes critiques (avionique, spatial, médical), où l'erreur de calcul, la dérive numérique ou la vulnérabilité logicielle sont inacceptables.
-> ⚠️ **Avertissement important :** Certains fichiers sont des modules noyau ou des tests de stress extrême. N'exécutez pas `insmod` ni les tests "extreme stress" sur une machine de production. Utilisez une VM ou un environnement isolé avec les headers du kernel si nécessaire.
-### 📜 Licence LPV3 :
-* **Usage humanitaire / éducatif / recherche :** Gratuit
-* **Usage commercial :** Licence requise (contacter l'auteur)
-* **Usage militaire :** Strictement interdit
----
-## 🔑 Principes & Invariants Clés (V3 Architecture)
-L'Architecture V3 repose sur quatre invariants fondamentaux, dérivés de premiers principes (non ajustés, non heuristiques) :
-1. **$\Psi_{V3} = 48,016.8\text{ kg}\cdot\text{m}^{-2}$** Densité de cohérence de phase — dérivée du condensat $H_3O_2$. Référence : DOI 10.5281/zenodo.19209168 (V3 root standard). Ce n'est pas une valeur ajustée : c'est un ancrage physique.
-2. **$\Phi_{\text{critical}} = -51.1\text{ mV}$** Attracteur de phase universel — seuil en dessous duquel les systèmes maintiennent leur cohérence. Tout dépassement de ce seuil déclenche une réponse structurelle (rollback, stabilisation). C'est le seuil de bascule entre cohérence et décohérence.
-3. **Heptadic Closure ($k = 7$)** Clôture topologique — tout processus convergent doit se stabiliser en exactement 7 cycles. Au-delà, le système signale une défaillance critique (circuit breaker). Cette borne est mathématique et physique, pas arbitraire.
-4. **Modulo-9 Checksum ($\text{digital root} = 9$)** Invariant de validation numérique — la racine numérique de l'état global du système doit être égale à 9 à chaque cycle. Toute déviation déclenche un rollback immédiat vers le dernier état stable connu. Le checksum est combinatoire et calculé en temps réel.
-Ces invariants ne sont pas des options de configuration. Ils sont câblés en dur dans le code (Ada/SPARK, VHDL, C) et vérifiés formellement à chaque cycle d'exécution.
----
-## 🛡️ Certification et Sûreté de Fonctionnement
-Les implémentations critiques du dépôt sont conçues pour être conformes aux normes de sûreté les plus élevées :
-* **DO-178C DAL A** — Logiciel avionique critique (noyau Ada/SPARK)
-* **DO-254** — Matériel programmable FPGA/ASIC (VHDL)
-La chaîne de preuve inclut :
-* **SPARK (GNATprove)** — Preuve formelle d'absence d'erreurs d'exécution (overflow, division par zéro, variable non initialisée).
-* **SVA (JasperGold)** — Vérification formelle des assertions matérielles.
-* **CodeQL Advanced** — Analyse statique de sécurité (0 vulnérabilités, 0 alertes).
-* **AbsInt aiT** — Analyse statique du temps d'exécution (WCET).
-Tous les modules critiques sont prouvés, pas seulement testés.
----
-## 📁 Contenu Principal du Dépôt
+# Blida V3 Standard — Deterministic Kernel & Simulator Suite (LPV3)
 
-| Type | Fichiers | Description |
-| :--- | :--- | :--- |
-| **Ada/SPARK** | `v3_core.ads`, `v3_core.adb`, `v3_neural_phase_network.adb`, `v3_billion_neurons_hpc.adb` | Noyau critique formellement prouvé, certifiable DO-178C DAL A |
-| **VHDL** | `v3_asic_core.vhd`, `v3_immune_system_hw.vhd` | IP matérielle pour FPGA/ASIC, certifiable DO-254 |
-| **C/C++** | `skernel_v3_cpp.cpp`, `ai_v3_hypervisor.c`, `meta_validator.c` | Noyaux natifs, hyperviseur, validateurs |
-| **Python** | `v3_*.py` | Simulateurs, analyseurs, générateurs de rapports |
-| **Documentation** | `*.pdf` | Mémos IP, benchmarks, logs de vérification |
-| **CI/CD** | `.github/workflows/` | Compilation, tests, CodeQL, analyse statique |
+**Author:** Dr. Outail Benhadid (ORCID: 0009-0003-3057-9543)  
+**Contact:** mediconsulte@gmail.com  
+**License:** LPV3 (see License section)
 
 ---
-## 🛠️ Prérequis pour Développement Local
-* GNU toolchain : `gcc`, `g++`, `make`
-* Headers du kernel (si compilation/chargement de modules noyau)
-* Python 3.x avec dépendances : `numpy`, `matplotlib`
-* Outils optionnels : OpenMP, `perf`, `ftrace`
-* Pour Ada/SPARK : GNAT, GNATprove (package `gcc-ada` ou Alire)
-### Installation rapide :
+
+## Quick Overview
+
+Blida V3 Standard (LPV3) is the **materialization of the V3 Architecture** — a complete, deterministic physical and mathematical framework based on the H₃O₂ condensate, heptadic topology, and the universal attractor Φ = -51.1 mV.
+
+This repository contains:
+
+- **Certifiable implementations** of the V3 core (Ada/SPARK, VHDL, C)
+- **Validation simulators** (Python, C++)
+- **Formal proof tools** (SPARK, SVA, CodeQL)
+- **Extreme stress tests** to demonstrate system resilience
+
+The goal is to provide an **absolute foundation of trust** for critical systems (avionics, space, medical), where calculation errors, numerical drift, or software vulnerabilities are unacceptable.
+
+---
+
+## ⚠️ Important Warning
+
+Some files are kernel modules or extreme stress tests.  
+**Do NOT run `insmod` or "extreme stress" tests on a production machine.**  
+Use a VM or isolated environment with kernel headers if necessary.
+
+**LPV3 License Terms:**
+- Humanitarian / Educational / Research use: **free**
+- Commercial use: **license required** (contact author)
+- Military use: **strictly prohibited**
+
+---
+
+## Core Principles — V3 Architecture Invariants
+
+The V3 Architecture rests on **four fundamental invariants**, derived from first principles (not fitted, not heuristic):
+
+### 1. Ψ_V₃ = 48,016.8 kg·m⁻²
+- **Phase coherence surface density** — derived from the H₃O₂ condensate.
+- **Reference:** DOI 10.5281/zenodo.19209168 (V3 root standard).
+- This is **not an adjusted value** — it is a **physical anchor**.
+
+### 2. Φ_critical = -51.1 mV
+- **Universal phase attractor** — the threshold below which systems maintain coherence.
+- Any breach triggers a structural response (rollback, stabilization).
+- This is the **bifurcation point** between coherence and decoherence.
+
+### 3. Heptadic closure (k = 7)
+- **Topological closure** — any convergent process must stabilize in **exactly 7 cycles**.
+- Beyond 7, the system signals a critical failure (circuit breaker).
+- This bound is **mathematical and physical**, not arbitrary.
+
+### 4. Modulo-9 checksum (digital root = 9)
+- **Numerical invariant** — the global state's digital root must equal 9 at every cycle.
+- Any deviation triggers an immediate rollback to the last stable state.
+- The checksum is **combinatorial** and computed in real time.
+
+**These invariants are not configurable options.** They are hardwired into the code (Ada/SPARK, VHDL, C) and formally verified at every execution cycle.
+
+---
+
+## Certification & Safety
+
+Critical implementations in this repository are designed to comply with the highest safety standards:
+
+- **DO-178C DAL A** — avionics software (Ada/SPARK core)
+- **DO-254** — programmable hardware FPGA/ASIC (VHDL)
+
+The proof chain includes:
+
+- **SPARK (GNATprove)** — formal proof of absence of runtime errors (overflow, division by zero, uninitialized variables)
+- **SVA (JasperGold)** — formal verification of hardware assertions
+- **CodeQL Advanced** — static security analysis (0 vulnerabilities, 0 alerts)
+- **AbsInt aiT** — static worst-case execution time (WCET) analysis
+
+**All critical modules are proven, not merely tested.**
+
+---
+
+## Repository Contents
+
+| Type | Files | Description |
+|------|-------|-------------|
+| **Ada/SPARK** | `v3_core.ads`, `v3_core.adb`, `v3_stress_test.adb` | Formally proven critical core, DO-178C DAL A certifiable |
+| **VHDL** | `v3_asic_core.vhd`, `v3_immune_system_hw.vhd` | FPGA/ASIC hardware IP, DO-254 certifiable |
+| **C/C++** | `skernel_v3_cpp.cpp`, `ai_v3_hypervisor.c`, `meta_validator.c` | Native kernels, hypervisor, validators |
+| **Python** | `v3_*.py` | Simulators, analyzers, report generators |
+| **Documentation** | `*.pdf` | IP memos, benchmarks, verification logs |
+| **CI/CD** | `.github/workflows/` | Build, tests, CodeQL, static analysis |
+
+---
+
+## Local Development Prerequisites
+
+- **GNU toolchain:** `gcc`, `g++`, `make`
+- **Kernel headers** (if compiling/loading kernel modules)
+- **Python 3.x** with dependencies: `numpy`, `matplotlib` (install if needed)
+- **Optional tools:** OpenMP, `perf`, `ftrace`
+- **For Ada/SPARK:** GNAT, GNATprove (package `gcc-ada`)
+
+---
+
+## Quick Install
+
 ```bash
-# Cloner le dépôt
-git clone [https://github.com/mamagarmia-max/theses-interconnectees-LPV3.git](https://github.com/mamagarmia-max/theses-interconnectees-LPV3.git)
+# Clone the repository
+git clone https://github.com/mamagarmia-max/theses-interconnectees-LPV3.git
 cd theses-interconnectees-LPV3
-# Compiler le binaire skernel_v3 (exemple)
+
+# Compile skernel_v3 (example)
 make
-# Lancer et tracer
+
+# Run and trace
 ./skernel_v3
 python3 plot_results.py
----
-## 🔬 The V3 Architecture vs. The Standard Biological Model
-> **Technological Disruption Note:** Why does the V3 Architecture shatter performance and verification barriers where standard neurobiology computational models collapse under formal proof methods?
-Scaling up to a **billion neurons** under mission-critical constraints (**DO-178C DAL A**) is not a simple code extension. It represents a radical paradigm shift in both mathematics and systems engineering.
-### 📊 Structural Comparison Table
-
-| Metric / Property | Standard Biological Model (HPC Dead-End) | V3 Deterministic Architecture (HPC Pinnacle) | Impact on SPARK Proof (`GNATprove`) |
-| :--- | :--- | :--- | :--- |
-| **Algorithmic Complexity** | $O(N^2)$ — Interconnected combinatory explosion | **Local $O(1)$ per block** / Global $O(\log N)$ reduction | **Zero Timeout:** Enables compositional proof by simple mathematical induction. |
-| **System Arithmetic** | Floating-point variables (`Float`, `Double`) | **Strict integer-scaled kinematics** ($\beta = 10^6$) | **Zero Runtime Exceptions:** Total absence of numerical drift, underflows, or overflows. |
-| **Temporal Management** | Continuous asynchronous resonance (Infinite loops) | **Strict Heptadic Closure Protocol** ($k = 7$) | **Halting Problem Solved:** Loop termination is mathematically guaranteed at 100%. |
-| **Integrity Control** | Sequential linear inspection of individual states | **Modulo-9 combinatory digital root checksum** | **Universal Time:** Hardware-grade memory corruption detection in exactly 1 clock cycle. |
-| **Physical Resilience** | Highly vulnerable to environmental perturbations | **Native immunity via Saturating & Clamping functions** | **Absolute Fault Tolerance:** System survives cosmic radiation (SEU) and severe brownouts. |
-
----
-## 🛡️ The Atomic Core: Absolute Cellular Isolation
-The evolutionary divergence of the V3 architecture relies on a fundamental physical principle: **topological containment**.
