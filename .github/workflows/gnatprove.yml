@@ -22,4 +22,4 @@ jobs:
 
     - name: Run GNATprove Verification Pipeline
       run: |
-        gnatprove -P v3_audit_engine.gpr --level=4 --report=all
+        alr gnatprove --level=4 --report=all
