@@ -20,15 +20,22 @@ jobs:
       with:
         toolchain: gnat_native^13
 
-    - name: Installer GNATprove
+    - name: Installer GNATprove séparément
       run: |
-        alr toolchain --install gnatprove^12  # ou gnatprove^latest
+        # Installer GNATprove via alr
+        alr toolchain --install gnatprove=13.2.2
+        
+        # Ou essayer avec une version plus récente
+        # alr toolchain --install gnatprove^latest
 
-    - name: Vérifier l'installation
+    - name: Vérifier les installations
       run: |
+        echo "=== Version Alire ==="
         alr --version
-        gnat --version
-        gnatprove --version
+        echo "=== Version GNAT ==="
+        gnat --version || echo "GNAT non trouvé"
+        echo "=== Version GNATprove ==="
+        gnatprove --version || echo "GNATprove non trouvé"
 
     - name: Exécuter la vérification GNATprove
       run: |
