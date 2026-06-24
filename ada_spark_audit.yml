@@ -1,0 +1,22 @@
+name: V3 Formal Audit (ADA/SPARK)
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+jobs:
+  spark_proof:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+    - name: Setup Ada & SPARK Environment
+      uses: alire-project/setup-alire@v3
+      with:
+        toolchain: gnat_native gnatprove
+    - name: Run GNATprove (Formal Proof Level 4)
+      run: |
+        alr exec -- gnatprove -P v3_audit_engine.gpr
+    - name: Build V3 Engine Execution Binary
+      run: |
+        alr exec -- gprbuild -P v3_audit_engine.gpr
