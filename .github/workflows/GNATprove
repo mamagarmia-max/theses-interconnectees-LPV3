@@ -1,15 +1,35 @@
-project V3_Audit_Engine is
+name: Vérification GNATprove SPARK
 
-   for Languages use ("Ada");
-   for Source_Dirs use ("src");
-   for Object_Dir use "obj";
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
 
-   package Prove is
-      for Switches ("Ada") use
-        ("--level=1",          -- Niveau 1 : contrôle de sûreté de base (anti-crash)
-         "--proof=all",        -- Analyse globale
-         "--report=fail",      -- Affiche uniquement ce qui bloque vraiment
-         "--warnings=off");    -- Masque les alertes secondaires
-   end Prove;
+jobs:
+  verify:
+    runs-on: ubuntu-latest
 
-end V3_Audit_Engine;
+    steps:
+    - name: Checkout du code
+      uses: actions/checkout@v4
+
+    - name: Installer Alire
+      uses: alire-project/setup-alire@v3
+      with:
+        toolchain: gnat_native^13
+
+    - name: Installer GNATprove
+      run: |
+        alr toolchain --install gnatprove^12  # ou gnatprove^latest
+
+    - name: Vérifier l'installation
+      run: |
+        alr --version
+        gnat --version
+        gnatprove --version
+
+    - name: Exécuter la vérification GNATprove
+      run: |
+        alr gnatprove --level=4 --report=all
