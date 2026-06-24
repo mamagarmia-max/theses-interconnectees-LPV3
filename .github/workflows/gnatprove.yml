@@ -1,0 +1,25 @@
+name: GNATprove SPARK Verification
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository code
+      uses: actions/checkout@v4
+
+    - name: Setup GNAT, SPARK and Alire Ecosystem
+      uses: alire-project/setup-alire@v3
+      with:
+        toolchain: gnat_native^13 gnatprove^13
+
+    - name: Run GNATprove Verification Pipeline
+      run: |
+        gnatprove -P v3_audit_engine.gpr --level=4 --report=all
