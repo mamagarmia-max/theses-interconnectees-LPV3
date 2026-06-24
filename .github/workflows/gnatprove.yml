@@ -9,30 +9,16 @@ on:
 jobs:
   prove:
     runs-on: ubuntu-latest
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install GNAT
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y gnat gprbuild gnatprove
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Run GNATprove
-      run: |
-        cd V3_Architecture
-        gnatprove -P v3_architecture.gpr \
-          --level=4 \
-          --proof=all \
-          --report=all \
-          --timeout=300 \
-          --memlimit=8192 \
-          --warnings=continue \
-          --subprograms=all \
-          --checks-as-proved
+      - name: Install GNAT
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gnat gprbuild gnatprove
 
-    - name: Upload Proof Report
-      uses: actions/upload-artifact@v4
-      with:
-        name: gnatprove-report
-        path: V3_Architecture/gnatprove.out
+      - name: Run GNATprove
+        run: |
+          cd V3_Architecture
+          gnatprove -P v3_architecture.gpr --level=4 --proof=all --report=all --timeout=300
