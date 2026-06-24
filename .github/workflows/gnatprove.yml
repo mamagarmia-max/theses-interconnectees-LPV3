@@ -1,46 +1,38 @@
--- V3 Architecture — Master GNAT Project File
--- ============================================================================
+name: GNATprove
 
-project V3_Architecture is
-   
-   for Languages use ("Ada");
-   
-   for Source_Dirs use ("src");
-   for Object_Dir use "obj";
-   for Exec_Dir use "bin";
-   
-   -- Compiler configuration
-   package Compiler is
-      for Default_Switches ("Ada") use
-        ("-gnatwa",
-         "-gnatyg",
-         "-gnat2012",
-         "-gnatf",
-         "-gnato13",
-         "-fstack-check");
-   end Compiler;
-   
-   -- GNATprove configuration (CRITICAL)
-   package Prove is
-      for Switches ("Ada") use
-        ("--level=4",
-         "--proof=all",
-         "--report=all",
-         "--timeout=300",
-         "--memlimit=8192",
-         "--warnings=continue",
-         "--subprograms=all",
-         "--checks-as-proved");
-   end Prove;
-   
-   -- Builder configuration
-   package Builder is
-      for Switches ("Ada") use ("-E", "-g");
-   end Builder;
-   
-   -- Binder configuration
-   package Binder is
-      for Switches ("Ada") use ("-E");
-   end Binder;
-   
-end V3_Architecture;
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install GNAT
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gnat gprbuild gnatprove
+
+    - name: Run GNATprove
+      run: |
+        cd V3_Architecture
+        gnatprove -P v3_architecture.gpr \
+          --level=4 \
+          --proof=all \
+          --report=all \
+          --timeout=300 \
+          --memlimit=8192 \
+          --warnings=continue \
+          --subprograms=all \
+          --checks-as-proved
+
+    - name: Upload Proof Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: gnatprove-report
+        path: V3_Architecture/gnatprove.out
