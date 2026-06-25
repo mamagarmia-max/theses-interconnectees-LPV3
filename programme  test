@@ -1,0 +1,78 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V3 PULSAR VALIDATOR V2 — TEST PROGRAM
+-- ============================================================================
+
+with Ada.Text_IO; use Ada.Text_IO;
+with V3_Pulsar_Validator_V2; use V3_Pulsar_Validator_V2;
+
+procedure V3_Pulsar_Test_V2 is
+   Sample : Pulsar_Array := Validate_Pulsar_Sample;
+   Matches : Integer := 0;
+   Total : Integer := MAX_PULSARS;
+   Result : Stress_Result;
+begin
+   Put_Line ("================================================================================ ");
+   Put_Line ("🕰️ V3 PULSAR PHASE RESONATOR v2 — LARGE SAMPLE VALIDATION");
+   Put_Line ("   Testing against 20 pulsars, including fastest millisecond pulsars");
+   Put_Line ("   Falsifiability test: if any fails within 10% error, V3 is falsified");
+   Put_Line ("================================================================================ ");
+   New_Line;
+   
+   Put_Line ("📐 V3 INVARIANTS:");
+   Put_Line ("   PSI_V3       = 48,016.8 kg·m⁻²");
+   Put_Line ("   PHI_CRITICAL = -51.1 mV");
+   Put_Line ("   BETA         = 1,000,000");
+   Put_Line ("   K_CYCLES     = 7");
+   Put_Line ("   ALPHA_INV    = 137.03599913");
+   New_Line;
+   
+   Put_Line ("📊 PULSAR SAMPLE VALIDATION (20 pulsars):");
+   Put_Line ("------------------------------------------------------------------");
+   Put_Line ("   Pulsar Name          | f_obs (Hz) | f_pred (Hz) | Error | Match");
+   Put_Line ("------------------------------------------------------------------");
+   
+   for I in 1 .. MAX_PULSARS loop
+      Put ("   " & Sample (I).Name & " | ");
+      Put (Long_Long_Integer'Image (Sample (I).Observed_Freq / 1000) & " | ");
+      Put (Long_Long_Integer'Image (Sample (I).Predicted_Freq / 1000) & " | ");
+      Put (Integer'Image (Sample (I).Error_Pct) & "% | ");
+      if Sample (I).Matches then
+         Put_Line ("✅");
+         Matches := Matches + 1;
+      else
+         Put_Line ("❌");
+      end if;
+   end loop;
+   
+   New_Line;
+   Put_Line ("------------------------------------------------------------------");
+   Put_Line ("   Matches: " & Integer'Image (Matches) & "/" & Integer'Image (Total));
+   Put_Line ("   Pass rate: " & Integer'Image (Matches * 100 / Total) & "%");
+   New_Line;
+   
+   -- Falsification test
+   if Is_V3_Falsified (Sample) then
+      Put_Line ("❌ V3 IS FALSIFIED — At least one pulsar does not match the prediction");
+      Put_Line ("   V3 requires revision or abandonment");
+   else
+      Put_Line ("✅ V3 IS NOT FALSIFIED — All 20 pulsars match within 10% error");
+      Put_Line ("   V3 passes the large-sample test");
+   end if;
+   New_Line;
+   
+   -- Stress test
+   Put_Line ("🔥 STRESS TESTS (8 scenarios):");
+   Put_Line ("------------------------------------------------------------------");
+   
+   Run_Stress_Test (None, 10000000, Result);
+   Put_Line ("   Baseline: " & (if Result.Passed then "✅ PASSED" else "❌ FAILED"));
+   
+   Run_Stress_Test (Extreme_Freq, 10000000, Result);
+   Put_Line ("   Extreme Frequency: " & (if Result.Passed then "✅ PASSED" else "❌ FAILED"));
+   
+   Run_Stress_Test (Phase_Node_Collapse, 10000000, Result);
+   Put_Line ("   Phase Node Collapse: " & (if Result.Passed then "✅ PASSED" else "❌ FAILED"));
+   
+   Run_Stress_Test (Overflow_Attack, 10000000, Result);
+   Put_
