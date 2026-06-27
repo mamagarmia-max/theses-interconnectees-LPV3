@@ -1,0 +1,31 @@
+================================================================================
+🌍 V13.1 REGIONAL CLIMATE MODEL — ALÉAS PROBABILISTES
+   Région : California
+   Cœur déterministe + Aléas régionaux
+================================================================================
+
+📊 DONNÉES DE BASE :
+------------------------------------------------------------------
+   Température de base (V13) : 25.0°C
+
+🔥 ALÉAS POUR California :
+------------------------------------------------------------------
+   WILDFIRE | Prob :  60% | Impact :  0.5°C à  3.0°C
+   EARTHQUAKE | Prob :  20% | Impact :  0.0°C à  1.0°C
+
+📊 ESTIMATION BRUTE :
+------------------------------------------------------------------
+   Estimation minimale (Low)  : 25.5°C
+   Estimation moyenne (Brut)  : 27.0°C
+   Estimation maximale (High) : 29.0°C
+
+🎲 SIMULATION ALÉATOIRE (seed 42) :
+------------------------------------------------------------------
+   Température avec aléas : 26.5°C
+
+================================================================================
+🎯 VERDICT
+================================================================================
+
+   ✅ V13.1 — MODULE ALÉAS OPÉRATIONNEL
+...
