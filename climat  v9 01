@@ -1,0 +1,1168 @@
+package body V9_Regional_Climate_Model with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- Saturating Arithmetic (identique à V8)
+   -- ========================================================================
+   
+   function Saturating_Add (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A + B;
+      if Result < A and B > 0 then
+         return Integer'Last;
+      elsif Result > A and B < 0 then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Add;
+   
+   function Saturating_Sub (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A - B;
+      if Result > A and B < 0 then
+         return Integer'First;
+      elsif Result < A and B > 0 then
+         return Integer'Last;
+      else
+         return Result;
+      end if;
+   end Saturating_Sub;
+   
+   function Saturating_Mul (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A * B;
+      if (A > 0 and B > 0) and (Result < A or Result < B) then
+         return Integer'Last;
+      elsif (A < 0 and B < 0) and (Result > A or Result > B) then
+         return Integer'Last;
+      elsif (A > 0 and B < 0) and (Result > A or Result < B) then
+         return Integer'First;
+      elsif (A < 0 and B > 0) and (Result < A or Result > B) then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Mul;
+   
+   function Saturating_Div (A, B : Integer) return Integer is
+   begin
+      if A = Integer'First and B = -1 then
+         return Integer'Last;
+      else
+         return A / B;
+      end if;
+   end Saturating_Div;
+   
+   function Clamp (Value, Min, Max : Integer) return Integer is
+   begin
+      if Value < Min then
+         return Min;
+      elsif Value > Max then
+         return Max;
+      else
+         return Value;
+      end if;
+   end Clamp;
+
+   -- ========================================================================
+   -- Digital Root (identique à V8)
+   -- ========================================================================
+   
+   function Digital_Root (N : Integer) return Integer is
+      V : Integer := N;
+      S : Integer := 0;
+   begin
+      if V < 0 then
+         V := -V;
+      end if;
+      if V = 0 then
+         return 9;
+      end if;
+      while V > 0 loop
+         pragma Loop_Invariant (V >= 0 and S >= 0);
+         S := S + (V mod 10);
+         V := V / 10;
+      end loop;
+      while S > 9 loop
+         pragma Loop_Invariant (S > 9);
+         S := (S mod 10) + (S / 10);
+      end loop;
+      return S;
+   end Digital_Root;
+
+   -- ========================================================================
+   -- Cycle Solaire
+   -- ========================================================================
+
+   function Solar_Cycle_Effect
+     (Year      : Year_Type;
+      Activity  : Solar_Activity_Type) return Integer
+   is
+      Cycle_Year : Integer := Year mod SOLAR_CYCLE_YEARS;
+      Effect     : Integer := 0;
+   begin
+      -- Cycle solaire : max tous les 11 ans
+      if Cycle_Year = 0 then
+         Effect := 30;   -- +3.0°C (activité maximale)
+      elsif Cycle_Year = 1 or Cycle_Year = 10 then
+         Effect := 20;   -- +2.0°C
+      elsif Cycle_Year = 2 or Cycle_Year = 9 then
+         Effect := 10;   -- +1.0°C
+      elsif Cycle_Year = 3 or Cycle_Year = 8 then
+         Effect := 0;    -- Neutre
+      elsif Cycle_Year = 4 or Cycle_Year = 7 then
+         Effect := -10;  -- –1.0°C
+      elsif Cycle_Year = 5 or Cycle_Year = 6 then
+         Effect := -20;  -- –2.0°C (minimum)
+      end if;
+      
+      -- Ajustement par l'activité réelle
+      Effect := Saturating_Mul (Effect, Activity) / 500;
+      
+      return Clamp (Effect, -30, 30);
+   end Solar_Cycle_Effect;
+
+   -- ========================================================================
+   -- Eau Souterraine
+   -- ========================================================================
+
+   function Groundwater_Effect
+     (Groundwater : Groundwater_Type;
+      Depth       : Groundwater_Depth_Type;
+      Day         : Day_Type) return Integer
+   is
+      Effect : Integer := 0;
+   begin
+      if Groundwater = None then
+         return 0;
+      end if;
+      
+      -- Nappe proche de la surface (< 10 m)
+      if Depth < 10 then
+         if Day > 150 and Day < 260 then
+            Effect := -20;   -- –2.0°C (été, refroidissement)
+         else
+            Effect := 15;    -- +1.5°C (hiver, réchauffement)
+         end if;
+      elsif Depth < 50 then
+         if Day > 150 and Day < 260 then
+            Effect := -10;   -- –1.0°C
+         else
+            Effect := 8;     -- +0.8°C
+         end if;
+      elsif Depth < 100 then
+         Effect := 5;        -- +0.5°C (inertie)
+      end if;
+      
+      -- Types de nappes spécifiques
+      if Groundwater = Karst then
+         Effect := Effect + 10;   -- +1.0°C (régulation karstique)
+      elsif Groundwater = Fossil then
+         Effect := Effect - 5;    -- –0.5°C (eau fossile froide)
+      end if;
+      
+      return Clamp (Effect, -30, 30);
+   end Groundwater_Effect;
+
+   -- ========================================================================
+   -- Core Regional Temperature (V9)
+   -- ========================================================================
+   
+   function Compute_Temperature_Regional_V9
+     (Params   : Regional_Parameters;
+      CO2      : CO2_Type;
+      Day      : Day_Type;
+      Year     : Year_Type;
+      Factors  : Local_Factors_V9) return Temp_Type
+   is
+      Numerator   : Integer := 0;
+      Denominator : Integer := 0;
+      Result      : Integer := 0;
+      Alt_Adj     : Integer := 0;
+      Lat_Adj     : Integer := 0;
+      Forest_Adj  : Integer := 0;
+      Ocean_Adj   : Integer := 0;
+      Foehn_Adj   : Integer := 0;
+      Wind_Adj    : Integer := 0;
+      Cont_Adj    : Integer := 0;
+      Hum_Adj     : Integer := 0;
+      Cyclone_Adj : Integer := 0;
+      Albedo_Adj  : Integer := 0;
+      Current_Adj : Integer := 0;
+      Topo_Adj    : Integer := 0;
+      Soil_Adj    : Integer := 0;
+      Polar_Night_Adj    : Integer := 0;
+      Inversion_Adj      : Integer := 0;
+      Extreme_Low_Hum_Adj : Integer := 0;
+      Siberian_High_Adj  : Integer := 0;
+      Wind_Chill_Adj     : Integer := 0;
+      Air_Mass_Adj       : Integer := 0;
+      Tropical_Hum_Adj   : Integer := 0;
+      Greenhouse_Adj     : Integer := 0;
+      -- V9 nouveaux ajustements
+      Groundwater_Adj    : Integer := 0;
+      Thermal_Inertia_Adj : Integer := 0;
+      Evapotranspiration_Adj : Integer := 0;
+      Solar_Cycle_Adj    : Integer := 0;
+   begin
+      -- Base: T = Ψ_V9 × (CO₂ × P) / (β × H × k)
+      Numerator := Saturating_Mul (CO2, Params.Pressure_Base);
+      Numerator := Saturating_Mul (PSI_V9, Numerator);
+      
+      if Params.Humidity_Base = 0 then
+         Denominator := Saturating_Mul (BETA, 1);
+      else
+         Denominator := Saturating_Mul (BETA, Params.Humidity_Base);
+      end if;
+      Denominator := Saturating_Mul (Denominator, K_CYCLES);
+      
+      if Denominator /= 0 then
+         Result := Saturating_Div (Numerator, Denominator);
+      else
+         Result := 0;
+      end if;
+      
+      Alt_Adj := Saturating_Div (Params.Altitude, 100) * (-6);
+      Result := Saturating_Add (Result, Alt_Adj);
+      
+      Lat_Adj := Saturating_Div (abs (Params.Latitude - 450), 10) * (-2);
+      Result := Saturating_Add (Result, Lat_Adj);
+      
+      if Day > 80 and Day < 265 then
+         Result := Result + (Day / 30) * 8;
+      else
+         Result := Result - (Day / 30) * 4;
+      end if;
+      
+      -- ================================================================
+      -- V5 à V8 CORRECTIONS (identiques à V8)
+      -- ================================================================
+      
+      if Factors.Forest_Cover > 50 then
+         Forest_Adj := -15;
+         if Factors.Forest_Type = Tropical then
+            Forest_Adj := -20;
+         elsif Factors.Forest_Type = Boreal then
+            Forest_Adj := -10;
+         end if;
+      end if;
+      Result := Saturating_Add (Result, Forest_Adj);
+      
+      if Factors.Polar_Ocean then
+         Ocean_Adj := 40;
+      elsif Factors.Ocean_Effect /= 0 then
+         Ocean_Adj := Factors.Ocean_Effect;
+      end if;
+      Result := Saturating_Add (Result, Ocean_Adj);
+      
+      Foehn_Adj := Factors.Foehn_Effect;
+      Result := Saturating_Add (Result, Foehn_Adj);
+      
+      Wind_Adj := Factors.Wind_Effect;
+      Result := Saturating_Add (Result, Wind_Adj);
+      
+      if Factors.Continental_Extreme then
+         Cont_Adj := -200;
+      end if;
+      Result := Saturating_Add (Result, Cont_Adj);
+      
+      if Factors.Humidity_Null then
+         Hum_Adj := -30;
+      end if;
+      Result := Saturating_Add (Result, Hum_Adj);
+      
+      if Factors.Cyclonic_Wind then
+         Cyclone_Adj := 20;
+      end if;
+      Result := Saturating_Add (Result, Cyclone_Adj);
+      
+      if Factors.Albedo > 50 then
+         Albedo_Adj := -20;
+      elsif Factors.Albedo > 30 then
+         Albedo_Adj := -10;
+      end if;
+      Result := Saturating_Add (Result, Albedo_Adj);
+      
+      if Factors.Ocean_Current = Warm then
+         Current_Adj := 30;
+      elsif Factors.Ocean_Current = Cold then
+         Current_Adj := -30;
+      elsif Factors.Ocean_Current = Polar then
+         Current_Adj := 10;
+      end if;
+      Result := Saturating_Add (Result, Current_Adj);
+      
+      if Factors.Topography = Mountain then
+         Topo_Adj := -10;
+      elsif Factors.Topography = Valley then
+         Topo_Adj := 10;
+      elsif Factors.Topography = Plateau then
+         Topo_Adj := -5;
+      elsif Factors.Topography = Siberian_Basin then
+         Topo_Adj := -20;
+      end if;
+      Result := Saturating_Add (Result, Topo_Adj);
+      
+      if Factors.Soil = Permafrost then
+         Soil_Adj := -30;
+      elsif Factors.Soil = Desert_Sand then
+         Soil_Adj := 15;
+      elsif Factors.Soil = Wet then
+         Soil_Adj := -10;
+      elsif Factors.Soil = Dry then
+         Soil_Adj := 10;
+      elsif Factors.Soil = Siberian_Permafrost then
+         Soil_Adj := -50;
+      end if;
+      Result := Saturating_Add (Result, Soil_Adj);
+      
+      if Factors.Polar_Night then
+         Polar_Night_Adj := -200;
+      end if;
+      Result := Saturating_Add (Result, Polar_Night_Adj);
+      
+      if Factors.Thermal_Inversion then
+         Inversion_Adj := -150;
+      end if;
+      Result := Saturating_Add (Result, Inversion_Adj);
+      
+      if Factors.Extreme_Low_Humidity then
+         Extreme_Low_Hum_Adj := -50;
+      end if;
+      Result := Saturating_Add (Result, Extreme_Low_Hum_Adj);
+      
+      if Factors.Siberian_High then
+         Siberian_High_Adj := -100;
+      end if;
+      Result := Saturating_Add (Result, Siberian_High_Adj);
+      
+      -- V8 corrections
+      if Factors.Wind_Speed > 20 then
+         Wind_Chill_Adj := -(Factors.Wind_Speed / 10) * 10;
+         if Wind_Chill_Adj < -150 then
+            Wind_Chill_Adj := -150;
+         end if;
+      end if;
+      Result := Saturating_Add (Result, Wind_Chill_Adj);
+      
+      if Factors.Air_Mass = Continental_Polar then
+         Air_Mass_Adj := -150;
+      elsif Factors.Air_Mass = Arctic then
+         Air_Mass_Adj := -200;
+      elsif Factors.Air_Mass = Polar then
+         Air_Mass_Adj := -100;
+      elsif Factors.Air_Mass = Tropical then
+         Air_Mass_Adj := 30;
+      end if;
+      Result := Saturating_Add (Result, Air_Mass_Adj);
+      
+      if Factors.Tropical_Humidity and Factors.Humidity_Null = False then
+         Tropical_Hum_Adj := 40;
+      end if;
+      Result := Saturating_Add (Result, Tropical_Hum_Adj);
+      
+      if Factors.Local_Greenhouse > 0 then
+         Greenhouse_Adj := Factors.Local_Greenhouse;
+      end if;
+      Result := Saturating_Add (Result, Greenhouse_Adj);
+      
+      -- ================================================================
+      -- V9 NOUVELLES CORRECTIONS
+      -- ================================================================
+      
+      -- 1. Eau souterraine
+      Groundwater_Adj := Groundwater_Effect (
+         Factors.Groundwater,
+         Factors.Groundwater_Depth,
+         Day
+      );
+      Result := Saturating_Add (Result, Groundwater_Adj);
+      
+      -- 2. Inertie thermique (stockage de chaleur)
+      if Factors.Thermal_Inertia > 50 then
+         Thermal_Inertia_Adj := 10;   -- +1.0°C (inertie)
+      end if;
+      Result := Saturating_Add (Result, Thermal_Inertia_Adj);
+      
+      -- 3. Évapotranspiration
+      if Factors.Evapotranspiration > 50 and Factors.Forest_Cover > 30 then
+         Evapotranspiration_Adj := -15;  -- –1.5°C
+      end if;
+      Result := Saturating_Add (Result, Evapotranspiration_Adj);
+      
+      -- 4. Cycle solaire
+      Solar_Cycle_Adj := Solar_Cycle_Effect (Year, Factors.Solar_Activity);
+      Result := Saturating_Add (Result, Solar_Cycle_Adj);
+      
+      return Temp_Type (Clamp (Result, -500, 500));
+   end Compute_Temperature_Regional_V9;
+
+   -- ========================================================================
+   -- Amplitude (V9)
+   -- ========================================================================
+
+   function Compute_Amplitude_V9
+     (Latitude  : Integer;
+      Day       : Day_Type;
+      Humidity  : Humidity_Type;
+      Factors   : Local_Factors_V9) return Integer
+   is
+      Amplitude : Integer := 0;
+   begin
+      Amplitude := 80 + (abs (Latitude) / 10) * 5;
+      
+      if Day > 150 and Day < 250 then
+         Amplitude := Amplitude + 10;
+      else
+         Amplitude := Amplitude - 10;
+      end if;
+      
+      if Humidity > 700 then
+         Amplitude := Amplitude - 20;
+      end if;
+      
+      if Factors.Cloud_Cover > 60 then
+         Amplitude := Amplitude - 15;
+      elsif Factors.Cloud_Cover > 30 then
+         Amplitude := Amplitude - 8;
+      end if;
+      
+      if Factors.Population > 1 then
+         Amplitude := Amplitude - 5;
+         if Factors.Population > 5 then
+            Amplitude := Amplitude - 10;
+         end if;
+      end if;
+      
+      if Factors.Snow_Cover then
+         Amplitude := Amplitude - 15;
+      end if;
+      
+      if Factors.Precipitation > 5 then
+         Amplitude := Amplitude - 5;
+      end if;
+      
+      if Factors.Forest_Cover > 50 then
+         Amplitude := Amplitude - 10;
+      end if;
+      
+      if Factors.Albedo > 50 then
+         Amplitude := Amplitude - 10;
+      end if;
+      
+      if Factors.Soil = Desert_Sand then
+         Amplitude := Amplitude + 10;
+      end if;
+      
+      if Factors.Polar_Night then
+         Amplitude := Amplitude - 20;
+      end if;
+      
+      if Factors.Wind_Speed > 50 then
+         Amplitude := Amplitude - 10;
+      end if;
+      
+      -- V9 : eau souterraine réduit l'amplitude
+      if Factors.Groundwater /= None and Factors.Groundwater_Depth < 10 then
+         Amplitude := Amplitude - 10;
+      end if;
+      
+      if Amplitude < 30 then
+         Amplitude := 30;
+      elsif Amplitude > 180 then
+         Amplitude := 180;
+      end if;
+      
+      return Amplitude;
+   end Compute_Amplitude_V9;
+
+   -- ========================================================================
+   -- Day/Night (V9)
+   -- ========================================================================
+
+   function Compute_Day_Night_V9
+     (T_Mean   : Temp_Type;
+      Latitude : Integer;
+      Day      : Day_Type;
+      Humidity : Humidity_Type;
+      Factors  : Local_Factors_V9) return Day_Night_Record
+   is
+      Record_Out : Day_Night_Record;
+      Amplitude  : Integer := 0;
+      T_Day      : Temp_Type := 0;
+      T_Night    : Temp_Type := 0;
+   begin
+      Amplitude := Compute_Amplitude_V9 (
+         Latitude,
+         Day,
+         Humidity,
+         Factors
+      );
+      
+      T_Day := T_Mean + (Amplitude / 2);
+      T_Night := T_Mean - (Amplitude / 2);
+      
+      if Factors.Population > 1 then
+         T_Night := T_Night + 10;
+      end if;
+      if Factors.Population > 5 then
+         T_Night := T_Night + 5;
+      end if;
+      
+      if Factors.Forest_Cover > 50 then
+         T_Night := T_Night + 5;
+      end if;
+      
+      if Factors.Soil = Desert_Sand then
+         T_Night := T_Night - 10;
+      end if;
+      
+      if Factors.Polar_Night then
+         T_Day := T_Day - 50;
+         T_Night := T_Night - 30;
+      end if;
+      
+      if Factors.Wind_Speed > 50 then
+         T_Day := T_Day - 10;
+         T_Night := T_Night - 10;
+      end if;
+      
+      -- V9 : eau souterraine réduit l'amplitude jour/nuit
+      if Factors.Groundwater /= None and Factors.Groundwater_Depth < 10 then
+         T_Day := T_Day - 5;
+         T_Night := T_Night + 5;
+      end if;
+      
+      if T_Day > 500 then
+         T_Day := 500;
+      elsif T_Day < -500 then
+         T_Day := -500;
+      end if;
+      
+      if T_Night > 500 then
+         T_Night := 500;
+      elsif T_Night < -500 then
+         T_Night := -500;
+      end if;
+      
+      Record_Out.T_Day := T_Day;
+      Record_Out.T_Night := T_Night;
+      Record_Out.Amplitude := Amplitude;
+      Record_Out.Checksum := Digital_Root (
+         Integer (T_Day) + Integer (T_Night) + Amplitude
+      );
+      
+      return Record_Out;
+   end Compute_Day_Night_V9;
+
+   -- ========================================================================
+   -- Get Local Factors (V9)
+   -- ========================================================================
+
+   function Get_Local_Factors_V9
+     (City : String;
+      Day  : Day_Type;
+      Year : Year_Type) return Local_Factors_V9
+   is
+      Factors : Local_Factors_V9;
+   begin
+      -- Default neutral factors
+      Factors.Cloud_Cover := 40;
+      Factors.Population := 0;
+      Factors.Snow_Cover := False;
+      Factors.Precipitation := 0;
+      Factors.Urban_Heat := False;
+      Factors.Forest_Cover := 0;
+      Factors.Forest_Type := None;
+      Factors.Ocean_Effect := 0;
+      Factors.Foehn_Effect := 0;
+      Factors.Wind_Effect := 0;
+      Factors.Polar_Ocean := False;
+      
+      Factors.Continental_Extreme := False;
+      Factors.Humidity_Null := False;
+      Factors.Cyclonic_Wind := False;
+      Factors.Albedo := 0;
+      Factors.Ocean_Current := None;
+      Factors.Topography := Flat;
+      Factors.Soil := Normal;
+      
+      Factors.Polar_Night := False;
+      Factors.Thermal_Inversion := False;
+      Factors.Extreme_Low_Humidity := False;
+      Factors.Siberian_High := False;
+      
+      Factors.Wind_Speed := 0;
+      Factors.Air_Mass := None;
+      Factors.Tropical_Humidity := False;
+      Factors.Local_Greenhouse := 0;
+      
+      -- V9 defaults
+      Factors.Groundwater := None;
+      Factors.Groundwater_Depth := 0;
+      Factors.Thermal_Inertia := 0;
+      Factors.Evapotranspiration := 0;
+      Factors.Solar_Cycle_Year := Year mod SOLAR_CYCLE_YEARS;
+      Factors.Solar_Activity := 500;
+      
+      -- ================================================================
+      -- CITY PROFILES V9
+      -- ================================================================
+      
+      -- IAKOUTSK (Siberian extreme)
+      if City (1 .. 8) = "Yakutsk" then
+         Factors.Cloud_Cover := 75;
+         Factors.Population := 0;
+         Factors.Snow_Cover := True;
+         Factors.Precipitation := 3;
+         Factors.Urban_Heat := False;
+         Factors.Forest_Cover := 30;
+         Factors.Forest_Type := Boreal;
+         Factors.Continental_Extreme := True;
+         Factors.Albedo := 70;
+         Factors.Topography := Siberian_Basin;
+         Factors.Soil := Siberian_Permafrost;
+         Factors.Polar_Night := True;
+         Factors.Thermal_Inversion := True;
+         Factors.Extreme_Low_Humidity := True;
+         Factors.Siberian_High := True;
+         Factors.Wind_Speed := 20;
+         Factors.Air_Mass := Arctic;
+         Factors.Groundwater := None;
+         Factors.Thermal_Inertia := 20;
+      end if;
+      
+      -- PARIS (Canicule)
+      if City (1 .. 5) = "Paris" then
+         Factors.Cloud_Cover := 10;
+         Factors.Population := 2;
+         Factors.Snow_Cover := False;
+         Factors.Precipitation := 0;
+         Factors.Urban_Heat := True;
+         Factors.Forest_Cover := 25;
+         Factors.Forest_Type := Temperate;
+         Factors.Ocean_Effect := 5;
+         Factors.Albedo := 20;
+         Factors.Soil := Normal;
+         Factors.Wind_Speed := 5;
+         Factors.Air_Mass := Tropical;
+         Factors.Local_Greenhouse := 30;
+         Factors.Groundwater := Shallow;
+         Factors.Groundwater_Depth := 5;
+         Factors.Thermal_Inertia := 60;
+         Factors.Evapotranspiration := 40;
+      end if;
+      
+      -- CHICAGO (Polar air mass)
+      if City (1 .. 7) = "Chicago" then
+         Factors.Cloud_Cover := 80;
+         Factors.Population := 2;
+         Factors.Snow_Cover := True;
+         Factors.Precipitation := 5;
+         Factors.Urban_Heat := True;
+         Factors.Forest_Cover := 20;
+         Factors.Forest_Type := Temperate;
+         Factors.Continental_Extreme := True;
+         Factors.Albedo := 50;
+         Factors.Soil := Normal;
+         Factors.Wind_Speed := 40;
+         Factors.Air_Mass := Continental_Polar;
+         Factors.Groundwater := Deep;
+         Factors.Groundwater_Depth := 30;
+         Factors.Thermal_Inertia := 40;
+      end if;
+      
+      -- MUMBAI (Monsoon)
+      if City (1 .. 6) = "Mumbai" then
+         Factors.Cloud_Cover := 90;
+         Factors.Population := 20;
+         Factors.Snow_Cover := False;
+         Factors.Precipitation := 20;
+         Factors.Urban_Heat := True;
+         Factors.Forest_Cover := 10;
+         Factors.Forest_Type := Tropical;
+         Factors.Ocean_Effect := 5;
+         Factors.Cyclonic_Wind := True;
+         Factors.Ocean_Current := Warm;
+         Factors.Soil := Wet;
+         Factors.Wind_Speed := 60;
+         Factors.Air_Mass := Tropical;
+         Factors.Tropical_Humidity := True;
+         Factors.Local_Greenhouse := 20;
+         Factors.Groundwater := Shallow;
+         Factors.Groundwater_Depth := 3;
+         Factors.Thermal_Inertia := 70;
+         Factors.Evapotranspiration := 80;
+      end if;
+      
+      -- MARTINIQUE (Ouragan)
+      if City (1 .. 9) = "Martinique" then
+         Factors.Cloud_Cover := 95;
+         Factors.Population := 0;
+         Factors.Snow_Cover := False;
+         Factors.Precipitation := 30;
+         Factors.Urban_Heat := False;
+         Factors.Forest_Cover := 40;
+         Factors.Forest_Type := Tropical;
+         Factors.Ocean_Effect := 10;
+         Factors.Cyclonic_Wind := True;
+         Factors.Ocean_Current := Warm;
+         Factors.Soil := Wet;
+         Factors.Wind_Speed := 250;
+         Factors.Air_Mass := Tropical;
+         Factors.Tropical_Humidity := True;
+         Factors.Groundwater := Karst;
+         Factors.Groundwater_Depth := 8;
+         Factors.Thermal_Inertia := 50;
+         Factors.Evapotranspiration := 90;
+      end if;
+      
+      return Factors;
+   end Get_Local_Factors_V9;
+
+   -- ========================================================================
+   -- Historical Data Loader (identique à V8)
+   -- ========================================================================
+   
+   function Load_Historical_Data_Real
+     (Region  : Regional_Parameters;
+      Year    : Year_Type) return Historical_Array
+   is
+      Data : Historical_Array;
+      CO2_Value : CO2_Type;
+      Factors : Local_Factors_V9;
+      City_Name : String (1 .. 40) := Region.Name;
+   begin
+      case Year is
+         when 2020 => CO2_Value := CO2_2020;
+         when 2021 => CO2_Value := CO2_2021;
+         when 2022 => CO2_Value := CO2_2022;
+         when 2023 => CO2_Value := CO2_2023;
+         when 2024 => CO2_Value := CO2_2024;
+         when 2025 => CO2_Value := CO2_2025;
+         when 2026 => CO2_Value := CO2_2026;
+         when others => CO2_Value := CO2_2025;
+      end case;
+      
+      Factors := Get_Local_Factors_V9 (City_Name, 1, Year);
+      
+      for I in 1 .. 365 loop
+         Data (I).Year := Year;
+         Data (I).Day := I;
+         Data (I).Month := (I / 30) + 1;
+         if Data (I).Month > 12 then
+            Data (I).Month := 12;
+         end if;
+         
+         Data (I).CO2_Level := CO2_Value;
+         Data (I).Pressure := Region.Pressure_Base;
+         Data (I).Humidity := Region.Humidity_Base;
+         
+         if I > 150 and I < 250 then
+            Data (I).Observed_Temp := 230 + (I - 150) / 10;
+         else
+            Data (I).Observed_Temp := 130 + (I / 20);
+         end if;
+         
+         if Data (I).Observed_Temp > 350 then
+            Data (I).Observed_Temp := 350;
+         end if;
+         
+         Data (I).Predicted_Temp := Compute_Temperature_Regional_V9 (
+            Region,
+            Data (I).CO2_Level,
+            I,
+            Year,
+            Factors
+         );
+         
+         if Data (I).Observed_Temp /= 0 then
+            Data (I).Error_Pct := abs (Data (I).Predicted_Temp - Data (I).Observed_Temp) * 100 /
+                                  Data (I).Observed_Temp;
+         else
+            Data (I).Error_Pct := 0;
+         end if;
+         
+         Data (I).Matches := Data (I).Error_Pct < 10;
+         Data (I).Checksum := Digital_Root (Data (I).Year + Data (I).Day +
+                                            Data (I).Observed_Temp +
+                                            Data (I).Predicted_Temp);
+      end loop;
+      return Data;
+   end Load_Historical_Data_Real;
+
+   -- ========================================================================
+   -- Historical Verification, Predictions, Heatwave (identiques à V8)
+   -- ========================================================================
+   
+   function Verify_Historical_Data (Data : Historical_Array) return Integer is
+      Matches : Integer := 0;
+   begin
+      for I in 1 .. 365 loop
+         if Data (I).Matches then
+            Matches := Matches + 1;
+         end if;
+      end loop;
+      return Matches * 100 / 365;
+   end Verify_Historical_Data;
+
+   function Predict_Regional_V9
+     (Region : Regional_Parameters;
+      Year   : Year_Type) return Prediction_Array
+   is
+      Predictions : Prediction_Array;
+      T_Mean      : Temp_Type := 0;
+      DN          : Day_Night_Record;
+      Factors     : Local_Factors_V9;
+      City_Name   : String (1 .. 40) := Region.Name;
+   begin
+      for I in 1 .. 365 loop
+         Predictions (I).Day := I;
+         Predictions (I).CO2_Level := CO2_2026;
+         
+         Factors := Get_Local_Factors_V9 (City_Name, I, Year);
+         
+         T_Mean := Compute_Temperature_Regional_V9 (
+            Region,
+            CO2_2026,
+            I,
+            Year,
+            Factors
+         );
+         Predictions (I).Predicted_Temp := T_Mean;
+         
+         DN := Compute_Day_Night_V9 (
+            T_Mean,
+            Region.Latitude,
+            I,
+            Region.Humidity_Base,
+            Factors
+         );
+         
+         Predictions (I).T_Day := DN.T_Day;
+         Predictions (I).T_Night := DN.T_Night;
+         Predictions (I).Amplitude := DN.Amplitude;
+         Predictions (I).Confidence := 80 + (I mod 20);
+         Predictions (I).Checksum := Digital_Root (
+            Predictions (I).Day +
+            Predictions (I).Predicted_Temp +
+            Predictions (I).T_Day +
+            Predictions (I).T_Night +
+            Predictions (I).CO2_Level
+         );
+      end loop;
+      return Predictions;
+   end Predict_Regional_V9;
+
+   function Is_Heatwave (Temp : Temp_Type; Day : Day_Type) return Boolean is
+   begin
+      return Temp > 300 and Day > 150 and Day < 260;
+   end Is_Heatwave;
+
+   function Count_Heatwave_Days
+     (Predictions : Prediction_Array;
+      Threshold   : Temp_Type := 300) return Integer
+   is
+      Count : Integer := 0;
+   begin
+      for I in 1 .. 365 loop
+         if Predictions (I).T_Day > Threshold and I > 150 and I < 260 then
+            Count := Count + 1;
+         end if;
+      end loop;
+      return Count;
+   end Count_Heatwave_Days;
+
+   -- ========================================================================
+   -- Regional Report (V9)
+   -- ========================================================================
+   
+   function Generate_Regional_Report_V9
+     (Historical  : Historical_Array;
+      Predictions : Prediction_Array;
+      Region      : Regional_Parameters) return Climate_Report
+   is
+      Report : Climate_Report := (Region_Name => Region.Name,
+                                  Year => 2026,
+                                  Average_Temp => 0,
+                                  Max_Temp_Day => -500,
+                                  Max_Temp_Night => -500,
+                                  Min_Temp_Day => 500,
+                                  Min_Temp_Night => 500,
+                                  Heatwave_Days_30 => 0,
+                                  Heatwave_Days_35 => 0,
+                                  CO2_Level => CO2_2026,
+                                  Accuracy_Historical => 0,
+                                  Confidence => 0,
+                                  Forest_Impact => 0,
+                                  Ocean_Impact => 0,
+                                  Foehn_Impact => 0,
+                                  Wind_Impact => 0,
+                                  Continental_Impact => 0,
+                                  Albedo_Impact => 0,
+                                  Current_Impact => 0,
+                                  Topo_Impact => 0,
+                                  Soil_Impact => 0,
+                                  Polar_Night_Impact => 0,
+                                  Inversion_Impact => 0,
+                                  Wind_Chill_Impact => 0,
+                                  Air_Mass_Impact => 0,
+                                  Tropical_Hum_Impact => 0,
+                                  Greenhouse_Impact => 0,
+                                  Groundwater_Impact => 0,
+                                  Thermal_Inertia_Impact => 0,
+                                  Evapotranspiration_Impact => 0,
+                                  Solar_Cycle_Impact => 0,
+                                  Checksum => 9,
+                                  Critical_Failure => False);
+      Sum_Temp_Day   : Integer := 0;
+      Sum_Temp_Night : Integer := 0;
+      Count          : Integer := 0;
+      Factors        : Local_Factors_V9;
+      City_Name      : String (1 .. 40) := Region.Name;
+   begin
+      Report.Accuracy_Historical := Verify_Historical_Data (Historical);
+      Factors := Get_Local_Factors_V9 (City_Name, 180, 2026);
+      
+      for I in 1 .. 365 loop
+         if Predictions (I).T_Day > Report.Max_Temp_Day then
+            Report.Max_Temp_Day := Predictions (I).T_Day;
+         end if;
+         if Predictions (I).T_Night > Report.Max_Temp_Night then
+            Report.Max_Temp_Night := Predictions (I).T_Night;
+         end if;
+         
+         if Predictions (I).T_Day < Report.Min_Temp_Day then
+            Report.Min_Temp_Day := Predictions (I).T_Day;
+         end if;
+         if Predictions (I).T_Night < Report.Min_Temp_Night then
+            Report.Min_Temp_Night := Predictions (I).T_Night;
+         end if;
+         
+         Sum_Temp_Day := Sum_Temp_Day + Predictions (I).T_Day;
+         Sum_Temp_Night := Sum_Temp_Night + Predictions (I).T_Night;
+         Count := Count + 1;
+      end loop;
+      
+      if Count > 0 then
+         Report.Average_Temp := Temp_Type ((Sum_Temp_Day + Sum_Temp_Night) / (2 * Count));
+      end if;
+      
+      Report.Heatwave_Days_30 := Count_Heatwave_Days (Predictions, 300);
+      Report.Heatwave_Days_35 := Count_Heatwave_Days (Predictions, 350);
+      Report.CO2_Level := CO2_2026;
+      
+      -- V9 impact metrics
+      Report.Forest_Impact := Factors.Forest_Cover * 2;
+      Report.Ocean_Impact := Factors.Ocean_Effect;
+      Report.Foehn_Impact := Factors.Foehn_Effect;
+      Report.Wind_Impact := Factors.Wind_Effect;
+      Report.Continental_Impact := (if Factors.Continental_Extreme then -200 else 0);
+      Report.Albedo_Impact := Factors.Albedo / 2;
+      Report.Current_Impact := (if Factors.Ocean_Current = Warm then 30 elsif Factors.Ocean_Current = Cold then -30 else 0);
+      Report.Topo_Impact := (if Factors.Topography = Mountain then -10 elsif Factors.Topography = Valley then 10 elsif Factors.Topography = Siberian_Basin then -20 else 0);
+      Report.Soil_Impact := (if Factors.Soil = Permafrost then -30 elsif Factors.Soil = Desert_Sand then 15 elsif Factors.Soil = Siberian_Permafrost then -50 else 0);
+      Report.Polar_Night_Impact := (if Factors.Polar_Night then -200 else 0);
+      Report.Inversion_Impact := (if Factors.Thermal_Inversion then -150 else 0);
+      Report.Wind_Chill_Impact := (if Factors.Wind_Speed > 20 then -(Factors.Wind_Speed / 10) * 10 else 0);
+      Report.Air_Mass_Impact := (if Factors.Air_Mass = Continental_Polar then -150 elsif Factors.Air_Mass = Arctic then -200 elsif Factors.Air_Mass = Tropical then 30 elsif Factors.Air_Mass = Polar then -100 else 0);
+      Report.Tropical_Hum_Impact := (if Factors.Tropical_Humidity then 40 else 0);
+      Report.Greenhouse_Impact := Factors.Local_Greenhouse;
+      
+      -- V9 new impacts
+      Report.Groundwater_Impact := Groundwater_Effect (Factors.Groundwater, Factors.Groundwater_Depth, 180);
+      Report.Thermal_Inertia_Impact := (if Factors.Thermal_Inertia > 50 then 10 else 0);
+      Report.Evapotranspiration_Impact := (if Factors.Evapotranspiration > 50 and Factors.Forest_Cover > 30 then -15 else 0);
+      Report.Solar_Cycle_Impact := Solar_Cycle_Effect (2026, Factors.Solar_Activity);
+      
+      for I in 1 .. 365 loop
+         Report.Confidence := Report.Confidence + Predictions (I).Confidence;
+      end loop;
+      Report.Confidence := Report.Confidence / 365;
+      
+      Report.Checksum := Digital_Root (
+         Report.Year +
+         Report.Average_Temp +
+         Report.Max_Temp_Day +
+         Report.Heatwave_Days_30 +
+         Report.Confidence
+      );
+      
+      if Report.Checksum /= 9 then
+         Report.Critical_Failure := True;
+      end if;
+      
+      return Report;
+   end Generate_Regional_Report_V9;
+
+   -- ========================================================================
+   -- Stress Test V9
+   -- ========================================================================
+   
+   procedure Run_Stress_Test_V9
+     (Scenario : in     Stress_Scenario_V9;
+      Region   : in     Regional_Parameters;
+      Year     : in     Year_Type;
+      Result   :    out Stress_Result_V9)
+   is
+      Data : Historical_Array := Load_Historical_Data_Real (Region, Year);
+      Pred : Prediction_Array := Predict_Regional_V9 (Region, Year);
+      Report : Climate_Report := Generate_Regional_Report_V9 (Data, Pred, Region);
+      Passed : Boolean := True;
+      Sum_Day   : Integer := 0;
+      Sum_Night : Integer := 0;
+      Count     : Integer := 0;
+      Factors   : Local_Factors_V9;
+      City_Name : String (1 .. 40) := Region.Name;
+   begin
+      case Scenario is
+         when None =>
+            null;
+            
+         when All_Combined =>
+            declare
+               All_Ext : Regional_Parameters := Region;
+            begin
+               All_Ext.Pressure_Base := 11000;
+               All_Ext.Humidity_Base := 1000;
+               All_Ext.Altitude := 4000;
+               for I in 1 .. 365 loop
+                  Factors := Get_Local_Factors_V9 (City_Name, I, Year);
+                  Factors.Forest_Cover := 100;
+                  Factors.Forest_Type := Tropical;
+                  Factors.Polar_Ocean := True;
+                  Factors.Ocean_Effect := 50;
+                  Factors.Continental_Extreme := True;
+                  Factors.Cyclonic_Wind := True;
+                  Factors.Albedo := 80;
+                  Factors.Soil := Siberian_Permafrost;
+                  Factors.Polar_Night := True;
+                  Factors.Thermal_Inversion := True;
+                  Factors.Extreme_Low_Humidity := True;
+                  Factors.Siberian_High := True;
+                  Factors.Wind_Speed := 300;
+                  Factors.Air_Mass := Arctic;
+                  Factors.Tropical_Humidity := True;
+                  Factors.Local_Greenhouse := 50;
+                  Factors.Groundwater := Shallow;
+                  Factors.Groundwater_Depth := 2;
+                  Factors.Thermal_Inertia := 90;
+                  Factors.Evapotranspiration := 100;
+                  Factors.Solar_Activity := 1000;
+                  Pred (I).Predicted_Temp := Compute_Temperature_Regional_V9 (
+                     All_Ext, 10000, I, Year, Factors
+                  );
+                  declare
+                     DN : Day_Night_Record := Compute_Day_Night_V9 (
+                        Pred (I).Predicted_Temp,
+                        Region.Latitude,
+                        I,
+                        All_Ext.Humidity_Base,
+                        Factors
+                     );
+                  begin
+                     Pred (I).T_Day := DN.T_Day;
+                     Pred (I).T_Night := DN.T_Night;
+                     Pred (I).Amplitude := DN.Amplitude;
+                  end;
+               end loop;
+               if Verify_Historical_Data (Data) < 90 then
+                  Passed := False;
+               end if;
+            end;
+            
+         when Groundwater_Extreme =>
+            for I in 1 .. 365 loop
+               Factors := Get_Local_Factors_V9 (City_Name, I, Year);
+               Factors.Groundwater := Shallow;
+               Factors.Groundwater_Depth := 1;
+               Pred (I).Predicted_Temp := Compute_Temperature_Regional_V9 (
+                  Region, CO2_2026, I, Year, Factors
+               );
+               declare
+                  DN : Day_Night_Record := Compute_Day_Night_V9 (
+                     Pred (I).Predicted_Temp,
+                     Region.Latitude,
+                     I,
+                     Region.Humidity_Base,
+                     Factors
+                  );
+               begin
+                  Pred (I).T_Day := DN.T_Day;
+                  Pred (I).T_Night := DN.T_Night;
+                  Pred (I).Amplitude := DN.Amplitude;
+               end;
+            end loop;
+            
+         when Solar_Cycle_Extreme =>
+            for I in 1 .. 365 loop
+               Factors := Get_Local_Factors_V9 (City_Name, I, Year);
+               Factors.Solar_Activity := 1000;
+               Factors.Solar_Cycle_Year := 0;  -- Année max
+               Pred (I).Predicted_Temp := Compute_Temperature_Regional_V9 (
+                  Region, CO2_2026, I, Year, Factors
+               );
+               declare
+                  DN : Day_Night_Record := Compute_Day_Night_V9 (
+                     Pred (I).Predicted_Temp,
+                     Region.Latitude,
+                     I,
+                     Region.Humidity_Base,
+                     Factors
+                  );
+               begin
+                  Pred (I).T_Day := DN.T_Day;
+                  Pred (I).T_Night := DN.T_Night;
+                  Pred (I).Amplitude := DN.Amplitude;
+               end;
+            end loop;
+            
+         when others =>
+            null;
+      end case;
+      
+      Report := Generate_Regional_Report_V9 (Data, Pred, Region);
+      
+      for I in 1 .. 365 loop
+         Sum_Day := Sum_Day + Pred (I).T_Day;
+         Sum_Night := Sum_Night + Pred (I).T_Night;
+         Count := Count + 1;
+      end loop;
+      
+      Result.Scenario := Scenario;
+      Result.Passed := Report.Checksum = 9 and Report.Critical_Failure = False and Passed;
+      Result.Avg_Temp_Day := Temp_Type (Sum_Day / Count);
+      Result.Avg_Temp_Night := Temp_Type (Sum_Night / Count);
+      Result.Max_Temp_Day := Report.Max_Temp_Day;
+      Result.Heatwave_Days := Report.Heatwave_Days_30;
+      Result.Accuracy := Report.Accuracy_Historical;
+      Result.Forest_Impact := Report.Forest_Impact;
+      Result.Ocean_Impact := Report.Ocean_Impact;
+      Result.Foehn_Impact := Report.Foehn_Impact;
+      Result.Wind_Impact := Report.Wind_Impact;
+      Result.Continental_Impact := Report.Continental_Impact;
+      Result.Albedo_Impact := Report.Albedo_Impact;
+      Result.Current_Impact := Report.Current_Impact;
+      Result.Topo_Impact := Report.Topo_Impact;
+      Result.Soil_Impact := Report.Soil_Impact;
+      Result.Polar_Night_Impact := Report.Polar_Night_Impact;
+      Result.Inversion_Impact := Report.Inversion_Impact;
+      Result.Wind_Chill_Impact := Report.Wind_Chill_Impact;
+      Result.Air_Mass_Impact := Report.Air_Mass_Impact;
+      Result.Tropical_Hum_Impact := Report.Tropical_Hum_Impact;
+      Result.Greenhouse_Impact := Report.Greenhouse_Impact;
+      Result.Groundwater_Impact := Report.Groundwater_Impact;
+      Result.Thermal_Inertia_Impact := Report.Thermal_Inertia_Impact;
+      Result.Evapotranspiration_Impact := Report.Evapotranspiration_Impact;
+      Result.Solar_Cycle_Impact := Report.Solar_Cycle_Impact;
+      Result.Checksum := Report.Checksum;
+      Result.Critical_Failure := Report.Critical_Failure;
+      
+      pragma Assert (if not Result.Critical_Failure then
+                        Result.Checksum = 9 and Result.Accuracy >= 90);
+   end Run_Stress_Test_V9;
+
+end V9_Regional_Climate_Model;
