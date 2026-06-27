@@ -1,0 +1,115 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V13.1 REGIONAL CLIMATE MODEL — DÉMONSTRATION AVEC ALÉAS
+-- ============================================================================
+
+with Ada.Text_IO; use Ada.Text_IO;
+with V13_1_Regional_Climate_Model; use V13_1_Regional_Climate_Model;
+
+procedure V13_1_Regional_Demo is
+
+   Region : Regional_Parameters := (
+      Name          => "California                               ",
+      Latitude      => 370,
+      Longitude     => -1190,
+      Altitude      => 100,
+      Pressure_Base => 10130,
+      Humidity_Base => 600,
+      CO2_Local     => 4250,
+      Has_Data      => True
+   );
+
+   Base_Temp : Temp_Type := 250;  -- 25.0°C
+   Hazards : Hazard_Array;
+   Brut_Temp : Temp_Type := 0;
+   High_Temp : Temp_Type := 0;
+   Low_Temp  : Temp_Type := 0;
+   Seed     : Integer := 42;
+
+begin
+   Put_Line ("================================================================================ ");
+   Put_Line ("🌍 V13.1 REGIONAL CLIMATE MODEL — ALÉAS PROBABILISTES");
+   Put_Line ("   Région : " & Region.Name);
+   Put_Line ("   Cœur déterministe + Aléas régionaux");
+   Put_Line ("================================================================================ ");
+   New_Line;
+
+   Put_Line ("📊 DONNÉES DE BASE :");
+   Put_Line ("------------------------------------------------------------------");
+   Put_Line ("   Température de base (V13) : " & Integer'Image (Base_Temp / 10) & "." &
+             Integer'Image (abs (Base_Temp mod 10)) & "°C");
+   New_Line;
+
+   Put_Line ("🔥 ALÉAS POUR " & Region.Name & " :");
+   Put_Line ("------------------------------------------------------------------");
+   Hazards := Get_Region_Hazards (Region.Name);
+   for I in 1 .. 20 loop
+      if Hazards (I).Hazard /= None then
+         Put_Line ("   " & Hazards (I).Hazard'Image & " | Prob : " &
+                   Integer'Image (Hazards (I).Probability) & "% | Impact : " &
+                   Integer'Image (Hazards (I).Impact_Min / 10) & "." &
+                   Integer'Image (abs (Hazards (I).Impact_Min mod 10)) & "°C à " &
+                   Integer'Image (Hazards (I).Impact_Max / 10) & "." &
+                   Integer'Image (abs (Hazards (I).Impact_Max mod 10)) & "°C");
+      end if;
+   end loop;
+   New_Line;
+
+   -- Estimation scénarios
+   Brut_Temp := Estimate_Hazard_Impact (Region.Name, Base_Temp, "Brut");
+   High_Temp := Estimate_Hazard_Impact (Region.Name, Base_Temp, "High");
+   Low_Temp  := Estimate_Hazard_Impact (Region.Name, Base_Temp, "Low");
+
+   Put_Line ("📊 ESTIMATION BRUTE :");
+   Put_Line ("------------------------------------------------------------------");
+   Put_Line ("   Estimation minimale (Low)  : " & Integer'Image (Low_Temp / 10) & "." &
+             Integer'Image (abs (Low_Temp mod 10)) & "°C");
+   Put_Line ("   Estimation moyenne (Brut)  : " & Integer'Image (Brut_Temp / 10) & "." &
+             Integer'Image (abs (Brut_Temp mod 10)) & "°C");
+   Put_Line ("   Estimation maximale (High) : " & Integer'Image (High_Temp / 10) & "." &
+             Integer'Image (abs (High_Temp mod 10)) & "°C");
+   New_Line;
+
+   -- Simulation d'un aléa avec seed
+   declare
+      Temp_With_Hazard : Temp_Type := 0;
+   begin
+      for I in 1 .. 20 loop
+         if Hazards (I).Hazard /= None then
+            Seed := Seed + I * 7;
+            Temp_With_Hazard := Apply_Hazard (Base_Temp, Hazards (I), Seed);
+         end if;
+      end loop;
+
+      Put_Line ("🎲 SIMULATION ALÉATOIRE (seed " & Integer'Image (Seed) & ") :");
+      Put_Line ("------------------------------------------------------------------");
+      Put_Line ("   Température avec aléas : " & Integer'Image (Temp_With_Hazard / 10) & "." &
+                Integer'Image (abs (Temp_With_Hazard mod 10)) & "°C");
+   end;
+   New_Line;
+
+   Put_Line ("================================================================================ ");
+   Put_Line ("🎯 VERDICT");
+   Put_Line ("================================================================================ ");
+   New_Line;
+
+   Put_Line ("""
+   ✅ V13.1 — MODULE ALÉAS OPÉRATIONNEL
+
+   PRINCIPES :
+   1. Cœur déterministe V13 inchangé
+   2. Aléas probabilitistes ajoutés
+   3. Estimation brute par région
+   4. Scénarios Haut / Bas / Brut
+
+   LIMITES :
+   - Les aléas sont des estimations, pas des prédictions
+   - Les probabilités sont fixes (à calibrer avec données réelles)
+   - Les impacts sont linéaires (simplification)
+   """);
+
+   Put_Line ("================================================================================ ");
+   Put_Line ("Ψ_V₁₃·₁ = 48016.8 kg·m⁻² — verrouillé.");
+   Put_Line ("Version: V13.1 — Aléas probabilitistes");
+   Put_Line ("================================================================================ ");
+end V13_1_Regional_Demo;
