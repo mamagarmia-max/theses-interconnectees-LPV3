@@ -1,0 +1,503 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V13 REGIONAL CLIMATE MODEL — DETERMINISTIC WEATHER PREDICTION
+-- ============================================================================
+-- Version 13 : Modèle complet avec ozone, glace, hydrogéologie, etc.
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 13.1.0
+-- Date : 28 Juin 2026
+
+package V13_Regional_Climate_Model with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. V13 INVARIANTS
+   -- ========================================================================
+   
+   PSI_V13         : constant := 480168;        -- ×10 : 48,016.8 kg·m⁻²
+   PHI_CRITICAL    : constant := -51100;        -- ×1000 : -51.1 mV
+   BETA            : constant := 1_000_000;     -- 10⁶
+   K_CYCLES        : constant := 7;             -- Heptadic closure
+   ALPHA_INV       : constant := 13703599913;   -- 1/α × 10⁵
+   
+   -- Constantes astronomiques
+   AU              : constant := 1000;
+   ECCENTRICITY    : constant := 167;
+   OBLIQUITY       : constant := 2344;
+
+   -- Constantes glaciologiques
+   ICE_ALBEDO      : constant := 80;
+   OCEAN_ALBEDO    : constant := 10;
+   ICE_DENSITY     : constant := 917;
+   ICE_LATENT_HEAT : constant := 334000;
+   ICE_MASS_NORTH  : constant := 4500;
+   ICE_MASS_SOUTH  : constant := 26000;
+
+   -- Constantes ozone
+   OZONE_REF       : constant := 300;
+
+   -- ========================================================================
+   -- 2. CONSTANTES CLIMATIQUES
+   -- ========================================================================
+   
+   REF_TEMP        : constant := 137;
+   REF_CO2         : constant := 2800;
+   CO2_2020        : constant := 4140;
+   CO2_2021        : constant := 4160;
+   CO2_2022        : constant := 4180;
+   CO2_2023        : constant := 4200;
+   CO2_2024        : constant := 4220;
+   CO2_2025        : constant := 4250;
+   CO2_2026        : constant := 4350;
+
+   -- ========================================================================
+   -- 3. TYPES DE BASE
+   -- ========================================================================
+   
+   subtype Temp_Type is Integer range -500 .. 500;
+   subtype CO2_Type is Integer range 0 .. 10_000;
+   subtype Pressure_Type is Integer range 7000 .. 11000;
+   subtype Humidity_Type is Integer range 0 .. 1000;
+   subtype Day_Type is Integer range 1 .. 365;
+   subtype Year_Type is Integer range 2020 .. 2030;
+   subtype Month_Type is Integer range 1 .. 12;
+   subtype Wind_Speed_Type is Integer range 0 .. 500;
+   subtype Solar_Activity_Type is Integer range 0 .. 1000;
+   subtype Groundwater_Depth_Type is Integer range 0 .. 500;
+   subtype Permeability_Type is Integer range -18 .. -14;
+   subtype Velocity_Type is Integer range 0 .. 50;
+   subtype Heat_Flux_Type is Integer range -500 .. 500;
+   subtype Hour_Type is Integer range 0 .. 2400;
+   subtype Ice_Mass_Type is Integer range 0 .. 30000;
+   subtype Ozone_DU_Type is Integer range 100 .. 500;
+   subtype Ozone_Effect_Type is Integer range -100 .. 100;
+
+   -- ========================================================================
+   -- 4. PARAMÈTRES RÉGIONAUX
+   -- ========================================================================
+   
+   type Regional_Parameters is record
+      Name           : String (1 .. 40) := (others => ' ');
+      Latitude       : Integer := 0;
+      Longitude      : Integer := 0;
+      Altitude       : Integer := 0;
+      Pressure_Base  : Pressure_Type := 10130;
+      Humidity_Base  : Humidity_Type := 600;
+      CO2_Local      : CO2_Type := 4300;
+      Has_Data       : Boolean := False;
+      Real_Annual_Avg : Integer := 0;   -- Pour l'évaluation
+   end record;
+
+   -- ========================================================================
+   -- 5. TYPES DE FACTEURS LOCAUX (raccourci pour la démonstration)
+   -- ========================================================================
+
+   type Forest_Type is (None, Tropical, Temperate, Boreal, Urban);
+   type Ocean_Current_Type is (None, Warm, Cold, Polar);
+   type Topography_Type is (Flat, Mountain, Valley, Plateau, Siberian_Basin);
+   type Soil_Type is (Normal, Wet, Dry, Permafrost, Desert_Sand, Siberian_Permafrost);
+   type Air_Mass_Type is (None, Tropical, Polar, Continental_Polar, Arctic);
+   type Groundwater_Type is (None, Shallow, Deep, Fossil, Karst);
+   type Tectonic_Zone_Type is (Stable, Active, Rift, Subduction);
+   type Ice_Zone_Type is (None, Arctic, Antarctic, Greenland, Glacier);
+   type Ozone_Zone_Type is (Equator, Mid_North, Mid_South, Arctic_Ozone, Antarctic_Ozone);
+
+   type Local_Factors_V13 is record
+      -- Facteurs V5
+      Cloud_Cover      : Integer := 0;
+      Population       : Integer := 0;
+      Snow_Cover       : Boolean := False;
+      Precipitation    : Integer := 0;
+      Urban_Heat       : Boolean := False;
+      Forest_Cover     : Integer := 0;
+      Forest_Type      : Forest_Type := None;
+      Ocean_Effect     : Integer := 0;
+      Foehn_Effect     : Integer := 0;
+      Wind_Effect      : Integer := 0;
+      Polar_Ocean      : Boolean := False;
+      
+      -- Facteurs V6
+      Continental_Extreme : Boolean := False;
+      Humidity_Null      : Boolean := False;
+      Cyclonic_Wind      : Boolean := False;
+      Albedo             : Integer := 0;
+      Ocean_Current      : Ocean_Current_Type := None;
+      Topography         : Topography_Type := Flat;
+      Soil               : Soil_Type := Normal;
+      
+      -- Facteurs V7
+      Polar_Night        : Boolean := False;
+      Thermal_Inversion  : Boolean := False;
+      Extreme_Low_Humidity : Boolean := False;
+      Siberian_High      : Boolean := False;
+      
+      -- Facteurs V8
+      Wind_Speed         : Wind_Speed_Type := 0;
+      Air_Mass           : Air_Mass_Type := None;
+      Tropical_Humidity  : Boolean := False;
+      Local_Greenhouse   : Integer := 0;
+      
+      -- Facteurs V9
+      Groundwater        : Groundwater_Type := None;
+      Groundwater_Depth  : Groundwater_Depth_Type := 0;
+      Thermal_Inertia    : Integer := 0;
+      Evapotranspiration : Integer := 0;
+      Solar_Cycle_Year   : Integer := 0;
+      Solar_Activity     : Solar_Activity_Type := 500;
+      
+      -- Facteurs V10
+      Deep_Circulation   : Boolean := False;
+      Permeability       : Permeability_Type := -16;
+      Velocity_Deep      : Velocity_Type := 1;
+      Max_Depth          : Integer := 5000;
+      Tectonic_Zone      : Tectonic_Zone_Type := Stable;
+      Geothermal_Gradient : Integer := 30;
+      Deep_Temp          : Integer := 0;
+      Advective_Flux     : Heat_Flux_Type := 0;
+      Recharge_Zone      : Boolean := False;
+      Discharge_Zone     : Boolean := False;
+      
+      -- Facteurs V11
+      Solar_Distance     : Integer := 1000;
+      Day_Length         : Hour_Type := 1200;
+      Night_Length       : Hour_Type := 1200;
+      
+      -- Facteurs V12
+      Ice_Zone           : Ice_Zone_Type := None;
+      Ice_Mass           : Ice_Mass_Type := 0;
+      Ice_Melt_Rate      : Integer := 0;
+      Ice_Albedo         : Integer := 80;
+      Ice_Thickness      : Integer := 0;
+      Permafrost_Melt    : Boolean := False;
+      
+      -- Facteurs V13
+      Ozone_Zone         : Ozone_Zone_Type := Equator;
+      Ozone_DU           : Ozone_DU_Type := 300;
+      Ozone_Seasonality  : Integer := 20;
+      Ozone_Hole         : Integer := 0;
+   end record;
+
+   -- ========================================================================
+   -- 6. ENREGISTREMENT JOUR/NUIT
+   -- ========================================================================
+
+   type Day_Night_Record is record
+      T_Day      : Temp_Type := 0;
+      T_Night    : Temp_Type := 0;
+      Amplitude  : Integer := 0;
+      Checksum   : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Day_Night_Record.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 7. SATURATING ARITHMETIC
+   -- ========================================================================
+   
+   function Saturating_Add (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Add'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Sub (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Sub'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Mul (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Mul'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Div (A, B : Integer) return Integer
+     with Pre => B /= 0,
+          Post => Saturating_Div'Result in Integer'First .. Integer'Last;
+   
+   function Clamp (Value, Min, Max : Integer) return Integer
+     with Pre => Min <= Max,
+          Post => Clamp'Result in Min .. Max;
+
+   -- ========================================================================
+   -- 8. DIGITAL ROOT
+   -- ========================================================================
+   
+   function Digital_Root (N : Integer) return Integer
+     with Pre => N >= 0,
+          Post => Digital_Root'Result in 1 .. 9;
+
+   -- ========================================================================
+   -- 9. FONCTIONS EXTERNES (déclarations)
+   -- ========================================================================
+
+   function Solar_Distance (Day : Day_Type) return Integer
+     with Post => Solar_Distance'Result in 980 .. 1020;
+
+   function Solar_Distance_Temp_Impact (Day : Day_Type) return Integer
+     with Post => Solar_Distance_Temp_Impact'Result in -20 .. 20;
+
+   function Day_Length_Calc (Latitude : Integer; Day : Day_Type) return Hour_Type
+     with Pre => Latitude in -900 .. 900 and Day in 1 .. 365,
+          Post => Day_Length_Calc'Result in 0 .. 2400;
+
+   function Day_Length_Temp_Impact (Day_Length : Hour_Type) return Integer
+     with Post => Day_Length_Temp_Impact'Result in -50 .. 50;
+
+   function Ice_Albedo_Effect
+     (Ice_Zone   : Ice_Zone_Type;
+      Ice_Mass   : Ice_Mass_Type;
+      Ice_Albedo : Integer) return Integer
+     with Post => Ice_Albedo_Effect'Result in -50 .. 0;
+
+   function Ice_Melt_Effect
+     (Ice_Mass      : Ice_Mass_Type;
+      Melt_Rate     : Integer;
+      Year          : Year_Type) return Integer
+     with Post => Ice_Melt_Effect'Result in -20 .. 30;
+
+   function Ice_Thermal_Inertia
+     (Ice_Mass : Ice_Mass_Type;
+      Day      : Day_Type) return Integer
+     with Post => Ice_Thermal_Inertia'Result in -20 .. 20;
+
+   function Permafrost_Effect
+     (Permafrost_Melt : Boolean;
+      Day             : Day_Type) return Integer
+     with Post => Permafrost_Effect'Result in -10 .. 20;
+
+   function Ozone_Temperature_Effect
+     (Ozone_DU      : Ozone_DU_Type;
+      Ozone_Hole    : Integer;
+      Latitude      : Integer;
+      Day           : Day_Type) return Ozone_Effect_Type
+     with Pre => Latitude in -900 .. 900 and Day in 1 .. 365,
+          Post => Ozone_Temperature_Effect'Result in -100 .. 100;
+
+   function Darcy_Velocity
+     (Permeability : Permeability_Type;
+      Gradient     : Integer;
+      Viscosity    : Integer) return Velocity_Type
+     with Post => Darcy_Velocity'Result in 0 .. 50;
+
+   function Viscosity_Water (T : Integer) return Integer
+     with Pre => T in 0 .. 200,
+          Post => Viscosity_Water'Result in 1 .. 1000;
+
+   function Deep_Temperature
+     (Depth        : Integer;
+      Surface_Temp : Integer;
+      Gradient     : Integer) return Integer
+     with Post => Deep_Temperature'Result in 0 .. 300;
+
+   function Advective_Heat_Flux
+     (Velocity : Velocity_Type;
+      Delta_T  : Integer) return Integer
+     with Post => Advective_Heat_Flux'Result in -500 .. 500;
+
+   function Surface_Temperature_Impact
+     (Advective_Flux : Integer) return Integer
+     with Post => Surface_Temperature_Impact'Result in -150 .. 300;
+
+   function Groundwater_Effect
+     (Groundwater : Groundwater_Type;
+      Depth       : Groundwater_Depth_Type;
+      Day         : Day_Type) return Integer
+     with Post => Groundwater_Effect'Result in -30 .. 30;
+
+   function Solar_Cycle_Effect
+     (Year      : Year_Type;
+      Activity  : Solar_Activity_Type) return Integer
+     with Post => Solar_Cycle_Effect'Result in -30 .. 30;
+
+   -- ========================================================================
+   -- 10. FONCTIONS PRINCIPALES
+   -- ========================================================================
+
+   function Compute_Temperature_Regional_V13
+     (Params   : Regional_Parameters;
+      CO2      : CO2_Type;
+      Day      : Day_Type;
+      Year     : Year_Type;
+      Factors  : Local_Factors_V13) return Temp_Type
+     with Pre => CO2 in 0 .. 10_000 and Day in 1 .. 365,
+          Post => Compute_Temperature_Regional_V13'Result in -500 .. 500;
+
+   function Compute_Amplitude_V13
+     (Latitude  : Integer;
+      Day       : Day_Type;
+      Humidity  : Humidity_Type;
+      Factors   : Local_Factors_V13) return Integer
+     with Pre => Latitude in -900 .. 900 and
+                 Day in 1 .. 365 and
+                 Humidity in 0 .. 1000,
+          Post => Compute_Amplitude_V13'Result in 30 .. 180;
+
+   function Compute_Day_Night_V13
+     (T_Mean   : Temp_Type;
+      Latitude : Integer;
+      Day      : Day_Type;
+      Humidity : Humidity_Type;
+      Factors  : Local_Factors_V13) return Day_Night_Record
+     with Pre => T_Mean in -500 .. 500 and
+                 Latitude in -900 .. 900 and
+                 Day in 1 .. 365 and
+                 Humidity in 0 .. 1000,
+          Post => Compute_Day_Night_V13'Result.T_Day in -500 .. 500 and
+                  Compute_Day_Night_V13'Result.T_Night in -500 .. 500 and
+                  Compute_Day_Night_V13'Result.Checksum in 0 .. 9;
+
+   function Get_Local_Factors_V13
+     (City : String;
+      Day  : Day_Type;
+      Year : Year_Type) return Local_Factors_V13;
+
+   -- ========================================================================
+   -- 11. HISTORICAL DATA LOADER
+   -- ========================================================================
+
+   type Historical_Record is record
+      Year           : Year_Type := 2020;
+      Month          : Month_Type := 6;
+      Day            : Day_Type := 1;
+      Observed_Temp  : Temp_Type := 0;
+      Predicted_Temp : Temp_Type := 0;
+      CO2_Level      : CO2_Type := 0;
+      Pressure       : Pressure_Type := 0;
+      Humidity       : Humidity_Type := 0;
+      Error_Pct      : Integer := 0;
+      Matches        : Boolean := False;
+      Checksum       : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Historical_Record.Checksum in 0 .. 9;
+
+   type Historical_Array is array (1 .. 365) of Historical_Record;
+
+   function Load_Historical_Data_Real
+     (Region  : Regional_Parameters;
+      Year    : Year_Type) return Historical_Array
+     with Post => (for all I in Historical_Array'Range =>
+                     Load_Historical_Data_Real'Result (I).Checksum in 0 .. 9);
+
+   function Verify_Historical_Data (Data : Historical_Array) return Integer
+     with Pre => (for all I in Data'Range => Data (I).Checksum in 0 .. 9),
+          Post => Verify_Historical_Data'Result in 0 .. 100;
+
+   -- ========================================================================
+   -- 12. PREDICTIONS
+   -- ========================================================================
+
+   type Prediction_Record is record
+      Day            : Day_Type := 1;
+      Predicted_Temp : Temp_Type := 0;
+      T_Day          : Temp_Type := 0;
+      T_Night        : Temp_Type := 0;
+      Amplitude      : Integer := 0;
+      CO2_Level      : CO2_Type := 0;
+      Confidence     : Integer := 0;
+      Checksum       : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Prediction_Record.Checksum in 0 .. 9;
+
+   type Prediction_Array is array (1 .. 365) of Prediction_Record;
+
+   function Predict_Regional_V13
+     (Region : Regional_Parameters;
+      Year   : Year_Type) return Prediction_Array
+     with Post => (for all I in Prediction_Array'Range =>
+                     Predict_Regional_V13'Result (I).Checksum in 0 .. 9);
+
+   -- ========================================================================
+   -- 13. RAPPORT D'ÉVALUATION (NOUVEAU MODULE)
+   -- ========================================================================
+
+   type Evaluation_Record is record
+      City_Name        : String (1 .. 40) := (others => ' ');
+      Real_Annual_Avg  : Integer := 0;      -- ×10°C
+      Pred_Annual_Avg  : Integer := 0;      -- ×10°C
+      Error            : Integer := 0;      -- ×10°C
+      Error_Pct        : Integer := 0;      -- %
+      Status           : String (1 .. 10) := (others => ' ');
+   end record;
+
+   type Evaluation_Array is array (1 .. 20) of Evaluation_Record;
+
+   procedure Run_Global_Evaluation
+     (Result : out Evaluation_Array;
+      Count  : out Integer);
+
+   -- ========================================================================
+   -- 14. STRESS TEST
+   -- ========================================================================
+
+   type Stress_Scenario_V13 is (None, Extreme_CO2, Extreme_Pressure,
+                               Extreme_Humidity, Altitude_Extreme,
+                               Forest_Extreme, Ocean_Extreme,
+                               Continental_Extreme, Desert_Extreme,
+                               Cyclone_Extreme, Polar_Night_Extreme,
+                               Wind_Chill_Extreme, Arctic_Air_Extreme,
+                               Groundwater_Extreme, Solar_Cycle_Extreme,
+                               Deep_Circulation_Extreme, Recharge_Extreme,
+                               Discharge_Extreme, Solar_Distance_Extreme,
+                               Ice_Melt_Extreme, Ice_Albedo_Extreme,
+                               Ozone_Hole_Extreme, Ozone_Depletion_Extreme,
+                               All_Extremes, Historical_Comparison,
+                               All_Combined);
+
+   type Stress_Result_V13 is record
+      Scenario              : Stress_Scenario_V13 := None;
+      Passed                : Boolean := False;
+      Avg_Temp_Day          : Temp_Type := 0;
+      Avg_Temp_Night        : Temp_Type := 0;
+      Max_Temp_Day          : Temp_Type := 0;
+      Heatwave_Days         : Integer := 0;
+      Accuracy              : Integer := 0;
+      Forest_Impact         : Integer := 0;
+      Ocean_Impact          : Integer := 0;
+      Foehn_Impact          : Integer := 0;
+      Wind_Impact           : Integer := 0;
+      Continental_Impact    : Integer := 0;
+      Albedo_Impact         : Integer := 0;
+      Current_Impact        : Integer := 0;
+      Topo_Impact           : Integer := 0;
+      Soil_Impact           : Integer := 0;
+      Polar_Night_Impact    : Integer := 0;
+      Inversion_Impact      : Integer := 0;
+      Wind_Chill_Impact     : Integer := 0;
+      Air_Mass_Impact       : Integer := 0;
+      Tropical_Hum_Impact   : Integer := 0;
+      Greenhouse_Impact     : Integer := 0;
+      Groundwater_Impact    : Integer := 0;
+      Thermal_Inertia_Impact : Integer := 0;
+      Evapotranspiration_Impact : Integer := 0;
+      Solar_Cycle_Impact    : Integer := 0;
+      Deep_Circulation_Impact : Integer := 0;
+      Advective_Flux_Impact   : Integer := 0;
+      Recharge_Cooling        : Integer := 0;
+      Discharge_Warming       : Integer := 0;
+      Solar_Distance_Impact : Integer := 0;
+      Day_Length_Impact     : Integer := 0;
+      Ice_Albedo_Impact     : Integer := 0;
+      Ice_Melt_Impact       : Integer := 0;
+      Ice_Inertia_Impact    : Integer := 0;
+      Permafrost_Impact     : Integer := 0;
+      Ozone_Impact          : Integer := 0;
+      Ozone_DU_Value        : Integer := 0;
+      Ozone_Hole_Effect     : Integer := 0;
+      Checksum              : Integer := 9;
+      Critical_Failure      : Boolean := False;
+   end record
+     with Predicate => Stress_Result_V13.Checksum in 0 .. 9;
+
+   procedure Run_Stress_Test_V13
+     (Scenario : in     Stress_Scenario_V13;
+      Region   : in     Regional_Parameters;
+      Year     : in     Year_Type;
+      Result   :    out Stress_Result_V13)
+     with Post => (if not Result.Critical_Failure then
+                      Result.Checksum = 9 and Result.Accuracy >= 90);
+
+end V13_Regional_Climate_Model;
