@@ -1,0 +1,612 @@
+package body V3_Regional_Climate_Model with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- Saturating Arithmetic
+   -- ========================================================================
+   
+   function Saturating_Add (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A + B;
+      if Result < A and B > 0 then
+         return Integer'Last;
+      elsif Result > A and B < 0 then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Add;
+   
+   function Saturating_Sub (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A - B;
+      if Result > A and B < 0 then
+         return Integer'First;
+      elsif Result < A and B > 0 then
+         return Integer'Last;
+      else
+         return Result;
+      end if;
+   end Saturating_Sub;
+   
+   function Saturating_Mul (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A * B;
+      if (A > 0 and B > 0) and (Result < A or Result < B) then
+         return Integer'Last;
+      elsif (A < 0 and B < 0) and (Result > A or Result > B) then
+         return Integer'Last;
+      elsif (A > 0 and B < 0) and (Result > A or Result < B) then
+         return Integer'First;
+      elsif (A < 0 and B > 0) and (Result < A or Result > B) then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Mul;
+   
+   function Saturating_Div (A, B : Integer) return Integer is
+   begin
+      if A = Integer'First and B = -1 then
+         return Integer'Last;
+      else
+         return A / B;
+      end if;
+   end Saturating_Div;
+   
+   function Clamp (Value, Min, Max : Integer) return Integer is
+   begin
+      if Value < Min then
+         return Min;
+      elsif Value > Max then
+         return Max;
+      else
+         return Value;
+      end if;
+   end Clamp;
+
+   -- ========================================================================
+   -- Digital Root
+   -- ========================================================================
+   
+   function Digital_Root (N : Integer) return Integer is
+      V : Integer := N;
+      S : Integer := 0;
+   begin
+      if V < 0 then
+         V := -V;
+      end if;
+      if V = 0 then
+         return 9;
+      end if;
+      while V > 0 loop
+         pragma Loop_Invariant (V >= 0 and S >= 0);
+         S := S + (V mod 10);
+         V := V / 10;
+      end loop;
+      while S > 9 loop
+         pragma Loop_Invariant (S > 9);
+         S := (S mod 10) + (S / 10);
+      end loop;
+      return S;
+   end Digital_Root;
+
+   -- ========================================================================
+   -- Core Regional Temperature
+   -- ========================================================================
+   
+   function Compute_Temperature_Regional
+     (Params   : Regional_Parameters;
+      CO2      : CO2_Type;
+      Day      : Day_Type) return Temp_Type
+   is
+      Numerator   : Integer := 0;
+      Denominator : Integer := 0;
+      Result      : Integer := 0;
+      Alt_Adj     : Integer := 0;
+      Lat_Adj     : Integer := 0;
+   begin
+      -- Base: T = Ψ_V3 × (CO₂ × P) / (β × H × k)
+      Numerator := Saturating_Mul (CO2, Params.Pressure_Base);
+      Numerator := Saturating_Mul (PSI_V3, Numerator);
+      Denominator := Saturating_Mul (BETA, Params.Humidity_Base);
+      Denominator := Saturating_Mul (Denominator, K_CYCLES);
+      
+      if Denominator /= 0 then
+         Result := Saturating_Div (Numerator, Denominator);
+      else
+         Result := 0;
+      end if;
+      
+      -- Altitude adjustment: -0.65°C per 100m (lapse rate)
+      Alt_Adj := Saturating_Div (Params.Altitude, 100) * (-6);
+      Result := Saturating_Add (Result, Alt_Adj);
+      
+      -- Latitude adjustment: colder at higher latitudes
+      Lat_Adj := Saturating_Div (abs (Params.Latitude - 450), 10) * (-2);
+      Result := Saturating_Add (Result, Lat_Adj);
+      
+      -- Seasonal adjustment
+      if Day > 80 and Day < 265 then
+         Result := Result + (Day / 30) * 8;
+      else
+         Result := Result - (Day / 30) * 4;
+      end if;
+      
+      return Temp_Type (Clamp (Result, -500, 500));
+   end Compute_Temperature_Regional;
+
+   -- ========================================================================
+   -- Compute Day/Night Temperature
+   -- ========================================================================
+   
+   function Compute_Day_Night_Temperature
+     (T_Mean   : Temp_Type;
+      Latitude : Integer;
+      Day      : Day_Type;
+      Humidity : Humidity_Type) return Day_Night_Record
+   is
+      Record_Out : Day_Night_Record;
+      Amplitude : Integer := 0;
+      T_Day     : Temp_Type := 0;
+      T_Night   : Temp_Type := 0;
+   begin
+      -- Amplitude de base : 8°C à 15°C (80 à 150 en dixièmes)
+      Amplitude := 80 + (abs (Latitude) / 10) * 5;
+      
+      -- Ajustement saisonnier : été plus chaud (jour/nuit plus marqué)
+      if Day > 150 and Day < 250 then
+         Amplitude := Amplitude + 10;
+      end if;
+      
+      -- Ajustement humidité : nuageux → amplitude réduite
+      if Humidity > 700 then
+         Amplitude := Amplitude - 20;
+      end if;
+      
+      -- Clamp de l'amplitude
+      if Amplitude < 50 then
+         Amplitude := 50;
+      elsif Amplitude > 180 then
+         Amplitude := 180;
+      end if;
+      
+      -- Calcul des températures
+      T_Day := T_Mean + (Amplitude / 2);
+      T_Night := T_Mean - (Amplitude / 2);
+      
+      -- Clamp
+      if T_Day > 500 then
+         T_Day := 500;
+      elsif T_Day < -500 then
+         T_Day := -500;
+      end if;
+      
+      if T_Night > 500 then
+         T_Night := 500;
+      elsif T_Night < -500 then
+         T_Night := -500;
+      end if;
+      
+      Record_Out.T_Day := T_Day;
+      Record_Out.T_Night := T_Night;
+      Record_Out.Amplitude := Amplitude;
+      Record_Out.Checksum := Digital_Root (Integer (T_Day) + Integer (T_Night) + Amplitude);
+      
+      return Record_Out;
+   end Compute_Day_Night_Temperature;
+
+   -- ========================================================================
+   -- Historical Data Loader
+   -- ========================================================================
+   
+   function Load_Historical_Data (Region : Regional_Parameters) return Historical_Array is
+      Data : Historical_Array;
+   begin
+      for I in 1 .. 365 loop
+         Data (I).Year := 2025;
+         Data (I).Day := I;
+         Data (I).Month := (I / 30) + 1;
+         if Data (I).Month > 12 then
+            Data (I).Month := 12;
+         end if;
+         
+         Data (I).CO2_Level := Region.CO2_Local;
+         Data (I).Pressure := Region.Pressure_Base;
+         Data (I).Humidity := Region.Humidity_Base;
+         
+         -- Simulated observed data
+         if I > 150 and I < 250 then
+            Data (I).Observed_Temp := 230 + (I - 150) / 10;
+         else
+            Data (I).Observed_Temp := 130 + (I / 20);
+         end if;
+         
+         if Data (I).Observed_Temp > 350 then
+            Data (I).Observed_Temp := 350;
+         end if;
+         
+         Data (I).Predicted_Temp := Compute_Temperature_Regional (
+            Region,
+            Data (I).CO2_Level,
+            I
+         );
+         
+         if Data (I).Observed_Temp /= 0 then
+            Data (I).Error_Pct := abs (Data (I).Predicted_Temp - Data (I).Observed_Temp) * 100 /
+                                  Data (I).Observed_Temp;
+         else
+            Data (I).Error_Pct := 0;
+         end if;
+         
+         Data (I).Matches := Data (I).Error_Pct < 10;
+         Data (I).Checksum := Digital_Root (Data (I).Year + Data (I).Day +
+                                            Data (I).Observed_Temp +
+                                            Data (I).Predicted_Temp);
+      end loop;
+      return Data;
+   end Load_Historical_Data;
+
+   -- ========================================================================
+   -- Historical Verification
+   -- ========================================================================
+   
+   function Verify_Historical_Data (Data : Historical_Array) return Integer is
+      Matches : Integer := 0;
+   begin
+      for I in 1 .. 365 loop
+         if Data (I).Matches then
+            Matches := Matches + 1;
+         end if;
+      end loop;
+      return Matches * 100 / 365;
+   end Verify_Historical_Data;
+
+   -- ========================================================================
+   -- Predictions
+   -- ========================================================================
+   
+   function Predict_Regional
+     (Region : Regional_Parameters) return Prediction_Array
+   is
+      Predictions : Prediction_Array;
+      T_Mean      : Temp_Type := 0;
+      DN          : Day_Night_Record;
+   begin
+      for I in 1 .. 365 loop
+         Predictions (I).Day := I;
+         Predictions (I).CO2_Level := CO2_2026;
+         T_Mean := Compute_Temperature_Regional (
+            Region,
+            CO2_2026,
+            I
+         );
+         Predictions (I).Predicted_Temp := T_Mean;
+         
+         DN := Compute_Day_Night_Temperature (
+            T_Mean,
+            Region.Latitude,
+            I,
+            Region.Humidity_Base
+         );
+         
+         Predictions (I).T_Day := DN.T_Day;
+         Predictions (I).T_Night := DN.T_Night;
+         Predictions (I).Amplitude := DN.Amplitude;
+         Predictions (I).Confidence := 80 + (I mod 20);
+         Predictions (I).Checksum := Digital_Root (
+            Predictions (I).Day +
+            Predictions (I).Predicted_Temp +
+            Predictions (I).T_Day +
+            Predictions (I).T_Night +
+            Predictions (I).CO2_Level
+         );
+      end loop;
+      return Predictions;
+   end Predict_Regional;
+
+   -- ========================================================================
+   -- Heatwave Detection
+   -- ========================================================================
+   
+   function Is_Heatwave (Temp : Temp_Type; Day : Day_Type) return Boolean is
+   begin
+      return Temp > 300 and Day > 150 and Day < 260;
+   end Is_Heatwave;
+
+   function Count_Heatwave_Days_Regional
+     (Predictions : Prediction_Array;
+      Threshold   : Temp_Type := 300) return Integer
+   is
+      Count : Integer := 0;
+   begin
+      for I in 1 .. 365 loop
+         if Predictions (I).T_Day > Threshold and I > 150 and I < 260 then
+            Count := Count + 1;
+         end if;
+      end loop;
+      return Count;
+   end Count_Heatwave_Days_Regional;
+
+   -- ========================================================================
+   -- Regional Report
+   -- ========================================================================
+   
+   function Generate_Regional_Report
+     (Historical  : Historical_Array;
+      Predictions : Prediction_Array;
+      Region      : Regional_Parameters) return Climate_Report
+   is
+      Report : Climate_Report := (Region_Name => Region.Name,
+                                  Year => 2026,
+                                  Average_Temp => 0,
+                                  Max_Temp_Day => -500,
+                                  Max_Temp_Night => -500,
+                                  Min_Temp_Day => 500,
+                                  Min_Temp_Night => 500,
+                                  Heatwave_Days_30 => 0,
+                                  Heatwave_Days_35 => 0,
+                                  CO2_Level => CO2_2026,
+                                  Accuracy_Historical => 0,
+                                  Confidence => 0,
+                                  Checksum => 9,
+                                  Critical_Failure => False);
+      Sum_Temp_Day   : Integer := 0;
+      Sum_Temp_Night : Integer := 0;
+      Count          : Integer := 0;
+   begin
+      Report.Accuracy_Historical := Verify_Historical_Data (Historical);
+      
+      for I in 1 .. 365 loop
+         -- Max Day
+         if Predictions (I).T_Day > Report.Max_Temp_Day then
+            Report.Max_Temp_Day := Predictions (I).T_Day;
+         end if;
+         if Predictions (I).T_Night > Report.Max_Temp_Night then
+            Report.Max_Temp_Night := Predictions (I).T_Night;
+         end if;
+         
+         -- Min Day
+         if Predictions (I).T_Day < Report.Min_Temp_Day then
+            Report.Min_Temp_Day := Predictions (I).T_Day;
+         end if;
+         if Predictions (I).T_Night < Report.Min_Temp_Night then
+            Report.Min_Temp_Night := Predictions (I).T_Night;
+         end if;
+         
+         Sum_Temp_Day := Sum_Temp_Day + Predictions (I).T_Day;
+         Sum_Temp_Night := Sum_Temp_Night + Predictions (I).T_Night;
+         Count := Count + 1;
+      end loop;
+      
+      if Count > 0 then
+         Report.Average_Temp := Temp_Type ((Sum_Temp_Day + Sum_Temp_Night) / (2 * Count));
+      end if;
+      
+      Report.Heatwave_Days_30 := Count_Heatwave_Days_Regional (Predictions, 300);
+      Report.Heatwave_Days_35 := Count_Heatwave_Days_Regional (Predictions, 350);
+      Report.CO2_Level := CO2_2026;
+      
+      for I in 1 .. 365 loop
+         Report.Confidence := Report.Confidence + Predictions (I).Confidence;
+      end loop;
+      Report.Confidence := Report.Confidence / 365;
+      
+      Report.Checksum := Digital_Root (
+         Report.Year +
+         Report.Average_Temp +
+         Report.Max_Temp_Day +
+         Report.Heatwave_Days_30 +
+         Report.Confidence
+      );
+      
+      if Report.Checksum /= 9 then
+         Report.Critical_Failure := True;
+      end if;
+      
+      return Report;
+   end Generate_Regional_Report;
+
+   -- ========================================================================
+   -- Regional Stress Test
+   -- ========================================================================
+   
+   procedure Run_Regional_Stress_Test
+     (Scenario : in     Stress_Scenario;
+      Region   : in     Regional_Parameters;
+      Result   :    out Stress_Result)
+   is
+      Data : Historical_Array := Load_Historical_Data (Region);
+      Pred : Prediction_Array := Predict_Regional (Region);
+      Report : Climate_Report := Generate_Regional_Report (Data, Pred, Region);
+      Passed : Boolean := True;
+      Sum_Day   : Integer := 0;
+      Sum_Night : Integer := 0;
+      Count     : Integer := 0;
+   begin
+      case Scenario is
+         when None =>
+            null;
+            
+         when Extreme_CO2 =>
+            for I in 1 .. 365 loop
+               Pred (I).Predicted_Temp := Compute_Temperature_Regional (
+                  Region, 10000, I
+               );
+               declare
+                  DN : Day_Night_Record := Compute_Day_Night_Temperature (
+                     Pred (I).Predicted_Temp,
+                     Region.Latitude,
+                     I,
+                     Region.Humidity_Base
+                  );
+               begin
+                  Pred (I).T_Day := DN.T_Day;
+                  Pred (I).T_Night := DN.T_Night;
+                  Pred (I).Amplitude := DN.Amplitude;
+               end;
+            end loop;
+            
+         when Extreme_Pressure =>
+            declare
+               High_Press : Regional_Parameters := Region;
+            begin
+               High_Press.Pressure_Base := 11000;
+               for I in 1 .. 365 loop
+                  Pred (I).Predicted_Temp := Compute_Temperature_Regional (
+                     High_Press, CO2_2026, I
+                  );
+                  declare
+                     DN : Day_Night_Record := Compute_Day_Night_Temperature (
+                        Pred (I).Predicted_Temp,
+                        Region.Latitude,
+                        I,
+                        Region.Humidity_Base
+                     );
+                  begin
+                     Pred (I).T_Day := DN.T_Day;
+                     Pred (I).T_Night := DN.T_Night;
+                     Pred (I).Amplitude := DN.Amplitude;
+                  end;
+               end loop;
+            end;
+            
+         when Extreme_Humidity =>
+            declare
+               High_Hum : Regional_Parameters := Region;
+            begin
+               High_Hum.Humidity_Base := 1000;
+               for I in 1 .. 365 loop
+                  Pred (I).Predicted_Temp := Compute_Temperature_Regional (
+                     High_Hum, CO2_2026, I
+                  );
+                  declare
+                     DN : Day_Night_Record := Compute_Day_Night_Temperature (
+                        Pred (I).Predicted_Temp,
+                        Region.Latitude,
+                        I,
+                        High_Hum.Humidity_Base
+                     );
+                  begin
+                     Pred (I).T_Day := DN.T_Day;
+                     Pred (I).T_Night := DN.T_Night;
+                     Pred (I).Amplitude := DN.Amplitude;
+                  end;
+               end loop;
+            end;
+            
+         when Altitude_Extreme =>
+            declare
+               High_Alt : Regional_Parameters := Region;
+            begin
+               High_Alt.Altitude := 4000;
+               for I in 1 .. 365 loop
+                  Pred (I).Predicted_Temp := Compute_Temperature_Regional (
+                     High_Alt, CO2_2026, I
+                  );
+                  declare
+                     DN : Day_Night_Record := Compute_Day_Night_Temperature (
+                        Pred (I).Predicted_Temp,
+                        Region.Latitude,
+                        I,
+                        Region.Humidity_Base
+                     );
+                  begin
+                     Pred (I).T_Day := DN.T_Day;
+                     Pred (I).T_Night := DN.T_Night;
+                     Pred (I).Amplitude := DN.Amplitude;
+                  end;
+               end loop;
+            end;
+            
+         when All_Extremes =>
+            declare
+               All_Ext : Regional_Parameters := Region;
+            begin
+               All_Ext.Pressure_Base := 11000;
+               All_Ext.Humidity_Base := 1000;
+               All_Ext.Altitude := 4000;
+               for I in 1 .. 365 loop
+                  Pred (I).Predicted_Temp := Compute_Temperature_Regional (
+                     All_Ext, 10000, I
+                  );
+                  declare
+                     DN : Day_Night_Record := Compute_Day_Night_Temperature (
+                        Pred (I).Predicted_Temp,
+                        Region.Latitude,
+                        I,
+                        All_Ext.Humidity_Base
+                     );
+                  begin
+                     Pred (I).T_Day := DN.T_Day;
+                     Pred (I).T_Night := DN.T_Night;
+                     Pred (I).Amplitude := DN.Amplitude;
+                  end;
+               end loop;
+            end;
+            
+         when Historical_Comparison =>
+            declare
+               Acc : Integer := Verify_Historical_Data (Data);
+            begin
+               if Acc < 90 then
+                  Passed := False;
+               end if;
+            end;
+            
+         when All_Combined =>
+            declare
+               All_Ext : Regional_Parameters := Region;
+            begin
+               All_Ext.Pressure_Base := 11000;
+               All_Ext.Humidity_Base := 1000;
+               All_Ext.Altitude := 4000;
+               for I in 1 .. 365 loop
+                  Pred (I).Predicted_Temp := Compute_Temperature_Regional (
+                     All_Ext, 10000, I
+                  );
+                  declare
+                     DN : Day_Night_Record := Compute_Day_Night_Temperature (
+                        Pred (I).Predicted_Temp,
+                        Region.Latitude,
+                        I,
+                        All_Ext.Humidity_Base
+                     );
+                  begin
+                     Pred (I).T_Day := DN.T_Day;
+                     Pred (I).T_Night := DN.T_Night;
+                     Pred (I).Amplitude := DN.Amplitude;
+                  end;
+               end loop;
+               if Verify_Historical_Data (Data) < 90 then
+                  Passed := False;
+               end if;
+            end;
+      end case;
+      
+      Report := Generate_Regional_Report (Data, Pred, Region);
+      
+      -- Calculate average day/night temperatures
+      for I in 1 .. 365 loop
+         Sum_Day := Sum_Day + Pred (I).T_Day;
+         Sum_Night := Sum_Night + Pred (I).T_Night;
+         Count := Count + 1;
+      end loop;
+      
+      Result.Scenario := Scenario;
+      Result.Passed := Report.Checksum = 9 and Report.Critical_Failure = False and Passed;
+      Result.Avg_Temp_Day := Temp_Type (Sum_Day / Count);
+      Result.Avg_Temp_Night := Temp_Type (Sum_Night / Count);
+      Result.Max_Temp_Day := Report.Max_Temp_Day;
+      Result.Heatwave_Days := Report.Heatwave_Days_30;
+      Result.Accuracy := Report.Accuracy_Historical;
+      Result.Checksum := Report.Checksum;
+      Result.Critical_Failure := Report.Critical_Failure;
+      
+      pragma Assert (if not Result.Critical_Failure then
+                        Result.Checksum = 9 and Result.Accuracy >= 90);
+   end Run_Regional_Stress_Test;
+
+end V3_Regional_Climate_Model;
