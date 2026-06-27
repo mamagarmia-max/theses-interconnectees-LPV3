@@ -1,0 +1,159 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V13 REGIONAL CLIMATE MODEL — DEMONSTRATION AVEC ÉVALUATION FINALE
+-- ============================================================================
+
+with Ada.Text_IO; use Ada.Text_IO;
+with V13_Regional_Climate_Model; use V13_Regional_Climate_Model;
+
+procedure V13_Regional_Demo is
+   Region : Regional_Parameters := (
+      Name          => "Paris                                    ",
+      Latitude      => 489,
+      Longitude     => 23,
+      Altitude      => 35,
+      Pressure_Base => 10130,
+      Humidity_Base => 650,
+      CO2_Local     => 4250,
+      Has_Data      => True
+   );
+   Data_2024 : Historical_Array := Load_Historical_Data_Real (Region, 2024);
+   Data_2025 : Historical_Array := Load_Historical_Data_Real (Region, 2025);
+   Pred : Prediction_Array := Predict_Regional_V13 (Region, 2026);
+   Report : Climate_Report := Generate_Regional_Report_V13 (Data_2024, Pred, Region);
+   Result : Stress_Result_V13;
+   DN : Day_Night_Record;
+   Factors : Local_Factors_V13;
+   Acc_2024 : Integer := Verify_Historical_Data (Data_2024);
+   Acc_2025 : Integer := Verify_Historical_Data (Data_2025);
+   
+   -- Variables pour l'évaluation finale
+   Eval_Result : Evaluation_Array;
+   Error_Count : Integer := 0;
+begin
+   Put_Line ("================================================================================ ");
+   Put_Line ("🌍 V13 REGIONAL CLIMATE MODEL — ÉVALUATION FINALE");
+   Put_Line ("   Version 13.1 : Ozone + Tous les facteurs V1 à V12");
+   Put_Line ("================================================================================ ");
+   New_Line;
+   
+   Put_Line ("📐 V13 INVARIANTS:");
+   Put_Line ("   PSI_V13      = 48,016.8 kg·m⁻²");
+   Put_Line ("   PHI_CRITICAL = -51.1 mV");
+   Put_Line ("   BETA         = 1,000,000");
+   Put_Line ("   K_CYCLES     = 7");
+   New_Line;
+   
+   Put_Line ("📊 HISTORICAL ACCURACY (Paris):");
+   Put_Line ("------------------------------------------------------------------");
+   Put_Line ("   2024 : " & Integer'Image (Acc_2024) & "%");
+   Put_Line ("   2025 : " & Integer'Image (Acc_2025) & "%");
+   New_Line;
+   
+   Put_Line ("📊 REGIONAL REPORT (Paris 2026):");
+   Put_Line ("------------------------------------------------------------------");
+   Put_Line ("   Region             : " & Report.Region_Name);
+   Put_Line ("   Year               : " & Integer'Image (Report.Year));
+   Put_Line ("   Average temp       : " & Integer'Image (Report.Average_Temp / 10) & "." &
+             Integer'Image (abs (Report.Average_Temp mod 10)) & "°C");
+   Put_Line ("   Max Day temp       : " & Integer'Image (Report.Max_Temp_Day / 10) & "." &
+             Integer'Image (abs (Report.Max_Temp_Day mod 10)) & "°C");
+   Put_Line ("   Max Night temp     : " & Integer'Image (Report.Max_Temp_Night / 10) & "." &
+             Integer'Image (abs (Report.Max_Temp_Night mod 10)) & "°C");
+   Put_Line ("   Heatwave days (>30°C): " & Integer'Image (Report.Heatwave_Days_30));
+   Put_Line ("   CO₂ level          : " & Integer'Image (Report.CO2_Level / 10) & " ppm");
+   Put_Line ("   Historical accuracy: " & Integer'Image (Report.Accuracy_Historical) & "%");
+   Put_Line ("   Confidence         : " & Integer'Image (Report.Confidence) & "%");
+   Put_Line ("   Ozone DU           : " & Integer'Image (Report.Ozone_DU_Value));
+   Put_Line ("   Ozone impact       : " & Integer'Image (Report.Ozone_Impact) & "°C");
+   New_Line;
+   
+   Put_Line ("🌅 EXEMPLE JOUR/NUIT (15 Juillet 2026, Paris):");
+   Put_Line ("------------------------------------------------------------------");
+   Factors := Get_Local_Factors_V13 ("Paris", 196, 2026);
+   DN := Compute_Day_Night_V13 (180, Region.Latitude, 196, Region.Humidity_Base, Factors);
+   Put_Line ("   Température moyenne : 18.0°C");
+   Put_Line ("   Température diurne  : " & Integer'Image (DN.T_Day / 10) & "." &
+             Integer'Image (abs (DN.T_Day mod 10)) & "°C");
+   Put_Line ("   Température nocturne: " & Integer'Image (DN.T_Night / 10) & "." &
+             Integer'Image (abs (DN.T_Night mod 10)) & "°C");
+   Put_Line ("   Amplitude          : " & Integer'Image (DN.Amplitude / 10) & "." &
+             Integer'Image (abs (DN.Amplitude mod 10)) & "°C");
+   Put_Line ("   Ozone DU           : " & Integer'Image (Factors.Ozone_DU));
+   New_Line;
+   
+   Put_Line ("🔥 STRESS TEST (All Combined):");
+   Put_Line ("------------------------------------------------------------------");
+   Run_Stress_Test_V13 (All_Combined, Region, 2026, Result);
+   Put_Line ("   Passed: " & (if Result.Passed then "✅ YES" else "❌ NO"));
+   Put_Line ("   Accuracy: " & Integer'Image (Result.Accuracy) & "%");
+   Put_Line ("   Ozone impact: " & Integer'Image (Result.Ozone_Impact) & "°C");
+   New_Line;
+   
+   -- ========================================================================
+   -- ÉVALUATION FINALE — TOUTES LES RÉGIONS
+   -- ========================================================================
+   
+   Put_Line ("================================================================================ ");
+   Put_Line ("📊 ÉVALUATION FINALE — 10 RÉGIONS DE RÉFÉRENCE");
+   Put_Line ("================================================================================ ");
+   New_Line;
+   
+   Run_Global_Evaluation (Eval_Result, Error_Count);
+   
+   Put_Line ("   # | Ville                  | Réel (°C) | Prédit (°C) | Écart (°C) | Erreur % | Statut");
+   Put_Line ("----------------------------------------------------------------------------------------------------------------");
+   for I in 1 .. 10 loop
+      Put_Line ("   " & Integer'Image (I) & " | " &
+                Eval_Result (I).City_Name & " | " &
+                Integer'Image (Eval_Result (I).Real_Annual_Avg / 10) & "." &
+                Integer'Image (abs (Eval_Result (I).Real_Annual_Avg mod 10)) & "    | " &
+                Integer'Image (Eval_Result (I).Pred_Annual_Avg / 10) & "." &
+                Integer'Image (abs (Eval_Result (I).Pred_Annual_Avg mod 10)) & "     | " &
+                Integer'Image (Eval_Result (I).Error / 10) & "." &
+                Integer'Image (abs (Eval_Result (I).Error mod 10)) & "     | " &
+                Integer'Image (Eval_Result (I).Error_Pct) & "%     | " &
+                Eval_Result (I).Status);
+   end loop;
+   
+   Put_Line ("----------------------------------------------------------------------------------------------------------------");
+   Put_Line ("   Erreurs détectées : " & Integer'Image (Error_Count) & " sur 10 régions");
+   New_Line;
+   
+   -- ========================================================================
+   -- VERDICT FINAL
+   -- ========================================================================
+   
+   Put_Line ("================================================================================ ");
+   Put_Line ("🎯 VERDICT FINAL");
+   Put_Line ("================================================================================ ");
+   New_Line;
+   
+   if Error_Count = 0 then
+      Put_Line ("""
+   ✅ V13 — TOUTES LES RÉGIONS SONT VALIDÉES
+    
+   Les écarts sont inférieurs à 1°C sur l'ensemble des 10 régions.
+   Le modèle V13 est validé et prêt pour la publication.
+   """);
+   elsif Error_Count <= 2 then
+      Put_Line ("""
+   ⚠️ V13 — VALIDATION PARTIELLE
+    
+   Certaines régions présentent des écarts résiduels (2 régions sur 10).
+   Les facteurs polaires ou tropicaux nécessitent encore un ajustement fin.
+   """);
+   else
+      Put_Line ("""
+   ❌ V13 — ÉCARTS PERSISTANTS
+    
+   Les écarts subsistent sur plus de 2 régions.
+   Une révision des facteurs locaux est nécessaire.
+   """);
+   end if;
+   
+   Put_Line ("================================================================================ ");
+   Put_Line ("Ψ_V₁₃ = 48016.8 kg·m⁻² — locked.");
+   Put_Line ("Version: V13.1 — Évaluation finale incluse");
+   Put_Line ("================================================================================ ");
+end V13_Regional_Demo;
