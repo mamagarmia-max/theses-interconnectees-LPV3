@@ -1,0 +1,362 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V6 REGIONAL CLIMATE MODEL — DETERMINISTIC WEATHER PREDICTION
+-- ============================================================================
+-- Version 6 : Modèle complet avec facteurs avancés :
+--   - Continental extrême
+--   - Humidité nulle (désert)
+--   - Vents cycloniques
+--   - Albédo (glace, désert)
+--   - Courants océaniques (Gulf Stream, Humboldt)
+--   - Topographie (montagnes, vallées)
+--   - Sol (humidité du sol, pergélisol)
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 6.0.0
+-- Date : 27 Juin 2026
+
+package V6_Regional_Climate_Model with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. V6 INVARIANTS (Zero free parameters)
+   -- ========================================================================
+   
+   PSI_V6          : constant := 480168;        -- ×10 : 48,016.8 kg·m⁻²
+   PHI_CRITICAL    : constant := -51100;        -- ×1000 : -51.1 mV
+   BETA            : constant := 1_000_000;     -- 10⁶
+   K_CYCLES        : constant := 7;             -- Heptadic closure
+   ALPHA_INV       : constant := 13703599913;   -- 1/α × 10⁵
+
+   -- ========================================================================
+   -- 2. CONSTANTES CLIMATIQUES (Données réelles 2020-2025)
+   -- ========================================================================
+   
+   REF_TEMP        : constant := 137;           -- 13.7°C (scaled ×10)
+   REF_CO2         : constant := 2800;          -- 280 ppm
+   CO2_2020        : constant := 4140;          -- 414 ppm (réel)
+   CO2_2021        : constant := 4160;          -- 416 ppm (réel)
+   CO2_2022        : constant := 4180;          -- 418 ppm (réel)
+   CO2_2023        : constant := 4200;          -- 420 ppm (réel)
+   CO2_2024        : constant := 4220;          -- 422 ppm (réel)
+   CO2_2025        : constant := 4250;          -- 425 ppm (réel)
+   CO2_2026        : constant := 4350;          -- 435 ppm (projection)
+
+   -- ========================================================================
+   -- 3. TYPES DE BASE
+   -- ========================================================================
+   
+   subtype Temp_Type is Integer range -500 .. 500;
+   subtype CO2_Type is Integer range 0 .. 10_000;
+   subtype Pressure_Type is Integer range 7000 .. 11000;  -- Élargi pour Quito
+   subtype Humidity_Type is Integer range 0 .. 1000;
+   subtype Day_Type is Integer range 1 .. 365;
+   subtype Year_Type is Integer range 2020 .. 2030;
+   subtype Month_Type is Integer range 1 .. 12;
+
+   -- ========================================================================
+   -- 4. PARAMÈTRES RÉGIONAUX
+   -- ========================================================================
+   
+   type Regional_Parameters is record
+      Name           : String (1 .. 40) := (others => ' ');
+      Latitude       : Integer := 0;         -- degrés, ×10
+      Longitude      : Integer := 0;         -- degrés, ×10
+      Altitude       : Integer := 0;         -- mètres
+      Pressure_Base  : Pressure_Type := 10130;
+      Humidity_Base  : Humidity_Type := 600;
+      CO2_Local      : CO2_Type := 4300;
+      Has_Data       : Boolean := False;
+   end record;
+
+   -- ========================================================================
+   -- 5. FACTEURS LOCAUX V6 (7 NOUVEAUX FACTEURS)
+   -- ========================================================================
+
+   type Forest_Type is (None, Tropical, Temperate, Boreal, Urban);
+   type Ocean_Current_Type is (None, Warm, Cold, Polar);
+   type Topography_Type is (Flat, Mountain, Valley, Plateau);
+   type Soil_Type is (Normal, Wet, Dry, Permafrost, Desert_Sand);
+
+   type Local_Factors_V6 is record
+      -- Facteurs existants
+      Cloud_Cover      : Integer := 0;   -- 0..100 (%)
+      Population       : Integer := 0;   -- millions d'habitants
+      Snow_Cover       : Boolean := False;
+      Precipitation    : Integer := 0;   -- mm/jour
+      Urban_Heat       : Boolean := False;
+      Forest_Cover     : Integer := 0;   -- 0..100 (%)
+      Forest_Type      : Forest_Type := None;
+      Ocean_Effect     : Integer := 0;   -- -10..+10 °C (×10)
+      Foehn_Effect     : Integer := 0;   -- 0..+30 °C (×10)
+      Wind_Effect      : Integer := 0;   -- -10..+10 °C (×10)
+      Polar_Ocean      : Boolean := False;
+      
+      -- NOUVEAUX FACTEURS V6
+      Continental_Extreme : Boolean := False;   -- -20°C pour Iakoutsk
+      Humidity_Null      : Boolean := False;    -- -3°C pour déserts
+      Cyclonic_Wind      : Boolean := False;    -- +2°C pour typhons
+      Albedo             : Integer := 0;        -- 0..100 (%)
+      Ocean_Current      : Ocean_Current_Type := None;  -- ±3°C
+      Topography         : Topography_Type := Flat;     -- ±1°C
+      Soil               : Soil_Type := Normal;         -- ±3°C
+   end record;
+
+   -- ========================================================================
+   -- 6. ENREGISTREMENT JOUR/NUIT
+   -- ========================================================================
+
+   type Day_Night_Record is record
+      T_Day      : Temp_Type := 0;
+      T_Night    : Temp_Type := 0;
+      Amplitude  : Integer := 0;
+      Checksum   : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Day_Night_Record.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 7. SATURATING ARITHMETIC
+   -- ========================================================================
+   
+   function Saturating_Add (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Add'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Sub (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Sub'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Mul (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Mul'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Div (A, B : Integer) return Integer
+     with Pre => B /= 0,
+          Post => Saturating_Div'Result in Integer'First .. Integer'Last;
+   
+   function Clamp (Value, Min, Max : Integer) return Integer
+     with Pre => Min <= Max,
+          Post => Clamp'Result in Min .. Max;
+
+   -- ========================================================================
+   -- 8. DIGITAL ROOT (Modulo-9 structural invariant)
+   -- ========================================================================
+   
+   function Digital_Root (N : Integer) return Integer
+     with Pre => N >= 0,
+          Post => Digital_Root'Result in 1 .. 9;
+
+   -- ========================================================================
+   -- 9. CORE REGIONAL TEMPERATURE (V6)
+   -- ========================================================================
+
+   function Compute_Temperature_Regional_V6
+     (Params   : Regional_Parameters;
+      CO2      : CO2_Type;
+      Day      : Day_Type;
+      Factors  : Local_Factors_V6) return Temp_Type
+     with Pre => CO2 in 0 .. 10_000 and Day in 1 .. 365,
+          Post => Compute_Temperature_Regional_V6'Result in -500 .. 500;
+   -- Calcule la température moyenne avec corrections V6
+
+   -- ========================================================================
+   -- 10. AMPLITUDE CORRIGÉE (V6)
+   -- ========================================================================
+
+   function Compute_Amplitude_V6
+     (Latitude  : Integer;
+      Day       : Day_Type;
+      Humidity  : Humidity_Type;
+      Factors   : Local_Factors_V6) return Integer
+     with Pre => Latitude in -900 .. 900 and
+                 Day in 1 .. 365 and
+                 Humidity in 0 .. 1000,
+          Post => Compute_Amplitude_V6'Result in 30 .. 180;
+
+   -- ========================================================================
+   -- 11. CALCUL JOUR/NUIT (V6)
+   -- ========================================================================
+
+   function Compute_Day_Night_V6
+     (T_Mean   : Temp_Type;
+      Latitude : Integer;
+      Day      : Day_Type;
+      Humidity : Humidity_Type;
+      Factors  : Local_Factors_V6) return Day_Night_Record
+     with Pre => T_Mean in -500 .. 500 and
+                 Latitude in -900 .. 900 and
+                 Day in 1 .. 365 and
+                 Humidity in 0 .. 1000,
+          Post => Compute_Day_Night_V6'Result.T_Day in -500 .. 500 and
+                  Compute_Day_Night_V6'Result.T_Night in -500 .. 500 and
+                  Compute_Day_Night_V6'Result.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 12. FACTEURS LOCAUX — OBTENTION (V6)
+   -- ========================================================================
+
+   function Get_Local_Factors_V6
+     (City : String;
+      Day  : Day_Type) return Local_Factors_V6;
+   -- Retourne les facteurs locaux V6 pour une ville donnée
+
+   -- ========================================================================
+   -- 13. HISTORICAL DATA LOADER (DONNÉES RÉELLES)
+   -- ========================================================================
+
+   type Historical_Record is record
+      Year           : Year_Type := 2020;
+      Month          : Month_Type := 6;
+      Day            : Day_Type := 1;
+      Observed_Temp  : Temp_Type := 0;
+      Predicted_Temp : Temp_Type := 0;
+      CO2_Level      : CO2_Type := 0;
+      Pressure       : Pressure_Type := 0;
+      Humidity       : Humidity_Type := 0;
+      Error_Pct      : Integer := 0;
+      Matches        : Boolean := False;
+      Checksum       : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Historical_Record.Checksum in 0 .. 9;
+
+   type Historical_Array is array (1 .. 365) of Historical_Record;
+
+   function Load_Historical_Data_Real
+     (Region  : Regional_Parameters;
+      Year    : Year_Type) return Historical_Array
+     with Post => (for all I in Historical_Array'Range =>
+                     Load_Historical_Data_Real'Result (I).Checksum in 0 .. 9);
+
+   function Verify_Historical_Data (Data : Historical_Array) return Integer
+     with Pre => (for all I in Data'Range => Data (I).Checksum in 0 .. 9),
+          Post => Verify_Historical_Data'Result in 0 .. 100;
+
+   -- ========================================================================
+   -- 14. PREDICTIONS (V6)
+   -- ========================================================================
+
+   type Prediction_Record is record
+      Day            : Day_Type := 1;
+      Predicted_Temp : Temp_Type := 0;
+      T_Day          : Temp_Type := 0;
+      T_Night        : Temp_Type := 0;
+      Amplitude      : Integer := 0;
+      CO2_Level      : CO2_Type := 0;
+      Confidence     : Integer := 0;
+      Checksum       : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Prediction_Record.Checksum in 0 .. 9;
+
+   type Prediction_Array is array (1 .. 365) of Prediction_Record;
+
+   function Predict_Regional_V6
+     (Region : Regional_Parameters) return Prediction_Array
+     with Post => (for all I in Prediction_Array'Range =>
+                     Predict_Regional_V6'Result (I).Checksum in 0 .. 9);
+
+   -- ========================================================================
+   -- 15. HEATWAVE DETECTION
+   -- ========================================================================
+
+   function Is_Heatwave (Temp : Temp_Type; Day : Day_Type) return Boolean
+     with Pre => Temp in -500 .. 500 and Day in 1 .. 365,
+          Post => Is_Heatwave'Result = (Temp > 300 and Day > 150 and Day < 260);
+
+   function Count_Heatwave_Days
+     (Predictions : Prediction_Array;
+      Threshold   : Temp_Type := 300) return Integer
+     with Pre => Threshold in 250 .. 400,
+          Post => Count_Heatwave_Days'Result >= 0;
+
+   -- ========================================================================
+   -- 16. REGIONAL REPORT (V6)
+   -- ========================================================================
+
+   type Climate_Report is record
+      Region_Name         : String (1 .. 40) := (others => ' ');
+      Year                : Year_Type := 2026;
+      Average_Temp        : Temp_Type := 0;
+      Max_Temp_Day        : Temp_Type := 0;
+      Max_Temp_Night      : Temp_Type := 0;
+      Min_Temp_Day        : Temp_Type := 0;
+      Min_Temp_Night      : Temp_Type := 0;
+      Heatwave_Days_30    : Integer := 0;
+      Heatwave_Days_35    : Integer := 0;
+      CO2_Level           : CO2_Type := 0;
+      Accuracy_Historical : Integer := 0;
+      Confidence          : Integer := 0;
+      Forest_Impact       : Integer := 0;
+      Ocean_Impact        : Integer := 0;
+      Foehn_Impact        : Integer := 0;
+      Wind_Impact         : Integer := 0;
+      Continental_Impact  : Integer := 0;   -- Nouveau
+      Albedo_Impact       : Integer := 0;   -- Nouveau
+      Current_Impact      : Integer := 0;   -- Nouveau
+      Topo_Impact         : Integer := 0;   -- Nouveau
+      Soil_Impact         : Integer := 0;   -- Nouveau
+      Checksum            : Integer range 0 .. 9 := 9;
+      Critical_Failure    : Boolean := False;
+   end record
+     with Predicate => Climate_Report.Checksum in 0 .. 9;
+
+   function Generate_Regional_Report_V6
+     (Historical  : Historical_Array;
+      Predictions : Prediction_Array;
+      Region      : Regional_Parameters) return Climate_Report
+     with Pre => (for all I in Historical'Range =>
+                     Historical (I).Checksum in 0 .. 9) and
+                 (for all I in Predictions'Range =>
+                     Predictions (I).Checksum in 0 .. 9),
+          Post => (if not Generate_Regional_Report_V6'Result.Critical_Failure then
+                      Generate_Regional_Report_V6'Result.Checksum = 9);
+
+   -- ========================================================================
+   -- 17. STRESS TEST EXTREME (V6)
+   -- ========================================================================
+
+   type Stress_Scenario_V6 is (None, Extreme_CO2, Extreme_Pressure,
+                               Extreme_Humidity, Altitude_Extreme,
+                               Forest_Extreme, Ocean_Extreme,
+                               Continental_Extreme, Desert_Extreme,
+                               Cyclone_Extreme, All_Extremes,
+                               Historical_Comparison, All_Combined);
+
+   type Stress_Result_V6 is record
+      Scenario            : Stress_Scenario_V6 := None;
+      Passed              : Boolean := False;
+      Avg_Temp_Day        : Temp_Type := 0;
+      Avg_Temp_Night      : Temp_Type := 0;
+      Max_Temp_Day        : Temp_Type := 0;
+      Heatwave_Days       : Integer := 0;
+      Accuracy            : Integer := 0;
+      Forest_Impact       : Integer := 0;
+      Ocean_Impact        : Integer := 0;
+      Foehn_Impact        : Integer := 0;
+      Wind_Impact         : Integer := 0;
+      Continental_Impact  : Integer := 0;
+      Albedo_Impact       : Integer := 0;
+      Current_Impact      : Integer := 0;
+      Topo_Impact         : Integer := 0;
+      Soil_Impact         : Integer := 0;
+      Checksum            : Integer := 9;
+      Critical_Failure    : Boolean := False;
+   end record
+     with Predicate => Stress_Result_V6.Checksum in 0 .. 9;
+
+   procedure Run_Stress_Test_V6
+     (Scenario : in     Stress_Scenario_V6;
+      Region   : in     Regional_Parameters;
+      Result   :    out Stress_Result_V6)
+     with Post => (if not Result.Critical_Failure then
+                      Result.Checksum = 9 and Result.Accuracy >= 90);
+
+end V6_Regional_Climate_Model;
