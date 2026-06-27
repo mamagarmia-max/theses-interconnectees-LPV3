@@ -1,0 +1,180 @@
+package body V13_1_Regional_Climate_Model with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- MODULE ALÉAS
+   -- ========================================================================
+
+   function Get_Region_Hazards
+     (Region_Name : String) return Hazard_Array
+   is
+      Hazards : Hazard_Array;
+      Count   : Integer := 0;
+   begin
+      -- CALIFORNIE
+      if Region_Name (1 .. 9) = "California" then
+         Count := Count + 1;
+         Hazards (Count) := (
+            Hazard => Wildfire,
+            Probability => 60,
+            Impact_Min => 5,    -- +0.5°C
+            Impact_Max => 30,   -- +3.0°C
+            Region => "California"
+         );
+         Count := Count + 1;
+         Hazards (Count) := (
+            Hazard => Earthquake,
+            Probability => 20,
+            Impact_Min => 0,    -- 0°C
+            Impact_Max => 10,   -- +1.0°C
+            Region => "California"
+         );
+      end if;
+
+      -- INDE (Rajasthan)
+      if Region_Name (1 .. 9) = "Rajasthan" then
+         Count := Count + 1;
+         Hazards (Count) := (
+            Hazard => Wildfire,
+            Probability => 40,
+            Impact_Min => 10,   -- +1.0°C
+            Impact_Max => 30,   -- +3.0°C
+            Region => "Rajasthan"
+         );
+      end if;
+
+      -- INDONÉSIE
+      if Region_Name (1 .. 9) = "Indonesia" then
+         Count := Count + 1;
+         Hazards (Count) := (
+            Hazard => Volcanic_Eruption,
+            Probability => 25,
+            Impact_Min => -20,  -- -2.0°C
+            Impact_Max => -5,   -- -0.5°C
+            Region => "Indonesia"
+         );
+         Count := Count + 1;
+         Hazards (Count) := (
+            Hazard => Earthquake,
+            Probability => 30,
+            Impact_Min => -10,  -- -1.0°C
+            Impact_Max => 5,    -- +0.5°C
+            Region => "Indonesia"
+         );
+      end if;
+
+      -- ARCTIQUE (SIBÉRIE)
+      if Region_Name (1 .. 8) = "Siberia" then
+         Count := Count + 1;
+         Hazards (Count) := (
+            Hazard => Wildfire,
+            Probability => 40,
+            Impact_Min => 10,   -- +1.0°C
+            Impact_Max => 40,   -- +4.0°C
+            Region => "Siberia"
+         );
+      end if;
+
+      -- RÉUNION (Volcan)
+      if Region_Name (1 .. 7) = "Reunion" then
+         Count := Count + 1;
+         Hazards (Count) := (
+            Hazard => Volcanic_Eruption,
+            Probability => 15,
+            Impact_Min => -30,  -- -3.0°C
+            Impact_Max => -10,  -- -1.0°C
+            Region => "Reunion"
+         );
+      end if;
+
+      -- JAPON
+      if Region_Name (1 .. 6) = "Japan" then
+         Count := Count + 1;
+         Hazards (Count) := (
+            Hazard => Earthquake,
+            Probability => 20,
+            Impact_Min => 0,    -- 0°C
+            Impact_Max => 10,   -- +1.0°C
+            Region => "Japan"
+         );
+      end if;
+
+      return Hazards;
+   end Get_Region_Hazards;
+
+   function Apply_Hazard
+     (Base_Temp : Temp_Type;
+      Hazard    : Hazard_Record;
+      Random_Seed : Integer) return Temp_Type
+   is
+      Impact : Integer := 0;
+      Result : Temp_Type := 0;
+   begin
+      if Random_Seed mod 100 < Hazard.Probability then
+         if Hazard.Impact_Max = Hazard.Impact_Min then
+            Impact := Hazard.Impact_Min;
+         else
+            Impact := Hazard.Impact_Min +
+                      (Random_Seed mod (Hazard.Impact_Max - Hazard.Impact_Min));
+         end if;
+      end if;
+
+      Result := Base_Temp + Impact;
+
+      if Result < -500 then
+         Result := -500;
+      elsif Result > 500 then
+         Result := 500;
+      end if;
+
+      return Result;
+   end Apply_Hazard;
+
+   function Estimate_Hazard_Impact
+     (Region_Name : String;
+      Base_Temp   : Temp_Type;
+      Scenario    : String) return Temp_Type
+   is
+      Hazards : Hazard_Array := Get_Region_Hazards (Region_Name);
+      Impact  : Integer := 0;
+      Result  : Temp_Type := 0;
+   begin
+      for I in 1 .. 20 loop
+         if Hazards (I).Hazard /= None then
+            if Scenario = "High" then
+               Impact := Impact + Hazards (I).Impact_Max;
+            elsif Scenario = "Low" then
+               Impact := Impact + Hazards (I).Impact_Min;
+            else  -- "Brut"
+               Impact := Impact + (Hazards (I).Impact_Min + Hazards (I).Impact_Max) / 2;
+            end if;
+         end if;
+      end loop;
+
+      Result := Base_Temp + Impact;
+
+      if Result < -500 then
+         Result := -500;
+      elsif Result > 500 then
+         Result := 500;
+      end if;
+
+      return Result;
+   end Estimate_Hazard_Impact;
+
+   -- ========================================================================
+   -- FONCTIONS PRINCIPALES (simplifiées pour la démonstration)
+   -- ========================================================================
+
+   function Compute_Temperature_Regional_V13_1
+     (Params   : Regional_Parameters;
+      CO2      : CO2_Type;
+      Day      : Day_Type;
+      Year     : Year_Type) return Temp_Type
+   is
+      -- Version simplifiée de V13
+      Base_Temp : Temp_Type := 250;  -- 25.0°C (valeur exemple)
+   begin
+      return Base_Temp;
+   end Compute_Temperature_Regional_V13_1;
+
+end V13_1_Regional_Climate_Model;
