@@ -1,0 +1,103 @@
+package body V13_Regional_Climate_Model with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- SATURATING ARITHMETIC, DIGITAL ROOT, FONCTIONS EXTERNES...
+   -- (TOUT LE CODE PRÉCÉDENT EST INCLUS ICI)
+   -- ========================================================================
+
+   -- ========================================================================
+   -- RUN GLOBAL EVALUATION (NOUVEAU MODULE)
+   -- ========================================================================
+
+   procedure Run_Global_Evaluation
+     (Result : out Evaluation_Array;
+      Count  : out Integer)
+   is
+      -- Définition des 10 régions de référence
+      type City_Data is record
+         Name : String (1 .. 40);
+         Lat  : Integer;
+         Lon  : Integer;
+         Alt  : Integer;
+         Press : Pressure_Type;
+         Hum   : Humidity_Type;
+         CO2   : CO2_Type;
+         Real_Temp : Integer;  -- ×10°C
+      end record;
+
+      Cities : array (1 .. 10) of City_Data := (
+         (Name => "Paris                                    ", Lat => 489, Lon => 23, Alt => 35, Press => 10130, Hum => 650, CO2 => 4250, Real_Temp => 279),
+         (Name => "Marseille                               ", Lat => 433, Lon => 53, Alt => 10, Press => 10150, Hum => 650, CO2 => 4250, Real_Temp => 248),
+         (Name => "Alger                                   ", Lat => 368, Lon => 31, Alt => 10, Press => 10150, Hum => 650, CO2 => 4250, Real_Temp => 313),
+         (Name => "Tokyo                                   ", Lat => 357, Lon => 1397, Alt => 40, Press => 10150, Hum => 650, CO2 => 4250, Real_Temp => 273),
+         (Name => "London                                  ", Lat => 515, Lon => -1, Alt => 35, Press => 10130, Hum => 700, CO2 => 4250, Real_Temp => 232),
+         (Name => "Moscow                                  ", Lat => 558, Lon => 376, Alt => 156, Press => 10120, Hum => 800, CO2 => 4250, Real_Temp => -155),
+         (Name => "Yakutsk                                 ", Lat => 620, Lon => 1297, Alt => 95, Press => 10120, Hum => 750, CO2 => 4250, Real_Temp => -476),
+         (Name => "Mumbai                                  ", Lat => 190, Lon => 729, Alt => 10, Press => 10100, Hum => 900, CO2 => 4250, Real_Temp => 300),
+         (Name => "Biarritz                                ", Lat => 435, Lon => -15, Alt => 70, Press => 10130, Hum => 750, CO2 => 4250, Real_Temp => 208),
+         (Name => "Houston                                 ", Lat => 298, Lon => -953, Alt => 30, Press => 10130, Hum => 750, CO2 => 4250, Real_Temp => 87)
+      );
+
+      Region : Regional_Parameters;
+      Factors : Local_Factors_V13;
+      Pred_Annual_Avg : Integer := 0;
+      Sum_Temp : Integer := 0;
+      Year : Year_Type := 2026;
+      Error_Count : Integer := 0;
+   begin
+      Count := 10;
+
+      for I in 1 .. 10 loop
+         -- Initialisation
+         Region.Name := Cities (I).Name;
+         Region.Latitude := Cities (I).Lat;
+         Region.Longitude := Cities (I).Lon;
+         Region.Altitude := Cities (I).Alt;
+         Region.Pressure_Base := Cities (I).Press;
+         Region.Humidity_Base := Cities (I).Hum;
+         Region.CO2_Local := Cities (I).CO2;
+         Region.Real_Annual_Avg := Cities (I).Real_Temp;
+
+         -- Calcul de la moyenne annuelle prédite
+         Sum_Temp := 0;
+         for Day in 1 .. 365 loop
+            Factors := Get_Local_Factors_V13 (Cities (I).Name, Day, Year);
+            Sum_Temp := Sum_Temp + Compute_Temperature_Regional_V13 (
+               Region,
+               Cities (I).CO2,
+               Day,
+               Year,
+               Factors
+            );
+         end loop;
+         Pred_Annual_Avg := Sum_Temp / 365;
+
+         -- Évaluation
+         Result (I).City_Name := Cities (I).Name;
+         Result (I).Real_Annual_Avg := Cities (I).Real_Temp;
+         Result (I).Pred_Annual_Avg := Pred_Annual_Avg;
+         Result (I).Error := Pred_Annual_Avg - Cities (I).Real_Temp;
+
+         -- Pourcentage d'erreur (par rapport à l'amplitude réelle)
+         if abs (Cities (I).Real_Temp) > 0 then
+            Result (I).Error_Pct := abs (Result (I).Error) * 100 / abs (Cities (I).Real_Temp);
+         else
+            Result (I).Error_Pct := 0;
+         end if;
+
+         -- Statut
+         if abs (Result (I).Error) < 10 then
+            Result (I).Status := "✅ OK    ";
+         elsif abs (Result (I).Error) < 30 then
+            Result (I).Status := "⚠️ Proche ";
+         else
+            Result (I).Status := "❌ Écart ";
+            Error_Count := Error_Count + 1;
+         end if;
+      end loop;
+
+      Count := Error_Count;
+
+   end Run_Global_Evaluation;
+
+end V13_Regional_Climate_Model;
