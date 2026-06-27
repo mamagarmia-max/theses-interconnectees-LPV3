@@ -1,0 +1,116 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V13.1 REGIONAL CLIMATE MODEL — DÉTERMINISTE + ALÉAS PROBABILISTES
+-- ============================================================================
+-- Version 13.1 : Cœur déterministe V13 + Module d'aléas régionaux
+--   - Vents solaires (cycle 11 ans)
+--   - Tremblements de terre (zones sismiques)
+--   - Incendies (zones sèches / forestières)
+--   - Éruptions volcaniques (zones volcaniques)
+--   - Estimation brute par région
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 13.1.0
+-- Date : 28 Juin 2026
+
+package V13_1_Regional_Climate_Model with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. V13 INVARIANTS (inchangés)
+   -- ========================================================================
+   
+   PSI_V13         : constant := 480168;
+   PHI_CRITICAL    : constant := -51100;
+   BETA            : constant := 1_000_000;
+   K_CYCLES        : constant := 7;
+   ALPHA_INV       : constant := 13703599913;
+
+   -- ========================================================================
+   -- 2. CONSTANTES CLIMATIQUES (inchangées)
+   -- ========================================================================
+   
+   REF_TEMP        : constant := 137;
+   REF_CO2         : constant := 2800;
+   CO2_2020        : constant := 4140;
+   CO2_2021        : constant := 4160;
+   CO2_2022        : constant := 4180;
+   CO2_2023        : constant := 4200;
+   CO2_2024        : constant := 4220;
+   CO2_2025        : constant := 4250;
+   CO2_2026        : constant := 4350;
+
+   -- ========================================================================
+   -- 3. TYPES DE BASE (inchangés)
+   -- ========================================================================
+   
+   subtype Temp_Type is Integer range -500 .. 500;
+   subtype CO2_Type is Integer range 0 .. 10_000;
+   subtype Pressure_Type is Integer range 7000 .. 11000;
+   subtype Humidity_Type is Integer range 0 .. 1000;
+   subtype Day_Type is Integer range 1 .. 365;
+   subtype Year_Type is Integer range 2020 .. 2030;
+   subtype Month_Type is Integer range 1 .. 12;
+
+   -- ========================================================================
+   -- 4. MODULE ALÉAS
+   -- ========================================================================
+
+   type Hazard_Type is (None, Solar_Wind, Earthquake, Wildfire, Volcanic_Eruption);
+
+   type Hazard_Record is record
+      Hazard          : Hazard_Type := None;
+      Probability     : Integer range 0 .. 100 := 0;  -- %
+      Impact_Min      : Integer := 0;                 -- ×10°C
+      Impact_Max      : Integer := 0;                 -- ×10°C
+      Region          : String (1 .. 40) := (others => ' ');
+   end record;
+
+   type Hazard_Array is array (1 .. 20) of Hazard_Record;
+
+   function Get_Region_Hazards
+     (Region_Name : String) return Hazard_Array;
+
+   function Apply_Hazard
+     (Base_Temp : Temp_Type;
+      Hazard    : Hazard_Record;
+      Random_Seed : Integer) return Temp_Type
+     with Post => Apply_Hazard'Result in -500 .. 500;
+
+   function Estimate_Hazard_Impact
+     (Region_Name : String;
+      Base_Temp   : Temp_Type;
+      Scenario    : String) return Temp_Type
+     with Post => Estimate_Hazard_Impact'Result in -500 .. 500;
+
+   -- ========================================================================
+   -- 5. FONCTIONS PRINCIPALES (inchangées)
+   -- ========================================================================
+
+   type Regional_Parameters is record
+      Name           : String (1 .. 40) := (others => ' ');
+      Latitude       : Integer := 0;
+      Longitude      : Integer := 0;
+      Altitude       : Integer := 0;
+      Pressure_Base  : Pressure_Type := 10130;
+      Humidity_Base  : Humidity_Type := 600;
+      CO2_Local      : CO2_Type := 4300;
+      Has_Data       : Boolean := False;
+   end record;
+
+   -- Les autres types et fonctions sont identiques à V13
+   -- (raccourci pour la démonstration)
+
+   function Compute_Temperature_Regional_V13_1
+     (Params   : Regional_Parameters;
+      CO2      : CO2_Type;
+      Day      : Day_Type;
+      Year     : Year_Type) return Temp_Type;
+
+end V13_1_Regional_Climate_Model;
