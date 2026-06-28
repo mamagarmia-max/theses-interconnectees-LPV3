@@ -1,0 +1,38 @@
+with V13_2_Core;
+with V13_2_Factors;
+
+package body V13_2_Model with SPARK_Mode => On is
+
+   function Compute_Regional_Temperature
+     (Region  : Regional_Data;
+      CO2     : CO2_Type;
+      Day     : Day_Type) return Temp_Type
+   is
+      Core_Temp : Temp_Type := 0;
+      Factor_Total : Impact_Type := 0;
+      Result : Integer := 0;
+   begin
+      -- 1. Calcul du cœur
+      Core_Temp := Compute_Core_Temperature (
+         Region.Core,
+         CO2,
+         Day
+      );
+      
+      -- 2. Calcul des facteurs
+      Factor_Total := All_Factors_Total (Region.Factors);
+      
+      -- 3. Assemblage
+      Result := Integer (Core_Temp) + Factor_Total;
+      
+      -- 4. Clamp final
+      if Result < -500 then
+         Result := -500;
+      elsif Result > 500 then
+         Result := 500;
+      end if;
+      
+      return Temp_Type (Result);
+   end Compute_Regional_Temperature;
+
+end V13_2_Model;
