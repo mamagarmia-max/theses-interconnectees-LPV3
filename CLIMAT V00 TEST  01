@@ -1,0 +1,33 @@
+v13.2-validation/
+├── README.md
+├── LICENSE
+├── .gitignore
+├── v13_2.gpr
+├── alire.toml
+│
+├── src/
+│   ├── v13_2_core.ads
+│   ├── v13_2_core.adb
+│   ├── v13_2_factors.ads
+│   ├── v13_2_factors.adb
+│   ├── v13_2_model.ads
+│   ├── v13_2_model.adb
+│   ├── v13_2_extremes.ads
+│   ├── v13_2_extremes.adb
+│   ├── climat_v13_2_demo.adb
+│   ├── test_10_regions_supp.adb
+│   └── validation_gemini_2020_2026.adb  ← CODE DE VALIDATION
+│
+├── data/
+│   ├── gemini_data_2026.csv
+│   └── validation_results.csv
+│
+├── .github/
+│   └── workflows/
+│       ├── verify.yml
+│       ├── test_extremes.yml
+│       └── validation.yml
+│
+└── results/
+    ├── validation_report.pdf
+    └── graphs/
