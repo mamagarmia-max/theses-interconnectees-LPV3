@@ -1,0 +1,142 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V13.2 FACTORS — BIBLIOTHÈQUE UNIVERSELLE
+-- ============================================================================
+-- Ce fichier contient tous les facteurs climatiques classés par catégorie :
+--   - Naturels (astronomie, géophysique, océan, glace, atmosphère, eau)
+--   - Humains (urbanisation, énergie, sol)
+--   - Accidentels (naturels, humains)
+--
+-- Chaque facteur a un poids (impact en °C) et une région d'application.
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 13.2.0
+-- Date : 28 Juin 2026
+
+package V13_2_Factors with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. TYPES DE BASE POUR LES FACTEURS
+   -- ========================================================================
+
+   subtype Impact_Type is Integer range -500 .. 500;  -- ×10°C
+   subtype Probability_Type is Integer range 0 .. 100; -- %
+   subtype Region_Index is Integer range 1 .. 50;
+
+   -- ========================================================================
+   -- 2. FACTEURS NATURELS
+   -- ========================================================================
+
+   type Natural_Record is record
+      -- Astronomie
+      Solar_Distance     : Impact_Type := 0;
+      Day_Length         : Impact_Type := 0;
+      Solar_Cycle        : Impact_Type := 0;
+      
+      -- Géophysique
+      Latitude_Effect    : Impact_Type := 0;
+      Altitude_Effect    : Impact_Type := 0;
+      Topography         : Impact_Type := 0;
+      Albedo             : Impact_Type := 0;
+      
+      -- Océan
+      Ocean_Current      : Impact_Type := 0;
+      Ocean_Effect       : Impact_Type := 0;
+      Polar_Ocean        : Impact_Type := 0;
+      
+      -- Glace
+      Ice_Mass           : Impact_Type := 0;
+      Ice_Melt           : Impact_Type := 0;
+      Permafrost         : Impact_Type := 0;
+      
+      -- Atmosphère
+      Ozone_DU           : Impact_Type := 0;
+      Ozone_Hole         : Impact_Type := 0;
+      Volcanic_Activity  : Impact_Type := 0;
+      
+      -- Eau
+      Groundwater        : Impact_Type := 0;
+      Evapotranspiration : Impact_Type := 0;
+      Precipitation      : Impact_Type := 0;
+   end record;
+
+   -- ========================================================================
+   -- 3. FACTEURS HUMAINS
+   -- ========================================================================
+
+   type Human_Record is record
+      -- Urbanisation
+      Urban_Heat         : Impact_Type := 0;
+      Population         : Impact_Type := 0;
+      Deforestation      : Impact_Type := 0;
+      
+      -- Énergie
+      CO2_Emissions      : Impact_Type := 0;
+      Methane_Emissions  : Impact_Type := 0;
+      Aerosols           : Impact_Type := 0;
+      
+      -- Sol
+      Land_Use           : Impact_Type := 0;
+      Irrigation         : Impact_Type := 0;
+   end record;
+
+   -- ========================================================================
+   -- 4. FACTEURS ACCIDENTELS
+   -- ========================================================================
+
+   type Accidental_Record is record
+      -- Naturels
+      Wildfire           : Impact_Type := 0;
+      Earthquake         : Impact_Type := 0;
+      Tsunami            : Impact_Type := 0;
+      Volcanic_Eruption  : Impact_Type := 0;
+      
+      -- Humains
+      Industrial_Disaster: Impact_Type := 0;
+      Nuclear_Accident   : Impact_Type := 0;
+      Oil_Spill          : Impact_Type := 0;
+   end record;
+
+   -- ========================================================================
+   -- 5. FACTEURS COMPLETS (TOUTES CATÉGORIES)
+   -- ========================================================================
+
+   type All_Factors is record
+      Natural    : Natural_Record;
+      Human      : Human_Record;
+      Accidental : Accidental_Record;
+      Region     : Region_Index := 1;
+      Checksum   : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => All_Factors.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 6. FONCTIONS DE CALCUL D'IMPACT
+   -- ========================================================================
+
+   function Natural_Total (F : Natural_Record) return Impact_Type
+     with Post => Natural_Total'Result in -500 .. 500;
+
+   function Human_Total (F : Human_Record) return Impact_Type
+     with Post => Human_Total'Result in -500 .. 500;
+
+   function Accidental_Total (F : Accidental_Record) return Impact_Type
+     with Post => Accidental_Total'Result in -500 .. 500;
+
+   function All_Factors_Total (F : All_Factors) return Impact_Type
+     with Post => All_Factors_Total'Result in -500 .. 500;
+
+   -- ========================================================================
+   -- 7. FACTEURS PAR RÉGION (PROFILS PRÉDÉFINIS)
+   -- ========================================================================
+
+   function Get_Region_Factors (Region_Name : String) return All_Factors;
+
+end V13_2_Factors;
