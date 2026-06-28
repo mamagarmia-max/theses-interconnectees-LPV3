@@ -1,0 +1,9 @@
+obj/
+obj/
+*.ali
+*.o
+*.exe
+*.tmp
+*.bak
+*.log
+*.out
