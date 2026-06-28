@@ -1,0 +1,117 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V13.2 CORE — CŒUR DÉTERMINISTE PUR
+-- ============================================================================
+-- Ce fichier contient uniquement l'équation de base et les ajustements
+-- fondamentaux (latitude, altitude, saison).
+-- Tous les autres facteurs sont dans la bibliothèque.
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 13.2.0
+-- Date : 28 Juin 2026
+
+package V13_2_Core with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. INVARIANTS V13
+   -- ========================================================================
+   
+   PSI_V13         : constant := 480168;        -- ×10 : 48,016.8 kg·m⁻²
+   PHI_CRITICAL    : constant := -51100;        -- ×1000 : -51.1 mV
+   BETA            : constant := 1_000_000;     -- 10⁶
+   K_CYCLES        : constant := 7;             -- Heptadic closure
+   ALPHA_INV       : constant := 13703599913;   -- 1/α × 10⁵
+
+   -- ========================================================================
+   -- 2. CONSTANTES CLIMATIQUES
+   -- ========================================================================
+   
+   REF_TEMP        : constant := 137;           -- 13.7°C (scaled ×10)
+   REF_CO2         : constant := 2800;          -- 280 ppm
+   CO2_2020        : constant := 4140;          -- 414 ppm
+   CO2_2021        : constant := 4160;          -- 416 ppm
+   CO2_2022        : constant := 4180;          -- 418 ppm
+   CO2_2023        : constant := 4200;          -- 420 ppm
+   CO2_2024        : constant := 4220;          -- 422 ppm
+   CO2_2025        : constant := 4250;          -- 425 ppm
+   CO2_2026        : constant := 4350;          -- 435 ppm
+
+   -- ========================================================================
+   -- 3. TYPES DE BASE
+   -- ========================================================================
+   
+   subtype Temp_Type is Integer range -500 .. 500;
+   subtype CO2_Type is Integer range 0 .. 10_000;
+   subtype Pressure_Type is Integer range 7000 .. 11000;
+   subtype Humidity_Type is Integer range 0 .. 1000;
+   subtype Day_Type is Integer range 1 .. 365;
+   subtype Year_Type is Integer range 2020 .. 2030;
+
+   -- ========================================================================
+   -- 4. PARAMÈTRES RÉGIONAUX (FONDAMENTAUX)
+   -- ========================================================================
+   
+   type Core_Parameters is record
+      Latitude       : Integer := 0;         -- degrés, ×10
+      Altitude       : Integer := 0;         -- mètres
+      Pressure_Base  : Pressure_Type := 10130;
+      Humidity_Base  : Humidity_Type := 600;
+      CO2_Local      : CO2_Type := 4300;
+   end record;
+
+   -- ========================================================================
+   -- 5. SATURATING ARITHMETIC
+   -- ========================================================================
+   
+   function Saturating_Add (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Add'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Sub (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Sub'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Mul (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Mul'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Div (A, B : Integer) return Integer
+     with Pre => B /= 0,
+          Post => Saturating_Div'Result in Integer'First .. Integer'Last;
+   
+   function Clamp (Value, Min, Max : Integer) return Integer
+     with Pre => Min <= Max,
+          Post => Clamp'Result in Min .. Max;
+
+   -- ========================================================================
+   -- 6. DIGITAL ROOT (INVARIANT DE COHÉRENCE)
+   -- ========================================================================
+   
+   function Digital_Root (N : Integer) return Integer
+     with Pre => N >= 0,
+          Post => Digital_Root'Result in 1 .. 9;
+
+   -- ========================================================================
+   -- 7. CŒUR DE CALCUL (ÉQUATION DE BASE)
+   -- ========================================================================
+
+   function Compute_Core_Temperature
+     (Params   : Core_Parameters;
+      CO2      : CO2_Type;
+      Day      : Day_Type) return Temp_Type
+     with Pre => CO2 in 0 .. 10_000 and Day in 1 .. 365,
+          Post => Compute_Core_Temperature'Result in -500 .. 500;
+   -- Équation de base : T = Ψ_V13 × (CO₂ × P) / (β × H × k)
+   -- + ajustements latitude, altitude, saison
+
+end V13_2_Core;
