@@ -1,0 +1,51 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V13.2 REGIONAL CLIMATE MODEL — ASSEMBLAGE COMPLET
+-- ============================================================================
+-- Ce fichier assemble le cœur de calcul et la bibliothèque de facteurs.
+-- Il ne contient que la logique d'assemblage.
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 13.2.0
+-- Date : 28 Juin 2026
+
+with V13_2_Core;
+with V13_2_Factors;
+
+package V13_2_Model with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   use V13_2_Core;
+   use V13_2_Factors;
+
+   -- ========================================================================
+   -- 1. TYPE DE RÉGION COMPLET
+   -- ========================================================================
+
+   type Regional_Data is record
+      Core    : Core_Parameters;
+      Factors : All_Factors;
+      Name    : String (1 .. 40) := (others => ' ');
+      Checksum : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Regional_Data.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 2. FONCTION PRINCIPALE
+   -- ========================================================================
+
+   function Compute_Regional_Temperature
+     (Region  : Regional_Data;
+      CO2     : CO2_Type;
+      Day     : Day_Type) return Temp_Type
+     with Pre => CO2 in 0 .. 10_000 and Day in 1 .. 365,
+          Post => Compute_Regional_Temperature'Result in -500 .. 500;
+   -- Assemble : Core + Facteurs
+
+end V13_2_Model;
