@@ -1,0 +1,224 @@
+package body V13_2_Factors with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- 6.1 Natural Total
+   -- ========================================================================
+
+   function Natural_Total (F : Natural_Record) return Impact_Type is
+      Total : Integer := 0;
+   begin
+      Total := F.Solar_Distance + F.Day_Length + F.Solar_Cycle +
+               F.Latitude_Effect + F.Altitude_Effect + F.Topography + F.Albedo +
+               F.Ocean_Current + F.Ocean_Effect + F.Polar_Ocean +
+               F.Ice_Mass + F.Ice_Melt + F.Permafrost +
+               F.Ozone_DU + F.Ozone_Hole + F.Volcanic_Activity +
+               F.Groundwater + F.Evapotranspiration + F.Precipitation;
+      
+      if Total < -500 then
+         return -500;
+      elsif Total > 500 then
+         return 500;
+      else
+         return Total;
+      end if;
+   end Natural_Total;
+
+   -- ========================================================================
+   -- 6.2 Human Total
+   -- ========================================================================
+
+   function Human_Total (F : Human_Record) return Impact_Type is
+      Total : Integer := 0;
+   begin
+      Total := F.Urban_Heat + F.Population + F.Deforestation +
+               F.CO2_Emissions + F.Methane_Emissions + F.Aerosols +
+               F.Land_Use + F.Irrigation;
+      
+      if Total < -500 then
+         return -500;
+      elsif Total > 500 then
+         return 500;
+      else
+         return Total;
+      end if;
+   end Human_Total;
+
+   -- ========================================================================
+   -- 6.3 Accidental Total
+   -- ========================================================================
+
+   function Accidental_Total (F : Accidental_Record) return Impact_Type is
+      Total : Integer := 0;
+   begin
+      Total := F.Wildfire + F.Earthquake + F.Tsunami + F.Volcanic_Eruption +
+               F.Industrial_Disaster + F.Nuclear_Accident + F.Oil_Spill;
+      
+      if Total < -500 then
+         return -500;
+      elsif Total > 500 then
+         return 500;
+      else
+         return Total;
+      end if;
+   end Accidental_Total;
+
+   -- ========================================================================
+   -- 6.4 All Factors Total
+   -- ========================================================================
+
+   function All_Factors_Total (F : All_Factors) return Impact_Type is
+      Total : Integer := 0;
+   begin
+      Total := Natural_Total (F.Natural) +
+               Human_Total (F.Human) +
+               Accidental_Total (F.Accidental);
+      
+      if Total < -500 then
+         return -500;
+      elsif Total > 500 then
+         return 500;
+      else
+         return Total;
+      end if;
+   end All_Factors_Total;
+
+   -- ========================================================================
+   -- 7.1 Region Factors
+   -- ========================================================================
+
+   function Get_Region_Factors (Region_Name : String) return All_Factors is
+      F : All_Factors;
+   begin
+      -- PARIS
+      if Region_Name (1 .. 5) = "Paris" then
+         F.Natural.Solar_Distance := 0;
+         F.Natural.Day_Length := 10;
+         F.Natural.Solar_Cycle := 0;
+         F.Natural.Latitude_Effect := -5;
+         F.Natural.Altitude_Effect := -2;
+         F.Natural.Topography := 0;
+         F.Natural.Albedo := -5;
+         F.Natural.Ocean_Current := 5;
+         F.Natural.Ocean_Effect := 5;
+         F.Natural.Polar_Ocean := 0;
+         F.Natural.Ice_Mass := 0;
+         F.Natural.Ice_Melt := 0;
+         F.Natural.Permafrost := 0;
+         F.Natural.Ozone_DU := 3;
+         F.Natural.Ozone_Hole := 0;
+         F.Natural.Volcanic_Activity := 0;
+         F.Natural.Groundwater := -5;
+         F.Natural.Evapotranspiration := -5;
+         F.Natural.Precipitation := 0;
+         
+         F.Human.Urban_Heat := 15;
+         F.Human.Population := 5;
+         F.Human.Deforestation := -5;
+         F.Human.CO2_Emissions := 15;
+         F.Human.Methane_Emissions := 5;
+         F.Human.Aerosols := -5;
+         F.Human.Land_Use := 0;
+         F.Human.Irrigation := 0;
+         
+         F.Accidental.Wildfire := 0;
+         F.Accidental.Earthquake := 0;
+         F.Accidental.Tsunami := 0;
+         F.Accidental.Volcanic_Eruption := 0;
+         F.Accidental.Industrial_Disaster := 0;
+         F.Accidental.Nuclear_Accident := 0;
+         F.Accidental.Oil_Spill := 0;
+         
+         F.Region := 1;
+         F.Checksum := 9;
+      end if;
+
+      -- MUMBAI
+      if Region_Name (1 .. 6) = "Mumbai" then
+         F.Natural.Solar_Distance := 0;
+         F.Natural.Day_Length := 5;
+         F.Natural.Solar_Cycle := 0;
+         F.Natural.Latitude_Effect := 15;
+         F.Natural.Altitude_Effect := 0;
+         F.Natural.Topography := 0;
+         F.Natural.Albedo := -5;
+         F.Natural.Ocean_Current := 10;
+         F.Natural.Ocean_Effect := 5;
+         F.Natural.Polar_Ocean := 0;
+         F.Natural.Ice_Mass := 0;
+         F.Natural.Ice_Melt := 0;
+         F.Natural.Permafrost := 0;
+         F.Natural.Ozone_DU := -2;
+         F.Natural.Ozone_Hole := 0;
+         F.Natural.Volcanic_Activity := 0;
+         F.Natural.Groundwater := -5;
+         F.Natural.Evapotranspiration := -10;
+         F.Natural.Precipitation := -10;
+         
+         F.Human.Urban_Heat := 20;
+         F.Human.Population := 15;
+         F.Human.Deforestation := -10;
+         F.Human.CO2_Emissions := 20;
+         F.Human.Methane_Emissions := 10;
+         F.Human.Aerosols := -10;
+         F.Human.Land_Use := -5;
+         F.Human.Irrigation := -5;
+         
+         F.Accidental.Wildfire := 10;
+         F.Accidental.Earthquake := 0;
+         F.Accidental.Tsunami := 0;
+         F.Accidental.Volcanic_Eruption := 0;
+         F.Accidental.Industrial_Disaster := 0;
+         F.Accidental.Nuclear_Accident := 0;
+         F.Accidental.Oil_Spill := 0;
+         
+         F.Region := 2;
+         F.Checksum := 9;
+      end if;
+
+      -- IAKOUTSK
+      if Region_Name (1 .. 8) = "Yakutsk" then
+         F.Natural.Solar_Distance := 0;
+         F.Natural.Day_Length := -10;
+         F.Natural.Solar_Cycle := 0;
+         F.Natural.Latitude_Effect := -20;
+         F.Natural.Altitude_Effect := -6;
+         F.Natural.Topography := -10;
+         F.Natural.Albedo := -15;
+         F.Natural.Ocean_Current := 0;
+         F.Natural.Ocean_Effect := 0;
+         F.Natural.Polar_Ocean := 0;
+         F.Natural.Ice_Mass := -5;
+         F.Natural.Ice_Melt := 0;
+         F.Natural.Permafrost := -10;
+         F.Natural.Ozone_DU := 3;
+         F.Natural.Ozone_Hole := 0;
+         F.Natural.Volcanic_Activity := 0;
+         F.Natural.Groundwater := 0;
+         F.Natural.Evapotranspiration := 0;
+         F.Natural.Precipitation := 0;
+         
+         F.Human.Urban_Heat := 0;
+         F.Human.Population := 0;
+         F.Human.Deforestation := 0;
+         F.Human.CO2_Emissions := 0;
+         F.Human.Methane_Emissions := 0;
+         F.Human.Aerosols := 0;
+         F.Human.Land_Use := 0;
+         F.Human.Irrigation := 0;
+         
+         F.Accidental.Wildfire := 5;
+         F.Accidental.Earthquake := 0;
+         F.Accidental.Tsunami := 0;
+         F.Accidental.Volcanic_Eruption := 0;
+         F.Accidental.Industrial_Disaster := 0;
+         F.Accidental.Nuclear_Accident := 0;
+         F.Accidental.Oil_Spill := 0;
+         
+         F.Region := 3;
+         F.Checksum := 9;
+      end if;
+
+      return F;
+   end Get_Region_Factors;
+
+end V13_2_Factors;
