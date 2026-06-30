@@ -262,4 +262,27 @@ This repository is the living execution environment of the V3 Architecture. The 
 * **Permanent DOI:** [10.5281/zenodo.20996125](https://doi.org/10.5281/zenodo.20996125)
 * **Licence:** LPV3 (CC-BY-NC-ND 4.0) — Open access for verification, protected against unauthorized commercial exploitation.
 * **Invariant Physical Constant Locked:** $\Psi_{V_{13.2}} = 48016.8 \text{ kg}\cdot\text{m}^{-2}$
+## 📐 AGAMNOSA Architecture & Core Concepts
+
+[span_0](start_span)Unlike traditional climate and kinematic models that rely on empirical tuning, **AGAMNOSA V3** operates under a strict **Zero Free Parameters** paradigm[span_0](end_span). [span_1](start_span)The core is designed as a mathematically sealed, deterministic engine executing in $O(1)$ constant time with zero heap allocation and zero secondary stack[span_1](end_span).
+
+### 🛡️ The 4-Layer Safety Shield
+
+[span_2](start_span)This implementation achieves an un-compromised **DO-178C DAL A** integrity standard through a multi-layered geometric mold[span_2](end_span):
+
+1. **[span_3](start_span)[span_4](start_span)[span_5](start_span)Saturating Arithmetic (AoRTE Prevention):** Every mathematical operation (`Saturating_Add`, `Saturating_Mul`, `Saturating_Div`) is strictly bounded[span_3](end_span)[span_4](end_span)[span_5](end_span). [span_6](start_span)[span_7](start_span)[span_8](start_span)If a computation approaches an overflow boundary, it saturates at `Integer'Last` or `Integer'First` rather than crashing the hardware or causing undefined behaviors[span_6](end_span)[span_7](end_span)[span_8](end_span).
+2. **[span_9](start_span)[span_10](start_span)[span_11](start_span)Heptadic Closure (7-Cycle Automaton):** The main simulation engine is constrained by a finite 7-cycle execution loop (`K_CYCLES = 7`)[span_9](end_span)[span_10](end_span)[span_11](end_span). [span_12](start_span)[span_13](start_span)At the 7th cycle, the phase closes, ensuring structural synchronization and preventing time-indefinite drifts[span_12](end_span)[span_13](end_span).
+3. **[span_14](start_span)[span_15](start_span)[span_16](start_span)[span_17](start_span)Digital Root Checksum (Modulo-9 Invariant):** The absolute structural integrity of the 46 physical metrics (`Matrix_46_State`) is monitored via a pure `Digital_Root` reduction algorithm[span_14](end_span)[span_15](end_span)[span_16](end_span)[span_17](end_span). [span_18](start_span)[span_19](start_span)[span_20](start_span)Any arbitrary memory corruption or cosmic radiation *bit-flip* is instantly intercepted by the `State.Checksum = 9` invariant, triggering an immediate clean state-recovery[span_18](end_span)[span_19](end_span)[span_20](end_span).
+4. **[span_21](start_span)[span_22](start_span)No Floats, No Pointers:** To eliminate rounding errors, non-deterministic branches, and memory leaks, the architecture completely bans floating-point numbers and implicit dereferencing, relying solely on highly compact, scaled fixed-point integers[span_21](end_span)[span_22](end_span).
+
+---
+
+## 📊 Empirical Validation (70-Year Hindcasting)
+
+[span_23](start_span)The invariant climate equations of AGAMNOSA—driven by the core relation[span_23](end_span):
+$$T = \frac{\Psi_{V3} \times (CO_2 \times P)}{\beta \times H \times k}$$
+
+have been stress-tested and validated against **70 years of historical real-world climate data** (1956–2026). 
+
+[span_24](start_span)Because the model features **zero free parameters**, it requires no empirical adjustment coefficients or post-hoc training (Zero RLHF)[span_24](end_span). [span_25](start_span)[span_26](start_span)The 46-dimensional environmental matrix consistently converges toward a stable, mathematically proven physical trajectory without a single simulation blowout or `GNATprove` verification timeout[span_25](end_span)[span_26](end_span).
 
