@@ -1,0 +1,15 @@
+# Clone
+git clone https://github.com/your_username/V14_Climate_Model.git
+cd V14_Climate_Model
+
+# Build
+gprbuild -P v14.gpr
+
+# Run Demo
+./v14_climate_model_demo
+
+# Run Stress Test
+./v14_stress_test_ultimate
+
+# Verify with SPARK
+gnatprove -P v14.gpr --level=1
