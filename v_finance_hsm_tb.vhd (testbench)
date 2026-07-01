@@ -1,0 +1,124 @@
+--------------------------------------------------------------------------------
+-- V-FINANCE HSM — FPGA Testbench
+-- ============================================================================
+-- Tests the FPGA implementation of V-FINANCE HSM
+-- ============================================================================
+
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+
+entity v_finance_hsm_tb is
+end v_finance_hsm_tb;
+
+architecture Behavioral of v_finance_hsm_tb is
+
+    -- Signals
+    signal clk         : STD_LOGIC := '0';
+    signal reset       : STD_LOGIC := '1';
+    signal start       : STD_LOGIC := '0';
+    signal done        : STD_LOGIC;
+    
+    signal amount      : INTEGER range 0 to 100000000 := 5000000;
+    signal from_acc    : INTEGER range 1 to 999999 := 123456;
+    signal to_acc      : INTEGER range 1 to 999999 := 654321;
+    signal balance     : INTEGER range 0 to 1000000000 := 50000000;
+    
+    signal key         : STD_LOGIC_VECTOR (255 downto 0) := (others => '0');
+    signal nonce       : STD_LOGIC_VECTOR (127 downto 0) := (others => '0');
+    
+    signal encrypted   : STD_LOGIC_VECTOR (127 downto 0);
+    signal auth_status : STD_LOGIC;
+    signal fraud_flag  : STD_LOGIC;
+    signal checksum    : INTEGER range 1 to 9;
+    signal new_balance : INTEGER range 0 to 1000000000;
+
+begin
+
+    -- Instantiate DUT
+    uut: entity work.v_finance_hsm
+        port map (
+            clk         => clk,
+            reset       => reset,
+            start       => start,
+            done        => done,
+            amount      => amount,
+            from_acc    => from_acc,
+            to_acc      => to_acc,
+            balance     => balance,
+            key         => key,
+            nonce       => nonce,
+            encrypted   => encrypted,
+            auth_status => auth_status,
+            fraud_flag  => fraud_flag,
+            checksum    => checksum,
+            new_balance => new_balance
+        );
+    
+    -- Clock: 100 MHz
+    clk_process: process
+    begin
+        wait for 5 ns;
+        clk <= not clk;
+    end process;
+    
+    -- Test sequence
+    test_process: process
+    begin
+        -- Reset
+        reset <= '1';
+        wait for 20 ns;
+        reset <= '0';
+        wait for 10 ns;
+        
+        -- Test 1: Transaction valide
+        report "========================================" severity note;
+        report "TEST 1: Transaction valide" severity note;
+        report "========================================" severity note;
+        
+        amount <= 5000000;
+        from_acc <= 123456;
+        to_acc <= 654321;
+        balance <= 50000000;
+        start <= '1';
+        wait for 10 ns;
+        start <= '0';
+        
+        wait until done = '1';
+        wait for 10 ns;
+        
+        report "Auth : " & std_logic'image(auth_status) severity note;
+        report "Fraud : " & std_logic'image(fraud_flag) severity note;
+        report "New Balance : " & integer'image(new_balance) severity note;
+        report "Checksum : " & integer'image(checksum) severity note;
+        
+        -- Test 2: Fraude détectée
+        report "========================================" severity note;
+        report "TEST 2: Fraude détectée" severity note;
+        report "========================================" severity note;
+        
+        reset <= '1';
+        wait for 20 ns;
+        reset <= '0';
+        wait for 10 ns;
+        
+        amount <= 20000000;
+        from_acc <= 123456;
+        to_acc <= 999999;
+        balance <= 50000000;
+        start <= '1';
+        wait for 10 ns;
+        start <= '0';
+        
+        wait until done = '1';
+        wait for 10 ns;
+        
+        report "Auth : " & std_logic'image(auth_status) severity note;
+        report "Fraud : " & std_logic'image(fraud_flag) severity note;
+        report "New Balance : " & integer'image(new_balance) severity note;
+        report "Checksum : " & integer'image(checksum) severity note;
+        
+        wait;
+    end process;
+
+end Behavioral;
