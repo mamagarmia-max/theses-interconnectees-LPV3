@@ -1,0 +1,272 @@
+package body V_Finance_Core with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- 4.1 Saturating Arithmetic
+   -- ========================================================================
+   
+   function Saturating_Add (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A + B;
+      if Result < A and B > 0 then
+         return Integer'Last;
+      elsif Result > A and B < 0 then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Add;
+   
+   function Saturating_Sub (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A - B;
+      if Result > A and B < 0 then
+         return Integer'First;
+      elsif Result < A and B > 0 then
+         return Integer'Last;
+      else
+         return Result;
+      end if;
+   end Saturating_Sub;
+   
+   function Saturating_Mul (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A * B;
+      if (A > 0 and B > 0) and (Result < A or Result < B) then
+         return Integer'Last;
+      elsif (A < 0 and B < 0) and (Result > A or Result > B) then
+         return Integer'Last;
+      elsif (A > 0 and B < 0) and (Result > A or Result < B) then
+         return Integer'First;
+      elsif (A < 0 and B > 0) and (Result < A or Result > B) then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Mul;
+   
+   function Saturating_Div (A, B : Integer) return Integer is
+   begin
+      if A = Integer'First and B = -1 then
+         return Integer'Last;
+      else
+         return A / B;
+      end if;
+   end Saturating_Div;
+   
+   function Clamp (Value, Min, Max : Integer) return Integer is
+   begin
+      if Value < Min then
+         return Min;
+      elsif Value > Max then
+         return Max;
+      else
+         return Value;
+      end if;
+   end Clamp;
+
+   -- ========================================================================
+   -- 5.1 Digital Root
+   -- ========================================================================
+   
+   function Digital_Root (N : Integer) return Integer is
+      V : Integer := N;
+      S : Integer := 0;
+   begin
+      if V < 0 then
+         V := -V;
+      end if;
+      if V = 0 then
+         return 9;
+      end if;
+      while V > 0 loop
+         pragma Loop_Invariant (V >= 0 and S >= 0);
+         S := S + (V mod 10);
+         V := V / 10;
+      end loop;
+      while S > 9 loop
+         pragma Loop_Invariant (S > 9);
+         S := (S mod 10) + (S / 10);
+      end loop;
+      return S;
+   end Digital_Root;
+
+   -- ========================================================================
+   -- 6.1 Validation Functions
+   -- ========================================================================
+
+   function Validate_Transaction
+     (T       : Transaction_Record;
+      Balance : Amount_Type) return Boolean
+   is
+   begin
+      return T.Amount <= Balance and T.Amount > 0;
+   end Validate_Transaction;
+
+   function Compute_Fraud_Score
+     (T        : Transaction_Record;
+      History  : Transaction_Record) return Fraud_Score
+   is
+      Score : Integer := 0;
+   begin
+      -- Simulation de détection de fraude basée sur des critères simples
+      -- Montant anormalement élevé
+      if T.Amount > FRAUD_THRESHOLD then
+         Score := Score + 30;
+      end if;
+      
+      -- Transaction vers un compte inconnu (simulé)
+      if T.To_Account /= History.To_Account then
+         Score := Score + 20;
+      end if;
+      
+      -- Montant identique à la dernière transaction (simulé)
+      if T.Amount = History.Amount then
+         Score := Score + 10;
+      end if;
+      
+      -- Checksum (Modulo-9) permet de détecter une corruption
+      if T.Checksum /= 9 then
+         Score := Score + 40;
+      end if;
+      
+      -- Clamp
+      if Score < 0 then
+         Score := 0;
+      elsif Score > 100 then
+         Score := 100;
+      end if;
+      
+      return Fraud_Score (Score);
+   end Compute_Fraud_Score;
+
+   function Authorize_Transaction
+     (T       : Transaction_Record;
+      Balance : Amount_Type;
+      History : Transaction_Record) return Transaction_Status
+   is
+      Score : Fraud_Score := 0;
+   begin
+      -- Vérification du solde
+      if not Validate_Transaction (T, Balance) then
+         return Rejected;
+      end if;
+      
+      -- Calcul du score de fraude
+      Score := Compute_Fraud_Score (T, History);
+      
+      -- Décision
+      if Score >= 80 then
+         return Fraud_Detected;
+      elsif Score >= 50 then
+         return Rejected;
+      else
+         return Authorized;
+      end if;
+   end Authorize_Transaction;
+
+   procedure Execute_Transaction
+     (T       : in out Transaction_Record;
+      Balance : in out Amount_Type;
+      Status  :    out Transaction_Status)
+   is
+   begin
+      -- Vérification finale du checksum
+      if T.Checksum /= 9 then
+         Status := Failed;
+         T.Status := Failed;
+         return;
+      end if;
+      
+      -- Autorisation de la transaction
+      if T.Amount <= Balance and T.Amount > 0 then
+         Balance := Saturating_Sub (Balance, T.Amount);
+         T.Status := Completed;
+         Status := Completed;
+      else
+         Status := Failed;
+         T.Status := Failed;
+      end if;
+   end Execute_Transaction;
+
+   function Compute_Transaction_Checksum
+     (T : Transaction_Record) return Integer
+   is
+      Sum : Integer := 0;
+   begin
+      Sum := Saturating_Add (T.ID, T.From_Account);
+      Sum := Saturating_Add (Sum, T.To_Account);
+      Sum := Saturating_Add (Sum, T.Amount);
+      return Digital_Root (Sum);
+   end Compute_Transaction_Checksum;
+
+   -- ========================================================================
+   -- 7.1 Encryption Functions (Simulated)
+   -- ========================================================================
+
+   function Encrypt_Amount (Amount : Amount_Type; Key : Integer) return Integer is
+   begin
+      -- Simulation simple d'un chiffrement
+      return (Amount xor Key) rem MAX_BALANCE;
+   end Encrypt_Amount;
+
+   function Decrypt_Amount (Encrypted : Integer; Key : Integer) return Integer is
+   begin
+      -- Simulation simple d'un déchiffrement
+      return (Encrypted xor Key) rem MAX_BALANCE;
+   end Decrypt_Amount;
+
+   -- ========================================================================
+   -- 8.1 Process Transaction (Heptadic closure)
+   -- ========================================================================
+
+   procedure Process_Transaction
+     (T       : in out Transaction_Record;
+      Balance : in out Amount_Type;
+      History : in     Transaction_Record;
+      Status  :    out Transaction_Status)
+   is
+      Cycle      : Integer := 1;
+      Auth_Status : Transaction_Status := Pending;
+   begin
+      -- Heptadic closure : maximum 7 cycles
+      while Cycle <= K_CYCLES loop
+         pragma Loop_Invariant (Cycle in 1 .. K_CYCLES and
+                                T.Checksum in 0 .. 9);
+         
+         -- Étape 1 : Validation du checksum
+         if T.Checksum /= 9 then
+            Status := Failed;
+            T.Status := Failed;
+            return;
+         end if;
+         
+         -- Étape 2 : Autorisation
+         Auth_Status := Authorize_Transaction (T, Balance, History);
+         
+         -- Étape 3 : Exécution ou rejet
+         if Auth_Status = Authorized then
+            Execute_Transaction (T, Balance, Status);
+            return;
+         elsif Auth_Status = Fraud_Detected then
+            Status := Fraud_Detected;
+            T.Status := Fraud_Detected;
+            return;
+         elsif Auth_Status = Rejected then
+            Status := Rejected;
+            T.Status := Rejected;
+            return;
+         end if;
+         
+         -- Incrémentation du cycle heptadique
+         Cycle := Cycle + 1;
+      end loop;
+      
+      -- Si on arrive ici, la transaction a échoué après 7 cycles
+      Status := Failed;
+      T.Status := Failed;
+   end Process_Transaction;
+
+end V_Finance_Core;
