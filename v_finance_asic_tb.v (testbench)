@@ -1,0 +1,77 @@
+// ============================================================================
+// V-FINANCE ASIC — Testbench
+// ============================================================================
+// Tests the ASIC implementation of V-FINANCE
+// ============================================================================
+
+`timescale 1ns / 1ps
+
+module v_finance_asic_tb;
+
+    reg         clk, reset, start;
+    wire        done;
+    reg  [31:0] amount, from_acc, to_acc, balance;
+    reg  [255:0] key;
+    reg  [127:0] nonce;
+    wire [127:0] encrypted;
+    wire         auth_status, fraud_flag;
+    wire [3:0]   checksum;
+    wire [31:0]  new_balance;
+    
+    // Instantiate DUT
+    v_finance_asic dut (
+        .clk(clk),
+        .reset(reset),
+        .start(start),
+        .done(done),
+        .amount(amount),
+        .from_acc(from_acc),
+        .to_acc(to_acc),
+        .balance(balance),
+        .key(key),
+        .nonce(nonce),
+        .encrypted(encrypted),
+        .auth_status(auth_status),
+        .fraud_flag(fraud_flag),
+        .checksum(checksum),
+        .new_balance(new_balance)
+    );
+    
+    // Clock: 500 MHz
+    always #1 clk = ~clk;
+    
+    // Test sequence
+    initial begin
+        // Initialize
+        clk = 0;
+        reset = 1;
+        start = 0;
+        amount = 32'd5000000;
+        from_acc = 32'd123456;
+        to_acc = 32'd654321;
+        balance = 32'd50000000;
+        key = 0;
+        nonce = 0;
+        
+        // Reset
+        #10 reset = 0;
+        #10 start = 1;
+        #10 start = 0;
+        
+        // Wait for completion
+        wait(done == 1);
+        
+        // Display results
+        #10 $display("========================================");
+        $display("V-FINANCE ASIC — Simulation Results");
+        $display("========================================");
+        $display("Auth Status  : %b", auth_status);
+        $display("Fraud Flag   : %b", fraud_flag);
+        $display("Checksum     : %d", checksum);
+        $display("New Balance  : %d", new_balance);
+        $display("========================================");
+        
+        #50 $finish;
+    end
+
+endmodule
