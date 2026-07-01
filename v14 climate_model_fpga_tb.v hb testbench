@@ -1,0 +1,109 @@
+--------------------------------------------------------------------------------
+-- V14.0 — FPGA Testbench
+-- ============================================================================
+-- Tests the FPGA implementation of V14.0
+-- ============================================================================
+
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+
+entity v14_climate_model_fpga_tb is
+end v14_climate_model_fpga_tb;
+
+architecture Behavioral of v14_climate_model_fpga_tb is
+
+    -- Signals
+    signal clk         : STD_LOGIC := '0';
+    signal reset       : STD_LOGIC := '1';
+    signal start       : STD_LOGIC := '0';
+    signal done        : STD_LOGIC;
+    
+    signal latitude    : INTEGER range -900 to 900 := 489;
+    signal altitude    : INTEGER range 0 to 10000 := 35;
+    signal pressure    : INTEGER range 1000 to 11000 := 10130;
+    signal humidity    : INTEGER range 0 to 1000 := 200;
+    signal co2         : INTEGER range 0 to 10000 := 4350;
+    signal day         : INTEGER range 1 to 365 := 180;
+    signal albedo      : INTEGER range 0 to 100 := 20;
+    signal urban_heat  : INTEGER range -500 to 500 := 15;
+    
+    signal surface_temp : INTEGER range -500 to 500;
+    signal layer1_temp  : INTEGER range -500 to 500;
+    signal layer2_temp  : INTEGER range -500 to 500;
+    signal layer3_temp  : INTEGER range -500 to 500;
+    signal layer4_temp  : INTEGER range -500 to 500;
+    signal layer5_temp  : INTEGER range -500 to 500;
+    signal stability    : INTEGER range 0 to 100;
+    signal checksum     : INTEGER range 1 to 9;
+
+begin
+
+    -- Instantiate DUT
+    uut: entity work.v14_climate_model_fpga
+        port map (
+            clk         => clk,
+            reset       => reset,
+            start       => start,
+            done        => done,
+            latitude    => latitude,
+            altitude    => altitude,
+            pressure    => pressure,
+            humidity    => humidity,
+            co2         => co2,
+            day         => day,
+            albedo      => albedo,
+            urban_heat  => urban_heat,
+            surface_temp => surface_temp,
+            layer1_temp  => layer1_temp,
+            layer2_temp  => layer2_temp,
+            layer3_temp  => layer3_temp,
+            layer4_temp  => layer4_temp,
+            layer5_temp  => layer5_temp,
+            stability    => stability,
+            checksum     => checksum
+        );
+    
+    -- Clock: 100 MHz
+    clk_process: process
+    begin
+        wait for 5 ns;
+        clk <= not clk;
+    end process;
+    
+    -- Test sequence
+    test_process: process
+    begin
+        -- Reset
+        reset <= '1';
+        wait for 20 ns;
+        reset <= '0';
+        wait for 10 ns;
+        
+        -- Start computation
+        start <= '1';
+        wait for 10 ns;
+        start <= '0';
+        
+        -- Wait for completion
+        wait until done = '1';
+        wait for 10 ns;
+        
+        -- Display results
+        report "========================================" severity note;
+        report "V14.0 — FPGA Simulation Results" severity note;
+        report "========================================" severity note;
+        report "Surface Temp : " & integer'image(surface_temp/10) & "." & integer'image(abs(surface_temp mod 10)) & "°C" severity note;
+        report "Layer 1 (1km): " & integer'image(layer1_temp/10) & "." & integer'image(abs(layer1_temp mod 10)) & "°C" severity note;
+        report "Layer 2 (5km): " & integer'image(layer2_temp/10) & "." & integer'image(abs(layer2_temp mod 10)) & "°C" severity note;
+        report "Layer 3 (10km): " & integer'image(layer3_temp/10) & "." & integer'image(abs(layer3_temp mod 10)) & "°C" severity note;
+        report "Layer 4 (15km): " & integer'image(layer4_temp/10) & "." & integer'image(abs(layer4_temp mod 10)) & "°C" severity note;
+        report "Layer 5 (40km): " & integer'image(layer5_temp/10) & "." & integer'image(abs(layer5_temp mod 10)) & "°C" severity note;
+        report "Stability : " & integer'image(stability) & "%" severity note;
+        report "Checksum : " & integer'image(checksum) severity note;
+        report "========================================" severity note;
+        
+        wait;
+    end process;
+
+end Behavioral;
