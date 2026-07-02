@@ -1,0 +1,143 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.1 — Déterministic Climate Model avec Aléas Locaux (Ada/SPARK)
+-- ============================================================================
+-- Version 14.1 : Intègre la bibliothèque des événements imprévus
+--   - Vents soudains
+--   - Nuages variables
+--   - Pression évolutive
+--   - Îlot de chaleur urbain dynamique
+--   - Humidité spécifique
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 14.1.0
+-- Date : 02 Juillet 2026
+
+with V14_1_Unexpected_Events;
+
+package V14_1_Climate_Model with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   use V14_1_Unexpected_Events;
+
+   -- ========================================================================
+   -- 1. INVARIANTS (hérités de V14)
+   -- ========================================================================
+   
+   PSI_V14         : constant := 480168;
+   PHI_CRITICAL    : constant := -51100;
+   BETA            : constant := 1_000_000;
+   K_CYCLES        : constant := 7;
+   ALPHA_INV       : constant := 13703599913;
+
+   -- ========================================================================
+   -- 2. TYPES DE BASE
+   -- ========================================================================
+   
+   subtype Temp_Type is Integer range -500 .. 500;
+   subtype CO2_Type is Integer range 0 .. 10_000;
+   subtype Pressure_Type is Integer range 1000 .. 11000;
+   subtype Humidity_Type is Integer range 0 .. 1000;
+   subtype Day_Type is Integer range 1 .. 365;
+   subtype Year_Type is Integer range 2020 .. 2030;
+
+   -- ========================================================================
+   -- 3. PARAMÈTRES RÉGIONAUX (hérités)
+   -- ========================================================================
+   
+   type Core_Parameters is record
+      Latitude       : Integer := 0;
+      Altitude       : Integer := 0;
+      Pressure_Base  : Pressure_Type := 10130;
+      Humidity_Base  : Humidity_Type := 600;
+      CO2_Local      : CO2_Type := 4300;
+   end record;
+
+   -- ========================================================================
+   -- 4. SATURATING ARITHMETIC (héritée)
+   -- ========================================================================
+   
+   function Saturating_Add (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Add'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Sub (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Sub'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Mul (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Mul'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Div (A, B : Integer) return Integer
+     with Pre => B /= 0,
+          Post => Saturating_Div'Result in Integer'First .. Integer'Last;
+   
+   function Clamp (Value, Min, Max : Integer) return Integer
+     with Pre => Min <= Max,
+          Post => Clamp'Result in Min .. Max;
+
+   -- ========================================================================
+   -- 5. DIGITAL ROOT (héritée)
+   -- ========================================================================
+   
+   function Digital_Root (N : Integer) return Integer
+     with Pre => N >= 0,
+          Post => Digital_Root'Result in 1 .. 9;
+
+   -- ========================================================================
+   -- 6. CŒUR V14 (hérité)
+   -- ========================================================================
+
+   function Compute_Core_Temperature
+     (Params   : Core_Parameters;
+      CO2      : CO2_Type;
+      Day      : Day_Type) return Temp_Type
+     with Post => Compute_Core_Temperature'Result in -500 .. 500;
+
+   -- ========================================================================
+   -- 7. TEMPÉRATURE AVEC ALÉAS (V14.1)
+   -- ========================================================================
+
+   function Compute_Temperature_With_Events
+     (Params   : Core_Parameters;
+      CO2      : CO2_Type;
+      Day      : Day_Type;
+      Hour     : Hour_Type;
+      Events   : Unexpected_Events) return Temp_Type
+     with Pre => Events.Checksum in 0 .. 9,
+          Post => Compute_Temperature_With_Events'Result in -500 .. 500;
+
+   -- ========================================================================
+   -- 8. SIMULATION COMPLÈTE (V14.1)
+   -- ========================================================================
+
+   type V14_1_Result is record
+      Core_Temp      : Temp_Type := 0;
+      Unexpected_Adj : Impact_Type := 0;
+      Final_Temp     : Temp_Type := 0;
+      Checksum       : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => V14_1_Result.Checksum in 0 .. 9;
+
+   procedure Run_V14_1_Simulation
+     (Params   : in     Core_Parameters;
+      CO2      : in     CO2_Type;
+      Day      : in     Day_Type;
+      Hour     : in     Hour_Type;
+      Events   : in     Unexpected_Events;
+      Result   :    out V14_1_Result)
+     with Pre => Events.Checksum in 0 .. 9,
+          Post => (if Result.Checksum = 9 then
+                      Result.Final_Temp in -500 .. 500);
+
+end V14_1_Climate_Model;
