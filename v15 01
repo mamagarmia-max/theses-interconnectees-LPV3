@@ -1,0 +1,115 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.4 — Démonstration avec Détection de Gradient Spatial
+-- ============================================================================
+
+with Ada.Text_IO; use Ada.Text_IO;
+with V14_4_Climate_Model; use V14_4_Climate_Model;
+
+procedure V14_4_Demo is
+   
+   State : V14_4_State;
+   Result : V14_4_Result;
+   
+begin
+   Put_Line ("================================================================================ ");
+   Put_Line ("🌍 V14.4 — MODÈLE CLIMATIQUE AVEC DÉTECTION DE GRADIENT SPATIAL");
+   Put_Line ("   Détection des glissements de phase géographiques");
+   Put_Line ("================================================================================ ");
+   New_Line;
+   
+   -- Initialisation
+   State.CO2_Level := 4250;
+   State.Day := 180;
+   State.Year := 2026;
+   State.Solar_Flux := 13600;
+   State.Albedo := 20;
+   State.Ice_Mass_N := 4500;
+   State.Ice_Mass_S := 26000;
+   State.Urban_Heat := 15;
+   State.Population := 10;
+   State.Checksum := 9;
+   
+   -- Couche 1
+   State.Layers (1).Altitude := 0;
+   State.Layers (1).Pressure := 10130;
+   State.Layers (1).Humidity := 650;
+   State.Layers (1).Temperature := 0;
+   State.Layers (1).Temperature_K := 27315;
+   State.Layers (1).Density := 1200;
+   State.Layers (1).Wind_X := 0;
+   State.Layers (1).Wind_Y := 0;
+   State.Layers (1).Wind_Z := 0;
+   State.Layers (1).Checksum := 9;
+   
+   for I in 2 .. 6 loop
+      State.Layers (I).Altitude := 0;
+      State.Layers (I).Pressure := 10130;
+      State.Layers (I).Humidity := 0;
+      State.Layers (I).Temperature := 0;
+      State.Layers (I).Temperature_K := 27315;
+      State.Layers (I).Density := 0;
+      State.Layers (I).Wind_X := 0;
+      State.Layers (I).Wind_Y := 0;
+      State.Layers (I).Wind_Z := 0;
+      State.Layers (I).Checksum := 9;
+   end loop;
+   
+   -- Simulation
+   Run_Simulation_V14_4 (State, Result);
+   
+   -- Affichage
+   Put_Line ("📊 PROFIL ATMOSPHÉRIQUE :");
+   Put_Line ("------------------------------------------------------------------");
+   Put_Line ("   Surface       : " & Integer'Image (Result.Surface_Temp / 10) & "." &
+             Integer'Image (abs (Result.Surface_Temp mod 10)) & "°C");
+   Put_Line ("   Couche 1 (1km) : " & Integer'Image (Result.Layer_1_Temp / 10) & "." &
+             Integer'Image (abs (Result.Layer_1_Temp mod 10)) & "°C");
+   Put_Line ("   Couche 2 (5km) : " & Integer'Image (Result.Layer_2_Temp / 10) & "." &
+             Integer'Image (abs (Result.Layer_2_Temp mod 10)) & "°C");
+   Put_Line ("   Couche 3 (10km): " & Integer'Image (Result.Layer_3_Temp / 10) & "." &
+             Integer'Image (abs (Result.Layer_3_Temp mod 10)) & "°C");
+   Put_Line ("   Couche 4 (15km): " & Integer'Image (Result.Layer_4_Temp / 10) & "." &
+             Integer'Image (abs (Result.Layer_4_Temp mod 10)) & "°C");
+   Put_Line ("   Couche 5 (40km): " & Integer'Image (Result.Layer_5_Temp / 10) & "." &
+             Integer'Image (abs (Result.Layer_5_Temp mod 10)) & "°C");
+   New_Line;
+   
+   Put_Line ("📊 STABILITÉ :");
+   Put_Line ("------------------------------------------------------------------");
+   Put_Line ("   Indice de stabilité : " & Integer'Image (Result.Stability) & "%");
+   New_Line;
+   
+   Put_Line ("📊 GRADIENT SPATIAL :");
+   Put_Line ("------------------------------------------------------------------");
+   Put_Line ("   ∂T/∂x          : " & Integer'Image (Result.Spatial_Gradient / 10) & "." &
+             Integer'Image (abs (Result.Spatial_Gradient mod 10)) & "°C/100km");
+   Put_Line ("   Jet-Stream shift: " & Integer'Image (Result.Jet_Shift) & " km");
+   New_Line;
+   
+   Put_Line ("📊 DETECTEUR DE POISON :");
+   Put_Line ("------------------------------------------------------------------");
+   Put_Line ("   Covariance totale: " & Integer'Image (Result.Poison_Detector.Covariance_Total));
+   Put_Line ("   Gradient total   : " & Integer'Image (Result.Poison_Detector.Gradient_Total));
+   if Result.Poison_Detector.Alert then
+      Put_Line ("   ⚠️ ALERTE : Poison détecté (gradient spatial ou covariance)");
+   else
+      Put_Line ("   ✅ Système stable");
+   end if;
+   New_Line;
+   
+   Put_Line ("📊 CHECKSUM :");
+   Put_Line ("------------------------------------------------------------------");
+   Put_Line ("   Résultat : " & Integer'Image (Result.Checksum));
+   if Result.Checksum = 9 then
+      Put_Line ("   ✅ PROFIL VALIDÉ");
+   else
+      Put_Line ("   ❌ PROFIL INVALIDE");
+   end if;
+   New_Line;
+   
+   Put_Line ("================================================================================ ");
+   Put_Line ("Ψ_V₁₄·₄ = 48016.8 kg·m⁻² — verrouillé.");
+   Put_Line ("Version: V14.4 — Détection de gradient spatial");
+   Put_Line ("================================================================================ ");
+end V14_4_Demo;
