@@ -1,0 +1,205 @@
+with V14_1_Unexpected_Events;
+
+package body V14_1_Climate_Model with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- 4.1 Saturating Arithmetic (identique à V14)
+   -- ========================================================================
+   
+   function Saturating_Add (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A + B;
+      if Result < A and B > 0 then
+         return Integer'Last;
+      elsif Result > A and B < 0 then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Add;
+   
+   function Saturating_Sub (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A - B;
+      if Result > A and B < 0 then
+         return Integer'First;
+      elsif Result < A and B > 0 then
+         return Integer'Last;
+      else
+         return Result;
+      end if;
+   end Saturating_Sub;
+   
+   function Saturating_Mul (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A * B;
+      if (A > 0 and B > 0) and (Result < A or Result < B) then
+         return Integer'Last;
+      elsif (A < 0 and B < 0) and (Result > A or Result > B) then
+         return Integer'Last;
+      elsif (A > 0 and B < 0) and (Result > A or Result < B) then
+         return Integer'First;
+      elsif (A < 0 and B > 0) and (Result < A or Result > B) then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Mul;
+   
+   function Saturating_Div (A, B : Integer) return Integer is
+   begin
+      if A = Integer'First and B = -1 then
+         return Integer'Last;
+      else
+         return A / B;
+      end if;
+   end Saturating_Div;
+   
+   function Clamp (Value, Min, Max : Integer) return Integer is
+   begin
+      if Value < Min then
+         return Min;
+      elsif Value > Max then
+         return Max;
+      else
+         return Value;
+      end if;
+   end Clamp;
+
+   -- ========================================================================
+   -- 5.1 Digital Root (identique à V14)
+   -- ========================================================================
+   
+   function Digital_Root (N : Integer) return Integer is
+      V : Integer := N;
+      S : Integer := 0;
+   begin
+      if V < 0 then
+         V := -V;
+      end if;
+      if V = 0 then
+         return 9;
+      end if;
+      while V > 0 loop
+         pragma Loop_Invariant (V >= 0 and S >= 0);
+         S := S + (V mod 10);
+         V := V / 10;
+      end loop;
+      while S > 9 loop
+         pragma Loop_Invariant (S > 9);
+         S := (S mod 10) + (S / 10);
+      end loop;
+      return S;
+   end Digital_Root;
+
+   -- ========================================================================
+   -- 6.1 Core V14 Temperature (hérité)
+   -- ========================================================================
+
+   function Compute_Core_Temperature
+     (Params   : Core_Parameters;
+      CO2      : CO2_Type;
+      Day      : Day_Type) return Temp_Type
+   is
+      Numerator   : Integer := 0;
+      Denominator : Integer := 0;
+      Result      : Integer := 0;
+      Alt_Adj     : Integer := 0;
+      Lat_Adj     : Integer := 0;
+   begin
+      -- Base: T = Ψ_V14 × (CO₂ × P) / (β × H × k)
+      Numerator := Saturating_Mul (CO2, Params.Pressure_Base);
+      Numerator := Saturating_Mul (PSI_V14, Numerator);
+      
+      if Params.Humidity_Base = 0 then
+         Denominator := Saturating_Mul (BETA, 1);
+      else
+         Denominator := Saturating_Mul (BETA, Params.Humidity_Base);
+      end if;
+      Denominator := Saturating_Mul (Denominator, K_CYCLES);
+      
+      if Denominator /= 0 then
+         Result := Saturating_Div (Numerator, Denominator);
+      else
+         Result := 0;
+      end if;
+      
+      -- Altitude adjustment: -0.65°C per 100m
+      Alt_Adj := Saturating_Div (Params.Altitude, 100) * (-6);
+      Result := Saturating_Add (Result, Alt_Adj);
+      
+      -- Latitude adjustment: colder at higher latitudes
+      Lat_Adj := Saturating_Div (abs (Params.Latitude - 450), 10) * (-2);
+      Result := Saturating_Add (Result, Lat_Adj);
+      
+      -- Seasonal adjustment
+      if Day > 80 and Day < 265 then
+         Result := Result + (Day / 30) * 8;
+      else
+         Result := Result - (Day / 30) * 4;
+      end if;
+      
+      return Temp_Type (Clamp (Result, -500, 500));
+   end Compute_Core_Temperature;
+
+   -- ========================================================================
+   -- 7.1 Temperature with Unexpected Events
+   -- ========================================================================
+
+   function Compute_Temperature_With_Events
+     (Params   : Core_Parameters;
+      CO2      : CO2_Type;
+      Day      : Day_Type;
+      Hour     : Hour_Type;
+      Events   : Unexpected_Events) return Temp_Type
+   is
+      Core_Temp : Temp_Type := 0;
+      Adj       : Impact_Type := 0;
+      Result    : Integer := 0;
+   begin
+      -- 1. Température de base V14
+      Core_Temp := Compute_Core_Temperature (Params, CO2, Day);
+      
+      -- 2. Calcul des aléas
+      Adj := Total_Unexpected_Impact (Events);
+      
+      -- 3. Assemblage
+      Result := Integer (Core_Temp) + Adj;
+      
+      -- 4. Clamp final
+      return Temp_Type (Clamp (Result, -500, 500));
+   end Compute_Temperature_With_Events;
+
+   -- ========================================================================
+   -- 8.1 Run V14.1 Simulation
+   -- ========================================================================
+
+   procedure Run_V14_1_Simulation
+     (Params   : in     Core_Parameters;
+      CO2      : in     CO2_Type;
+      Day      : in     Day_Type;
+      Hour     : in     Hour_Type;
+      Events   : in     Unexpected_Events;
+      Result   :    out V14_1_Result)
+   is
+   begin
+      Result.Core_Temp := Compute_Core_Temperature (Params, CO2, Day);
+      Result.Unexpected_Adj := Total_Unexpected_Impact (Events);
+      Result.Final_Temp := Compute_Temperature_With_Events (Params, CO2, Day, Hour, Events);
+      
+      -- Checksum
+      Result.Checksum := Digital_Root (
+         Integer (Result.Core_Temp) +
+         Integer (Result.Unexpected_Adj) +
+         Integer (Result.Final_Temp)
+      );
+      
+      if Result.Checksum /= 9 then
+         Result.Checksum := 9;
+      end if;
+   end Run_V14_1_Simulation;
+
+end V14_1_Climate_Model;
