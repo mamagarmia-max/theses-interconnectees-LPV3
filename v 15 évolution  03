@@ -1,0 +1,408 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.5 — Deterministic Climate Model with Continuous Adaptive Learning (CAL)
+-- ============================================================================
+-- Version 14.5 : Ajout d'un module d'apprentissage continu pour les IA
+--   - Le code évolue au fur et à mesure de son exécution
+--   - Les IA qui utilisent le code peuvent l'enrichir
+--   - Chaque adaptation est validée par Modulo-9
+--   - Historique des adaptations (traçabilité)
+--   - Mode Rollback si dégradation
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 14.5.0
+-- Date : 02 Juillet 2026
+-- ============================================================================
+
+package V14_5_Climate_Model with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. INVARIANTS V14 (IMMUABLES)
+   -- ========================================================================
+   
+   PSI_V14         : constant := 480168;        -- ×10 : 48,016.8 kg·m⁻²
+   PHI_CRITICAL    : constant := -51100;        -- ×1000 : -51.1 mV
+   BETA            : constant := 1_000_000;     -- 10⁶
+   K_CYCLES        : constant := 7;             -- Heptadic closure
+   ALPHA_INV       : constant := 13703599913;   -- 1/α × 10⁵
+   
+   -- Seuils (ajustables par apprentissage)
+   COVARIANCE_THRESHOLD : constant := 10000;
+   GRADIENT_THRESHOLD   : constant := 100;
+
+   -- ========================================================================
+   -- 2. MODULE D'APPRENTISSAGE CONTINU (CAL)
+   -- ========================================================================
+
+   type Adaptation_Type is (Threshold_Adjust, Weight_Update, Parameter_Tune, No_Adaptation);
+   
+   type Adaptation_Record is record
+      ID          : Integer := 0;
+      Adaptation  : Adaptation_Type := No_Adaptation;
+      Old_Value   : Integer := 0;
+      New_Value   : Integer := 0;
+      Performance : Integer := 0;      -- 0-100 (qualité de l'adaptation)
+      Timestamp   : Integer := 0;      -- Cycle number
+      Checksum    : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Adaptation_Record.Checksum in 0 .. 9;
+
+   type Adaptation_History is array (1 .. 100) of Adaptation_Record;
+   
+   type Learning_Module is record
+      History        : Adaptation_History;
+      History_Count  : Integer range 0 .. 100 := 0;
+      Last_Adaptation : Adaptation_Type := No_Adaptation;
+      Rollback_Point : Integer := 0;
+      Learning_Rate  : Integer range 0 .. 100 := 50;  -- 0=stop, 100=maximum
+      Performance    : Integer range 0 .. 100 := 0;
+      Stable         : Boolean := True;
+      Checksum       : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Learning_Module.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 3. TYPES DE BASE (étendus)
+   -- ========================================================================
+   
+   subtype Temp_Type is Integer range -500 .. 500;
+   subtype Temp_K_Type is Integer range 2000 .. 3500;
+   subtype Pressure_Type is Integer range 1000 .. 11000;
+   subtype Height_Type is Integer range 0 .. 50000;
+   subtype CO2_Type is Integer range 0 .. 10_000;
+   subtype Humidity_Type is Integer range 0 .. 1000;
+   subtype Day_Type is Integer range 1 .. 365;
+   subtype Year_Type is Integer range 2020 .. 2030;
+   subtype Layer_Type is Integer range 1 .. 6;
+   subtype Confidence_Type is Integer range 0 .. 100;
+
+   -- ========================================================================
+   -- 4. TRACKERS (Kalman) avec suivi d'apprentissage
+   -- ========================================================================
+
+   type Phi_Tracker is record
+      Value         : Integer range -60000 .. -40000 := -51100;
+      Derivative    : Integer range -1000 .. 1000 := 0;
+      Covariance    : Integer range 0 .. 10000 := 0;
+      Alert         : Boolean := False;
+      Learned_Shift : Integer range -1000 .. 1000 := 0;  -- NOUVEAU
+      Confidence    : Confidence_Type := 50;              -- NOUVEAU
+      Checksum      : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Phi_Tracker.Checksum in 0 .. 9;
+
+   type Psi_Tracker is record
+      Value         : Integer range 480000 .. 481000 := 480168;
+      Derivative    : Integer range -1000 .. 1000 := 0;
+      Covariance    : Integer range 0 .. 10000 := 0;
+      Alert         : Boolean := False;
+      Learned_Shift : Integer range -1000 .. 1000 := 0;  -- NOUVEAU
+      Confidence    : Confidence_Type := 50;              -- NOUVEAU
+      Checksum      : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Psi_Tracker.Checksum in 0 .. 9;
+
+   type Coupling_Tracker is record
+      Value         : Integer := 0;
+      Derivative    : Integer := 0;
+      Covariance    : Integer range 0 .. 10000 := 0;
+      Alert         : Boolean := False;
+      Learned_Shift : Integer := 0;                      -- NOUVEAU
+      Confidence    : Confidence_Type := 50;              -- NOUVEAU
+      Checksum      : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Coupling_Tracker.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 5. GRADIENT TRACKER (avec apprentissage)
+   -- ========================================================================
+
+   type Gradient_Tracker is record
+      Value         : Integer := 0;
+      Derivative    : Integer := 0;
+      Covariance    : Integer range 0 .. 10000 := 0;
+      Jet_Shift     : Integer := 0;
+      Alert         : Boolean := False;
+      Learned_Shift : Integer := 0;                      -- NOUVEAU
+      Confidence    : Confidence_Type := 50;              -- NOUVEAU
+      Checksum      : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Gradient_Tracker.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 6. DETECTEUR DE POISON (avec apprentissage)
+   -- ========================================================================
+
+   type Poison_Detector is record
+      Phi_Tracker      : Phi_Tracker;
+      Psi_Tracker      : Psi_Tracker;
+      Coupling_Tracker : Coupling_Tracker;
+      Gradient_Tracker : Gradient_Tracker;
+      Covariance_Total : Integer range 0 .. 10000 := 0;
+      Gradient_Total   : Integer range 0 .. 10000 := 0;
+      Alert            : Boolean := False;
+      Confidence       : Confidence_Type := 50;          -- NOUVEAU
+      Checksum         : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Poison_Detector.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 7. COUCHE ATMOSPHÉRIQUE (avec apprentissage)
+   -- ========================================================================
+
+   type Atmospheric_Layer is record
+      Altitude       : Height_Type := 0;
+      Pressure       : Pressure_Type := 0;
+      Temperature    : Temp_Type := 0;
+      Temperature_K  : Temp_K_Type := 0;
+      Humidity       : Humidity_Type := 0;
+      Density        : Integer := 0;
+      Wind_X         : Integer := 0;
+      Wind_Y         : Integer := 0;
+      Wind_Z         : Integer := 0;
+      Learned_Correction : Integer := 0;               -- NOUVEAU
+      Confidence     : Confidence_Type := 50;           -- NOUVEAU
+      Checksum       : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Atmospheric_Layer.Checksum in 0 .. 9;
+
+   type Layer_Array is array (Layer_Type) of Atmospheric_Layer;
+
+   -- ========================================================================
+   -- 8. ÉTAT COMPLET V14.5
+   -- ========================================================================
+
+   type V14_5_State is record
+      Layers         : Layer_Array;
+      CO2_Level      : CO2_Type := 0;
+      Day            : Day_Type := 1;
+      Year           : Year_Type := 2026;
+      Solar_Flux     : Integer := 0;
+      Albedo         : Integer := 0;
+      Ice_Mass_N     : Integer := 0;
+      Ice_Mass_S     : Integer := 0;
+      Urban_Heat     : Integer := 0;
+      Population     : Integer := 0;
+      Poison_Detector : Poison_Detector;
+      Learning       : Learning_Module;                -- NOUVEAU
+      Cycle_Count    : Integer := 0;                   -- NOUVEAU
+      Checksum       : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => V14_5_State.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 9. FONCTIONS DE BASE (héritées)
+   -- ========================================================================
+   
+   function Saturating_Add (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Add'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Sub (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Sub'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Mul (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Mul'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Div (A, B : Integer) return Integer
+     with Pre => B /= 0,
+          Post => Saturating_Div'Result in Integer'First .. Integer'Last;
+   
+   function Clamp (Value, Min, Max : Integer) return Integer
+     with Pre => Min <= Max,
+          Post => Clamp'Result in Min .. Max;
+
+   function Digital_Root (N : Integer) return Integer
+     with Pre => N >= 0,
+          Post => Digital_Root'Result in 1 .. 9;
+
+   -- ========================================================================
+   -- 10. FONCTIONS ATMOSPHÉRIQUES
+   -- ========================================================================
+
+   function Compute_Pressure_At_Height
+     (Height : Height_Type;
+      P0     : Pressure_Type) return Pressure_Type
+     with Pre => Height in 0 .. 50000 and P0 in 1000 .. 11000,
+          Post => Compute_Pressure_At_Height'Result in 1000 .. 11000;
+
+   function Compute_Temperature_At_Height
+     (Height     : Height_Type;
+      T0         : Temp_Type;
+      Lapse_Rate : Integer) return Temp_Type
+     with Pre => Height in 0 .. 50000 and T0 in -500 .. 500,
+          Post => Compute_Temperature_At_Height'Result in -500 .. 500;
+
+   function Compute_Density
+     (Pressure : Pressure_Type;
+      Temp_K   : Temp_K_Type) return Integer
+     with Pre => Pressure in 1000 .. 11000 and Temp_K in 2000 .. 3500,
+          Post => Compute_Density'Result in 0 .. 5000;
+
+   function Compute_Stability_Index
+     (Layer : Layer_Array) return Integer
+     with Pre => (for all I in Layer_Type => Layer (I).Checksum in 0 .. 9),
+          Post => Compute_Stability_Index'Result in 0 .. 100;
+
+   -- ========================================================================
+   -- 11. FONCTIONS DE GRADIENT SPATIAL
+   -- ========================================================================
+
+   function Compute_Spatial_Gradient
+     (Layer : Layer_Array) return Integer
+     with Pre => (for all I in Layer_Type => Layer (I).Checksum in 0 .. 9),
+          Post => Compute_Spatial_Gradient'Result in -500 .. 500;
+
+   function Compute_Jet_Shift
+     (Layer : Layer_Array;
+      Day   : Day_Type) return Integer
+     with Pre => (for all I in Layer_Type => Layer (I).Checksum in 0 .. 9),
+          Post => Compute_Jet_Shift'Result in -10000 .. 10000;
+
+   -- ========================================================================
+   -- 12. FONCTIONS DE DÉTECTION (avec apprentissage)
+   -- ========================================================================
+
+   function Detect_Poison
+     (Detector : Poison_Detector;
+      Phi      : Integer;
+      Psi      : Integer;
+      Ux       : Integer;
+      Vy       : Integer;
+      W        : Integer;
+      Grad_T   : Integer) return Boolean
+     with Pre => Phi in -60000 .. -40000 and
+                 Psi in 480000 .. 481000,
+          Post => Detect_Poison'Result = 
+                    (Detector.Covariance_Total > COVARIANCE_THRESHOLD or
+                     Detector.Gradient_Total > GRADIENT_THRESHOLD);
+
+   procedure Update_Poison_Detector
+     (Detector : in out Poison_Detector;
+      Phi      : Integer;
+      Psi      : Integer;
+      Ux       : Integer;
+      Vy       : Integer;
+      W        : Integer;
+      Grad_T   : Integer)
+     with Pre => Phi in -60000 .. -40000 and
+                 Psi in 480000 .. 481000,
+          Post => (if Detector.Alert then
+                      Detector.Checksum = 9);
+
+   -- ========================================================================
+   -- 13. MODULE D'APPRENTISSAGE CONTINU (NOUVEAU - CŒUR DE V14.5)
+   -- ========================================================================
+
+   procedure Learn_From_Cycle
+     (State   : in out V14_5_State;
+      Result  : in     V14_5_Result)
+     with Pre => State.Checksum in 0 .. 9 and Result.Checksum in 0 .. 9,
+          Post => (if State.Learning.Stable then
+                      State.Learning.Checksum = 9);
+   -- Analyse le cycle, ajuste les paramètres si nécessaire
+   -- L'apprentissage est validé par Modulo-9
+
+   function Compute_Learning_Performance
+     (State  : V14_5_State;
+      Result : V14_5_Result) return Confidence_Type
+     with Pre => State.Checksum in 0 .. 9 and Result.Checksum in 0 .. 9,
+          Post => Compute_Learning_Performance'Result in 0 .. 100;
+   -- Calcule la performance de l'apprentissage (0-100)
+
+   procedure Apply_Adaptation
+     (State    : in out V14_5_State;
+      Adapt    : in     Adaptation_Type;
+      New_Value : in     Integer)
+     with Pre => State.Checksum in 0 .. 9,
+          Post => (if State.Learning.Stable then
+                      State.Learning.Checksum = 9);
+   -- Applique une adaptation validée par Modulo-9
+
+   procedure Rollback_Adaptation
+     (State : in out V14_5_State)
+     with Pre => State.Checksum in 0 .. 9,
+          Post => (if State.Learning.Stable then
+                      State.Learning.Checksum = 9);
+   -- Annule la dernière adaptation si performance dégradée
+
+   function Get_Adaptation_History
+     (State : V14_5_State) return Adaptation_History
+     with Pre => State.Checksum in 0 .. 9,
+          Post => (for all I in 1 .. State.Learning.History_Count =>
+                      Get_Adaptation_History'Result (I).Checksum = 9);
+   -- Retourne l'historique complet des adaptations
+
+   -- ========================================================================
+   -- 14. SIMULATION COMPLÈTE V14.5
+   -- ========================================================================
+
+   type V14_5_Result is record
+      Surface_Temp     : Temp_Type := 0;
+      Layer_1_Temp     : Temp_Type := 0;
+      Layer_2_Temp     : Temp_Type := 0;
+      Layer_3_Temp     : Temp_Type := 0;
+      Layer_4_Temp     : Temp_Type := 0;
+      Layer_5_Temp     : Temp_Type := 0;
+      Layer_6_Temp     : Temp_Type := 0;
+      Stability        : Integer := 0;
+      Spatial_Gradient : Integer := 0;
+      Jet_Shift        : Integer := 0;
+      Poison_Detector  : Poison_Detector;
+      Learning         : Learning_Module;           -- NOUVEAU
+      Learning_Performance : Confidence_Type := 50; -- NOUVEAU
+      Adaptations_Applied : Integer := 0;           -- NOUVEAU
+      Checksum         : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => V14_5_Result.Checksum in 0 .. 9;
+
+   procedure Run_Simulation_V14_5
+     (State  : in out V14_5_State;
+      Result :    out V14_5_Result)
+     with Pre => State.Checksum in 0 .. 9,
+          Post => (if State.Checksum = 9 and not State.Poison_Detector.Alert then
+                      Result.Checksum = 9 and
+                      State.Poison_Detector.Checksum = 9 and
+                      State.Learning.Checksum = 9);
+
+   -- ========================================================================
+   -- 15. INTERFACE POUR LES IA (NOUVEAU)
+   -- ========================================================================
+
+   procedure IA_Query
+     (State     : in     V14_5_State;
+      Question  : in     String;
+      Response  :    out String;
+      Confidence : out Confidence_Type)
+     with Pre => State.Checksum in 0 .. 9 and Question'Length > 0,
+          Post => Confidence in 0 .. 100;
+   -- Interface standardisée pour les IA qui utilisent le code
+   -- Elles peuvent poser des questions, recevoir des réponses et des
+   -- niveaux de confiance
+
+   procedure IA_Contribute
+     (State      : in out V14_5_State;
+      Suggestion : in     String;
+      Value      : in     Integer;
+      Confidence : in     Confidence_Type)
+     with Pre => State.Checksum in 0 .. 9 and
+                 Confidence in 0 .. 100 and
+                 Suggestion'Length > 0,
+          Post => (if State.Learning.Stable then
+                      State.Learning.Checksum = 9);
+   -- Les IA peuvent soumettre des suggestions d'adaptation
+   -- Validées par Modulo-9 avant intégration
+
+end V14_5_Climate_Model;
