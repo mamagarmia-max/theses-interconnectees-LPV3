@@ -1,0 +1,486 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V15.1 — Hardware-Hardened Deterministic Morphogenic Engine with CAL
+-- ============================================================================
+-- Version 15.1 : Intégration physique + Continuous Adaptive Learning
+--   - Noyau V15.0 (invariants, Modulo-9, k=7)
+--   - Module CAL (apprentissage continu)
+--   - Capteurs physiques (thermiques, di/dt, dV/dt)
+--   - Contre-mesures matérielles (isolation, réduction horloge)
+--   - Interface asynchrone capteurs-CAL (< 1 ns)
+--   - Blindage logique (Modulo-9)
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 15.1.0
+-- Date : 03 Juillet 2026
+-- ============================================================================
+
+package V15_1_Hardware_Hardened with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. INVARIANTS V15 (IMMUABLES)
+   -- ========================================================================
+   
+   PSI_V15         : constant := 480168;        -- ×10 : 48,016.8 kg·m⁻²
+   PHI_CRITICAL    : constant := -51100;        -- ×1000 : -51.1 mV
+   BETA            : constant := 1_000_000;     -- 10⁶
+   K_CYCLES        : constant := 7;             -- Heptadic closure
+   ALPHA_INV       : constant := 13703599913;   -- 1/α × 10⁵
+   
+   -- Seuils physiques
+   MAX_TEMP        : constant := 125;           -- °C (jonction max)
+   MAX_POWER       : constant := 1000;          -- mW
+   MAX_CLOCK       : constant := 500;           -- MHz
+   MIN_CLOCK       : constant := 10;            -- MHz
+   TEMP_THRESHOLD  : constant := 45;            -- °C (ΔT max)
+   LATCHUP_DT      : constant := 1;             -- ns (temps de réponse)
+   
+   -- Seuils de détection
+   COVARIANCE_THRESHOLD : constant := 10000;
+   GRADIENT_THRESHOLD   : constant := 100;
+
+   -- ========================================================================
+   -- 2. TYPES DE BASE
+   -- ========================================================================
+   
+   subtype Temp_Type is Integer range -500 .. 500;      -- ×10°C
+   subtype Temp_K_Type is Integer range 2000 .. 3500;   -- ×100 K
+   subtype Pressure_Type is Integer range 1000 .. 11000; -- hPa ×10
+   subtype Height_Type is Integer range 0 .. 50000;     -- mètres
+   subtype CO2_Type is Integer range 0 .. 10_000;       -- ppm ×10
+   subtype Humidity_Type is Integer range 0 .. 1000;    -- %
+   subtype Day_Type is Integer range 1 .. 365;
+   subtype Year_Type is Integer range 2020 .. 2030;
+   subtype Layer_Type is Integer range 1 .. 6;
+   subtype Confidence_Type is Integer range 0 .. 100;
+   subtype Block_ID is Integer range 1 .. 16;
+   subtype Sensor_ID is Integer range 1 .. 8;
+   subtype Power_mW is Integer range 0 .. 1000;
+   subtype Temp_C is Integer range -40 .. 150;
+   subtype Clock_MHz is Integer range 10 .. 500;
+
+   -- ========================================================================
+   -- 3. CAPTEURS PHYSIQUES (Matériel asynchrone)
+   -- ========================================================================
+
+   type Physical_Sensor_Data is record
+      Thermal_Profile   : array (Sensor_ID) of Temp_C := (others => 25);
+      Current_Gradient  : array (1 .. 16) of Integer := (others => 0);
+      Voltage_Gradient  : array (1 .. 8) of Integer := (others => 0);
+      Power_Consumption : Power_mW := 0;
+      Clock_Frequency   : Clock_MHz := 500;
+      Timestamp         : Integer := 0;
+      Alert             : Boolean := False;
+      Checksum          : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Physical_Sensor_Data.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 4. TRACKERS (Kalman) avec suivi d'apprentissage physique
+   -- ========================================================================
+
+   type Phi_Tracker is record
+      Value          : Integer range -60000 .. -40000 := -51100;
+      Derivative     : Integer range -1000 .. 1000 := 0;
+      Covariance     : Integer range 0 .. 10000 := 0;
+      Alert          : Boolean := False;
+      Learned_Shift  : Integer range -1000 .. 1000 := 0;
+      Confidence     : Confidence_Type := 50;
+      Checksum       : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Phi_Tracker.Checksum in 0 .. 9;
+
+   type Psi_Tracker is record
+      Value          : Integer range 480000 .. 481000 := 480168;
+      Derivative     : Integer range -1000 .. 1000 := 0;
+      Covariance     : Integer range 0 .. 10000 := 0;
+      Alert          : Boolean := False;
+      Learned_Shift  : Integer range -1000 .. 1000 := 0;
+      Confidence     : Confidence_Type := 50;
+      Checksum       : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Psi_Tracker.Checksum in 0 .. 9;
+
+   type Coupling_Tracker is record
+      Value          : Integer := 0;
+      Derivative     : Integer := 0;
+      Covariance     : Integer range 0 .. 10000 := 0;
+      Alert          : Boolean := False;
+      Learned_Shift  : Integer := 0;
+      Confidence     : Confidence_Type := 50;
+      Checksum       : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Coupling_Tracker.Checksum in 0 .. 9;
+
+   type Gradient_Tracker is record
+      Value          : Integer := 0;
+      Derivative     : Integer := 0;
+      Covariance     : Integer range 0 .. 10000 := 0;
+      Jet_Shift      : Integer := 0;
+      Alert          : Boolean := False;
+      Learned_Shift  : Integer := 0;
+      Confidence     : Confidence_Type := 50;
+      Checksum       : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Gradient_Tracker.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 5. DETECTEUR DE POISON (avec apprentissage)
+   -- ========================================================================
+
+   type Poison_Detector is record
+      Phi_Tracker      : Phi_Tracker;
+      Psi_Tracker      : Psi_Tracker;
+      Coupling_Tracker : Coupling_Tracker;
+      Gradient_Tracker : Gradient_Tracker;
+      Covariance_Total : Integer range 0 .. 10000 := 0;
+      Gradient_Total   : Integer range 0 .. 10000 := 0;
+      Alert            : Boolean := False;
+      Confidence       : Confidence_Type := 50;
+      Checksum         : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Poison_Detector.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 6. MODULE D'APPRENTISSAGE CONTINU (CAL) — Version physique
+   -- ========================================================================
+
+   type Adaptation_Type is
+     (Threshold_Adjust, Weight_Update, Parameter_Tune,
+      Clock_Reduce, Block_Isolate, No_Adaptation);
+   
+   type Adaptation_Record is record
+      ID           : Integer := 0;
+      Adaptation   : Adaptation_Type := No_Adaptation;
+      Old_Value    : Integer := 0;
+      New_Value    : Integer := 0;
+      Performance  : Integer := 0;
+      Timestamp    : Integer := 0;
+      Checksum     : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Adaptation_Record.Checksum in 0 .. 9;
+
+   type Adaptation_History is array (1 .. 100) of Adaptation_Record;
+   
+   type Learning_Module is record
+      History         : Adaptation_History;
+      History_Count   : Integer range 0 .. 100 := 0;
+      Last_Adaptation : Adaptation_Type := No_Adaptation;
+      Rollback_Point  : Integer := 0;
+      Learning_Rate   : Integer range 0 .. 100 := 50;
+      Performance     : Confidence_Type := 0;
+      Stable          : Boolean := True;
+      Physical_Mode   : Boolean := False;
+      Thermal_Profile : array (Sensor_ID) of Temp_C := (others => 25);
+      Power_Profile   : array (1 .. 16) of Power_mW := (others => 0);
+      Checksum        : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Learning_Module.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 7. COUCHE ATMOSPHÉRIQUE (V15)
+   -- ========================================================================
+
+   type Atmospheric_Layer is record
+      Altitude           : Height_Type := 0;
+      Pressure           : Pressure_Type := 0;
+      Temperature        : Temp_Type := 0;
+      Temperature_K      : Temp_K_Type := 0;
+      Humidity           : Humidity_Type := 0;
+      Density            : Integer := 0;
+      Wind_X             : Integer := 0;
+      Wind_Y             : Integer := 0;
+      Wind_Z             : Integer := 0;
+      Learned_Correction : Integer := 0;
+      Confidence         : Confidence_Type := 50;
+      Checksum           : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Atmospheric_Layer.Checksum in 0 .. 9;
+
+   type Layer_Array is array (Layer_Type) of Atmospheric_Layer;
+
+   -- ========================================================================
+   -- 8. ÉTAT COMPLET V15.1
+   -- ========================================================================
+
+   type V15_1_State is record
+      Layers          : Layer_Array;
+      CO2_Level       : CO2_Type := 0;
+      Day             : Day_Type := 1;
+      Year            : Year_Type := 2026;
+      Solar_Flux      : Integer := 0;
+      Albedo          : Integer := 0;
+      Ice_Mass_N      : Integer := 0;
+      Ice_Mass_S      : Integer := 0;
+      Urban_Heat      : Integer := 0;
+      Population      : Integer := 0;
+      Poison_Detector : Poison_Detector;
+      Learning        : Learning_Module;
+      Sensors         : Physical_Sensor_Data;
+      Cycle_Count     : Integer := 0;
+      Isolated_Blocks : Integer := 0;
+      Clock_Current   : Clock_MHz := 500;
+      Checksum        : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => V15_1_State.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 9. SATURATING ARITHMETIC
+   -- ========================================================================
+   
+   function Saturating_Add (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Add'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Sub (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Sub'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Mul (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Mul'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Div (A, B : Integer) return Integer
+     with Pre => B /= 0,
+          Post => Saturating_Div'Result in Integer'First .. Integer'Last;
+   
+   function Clamp (Value, Min, Max : Integer) return Integer
+     with Pre => Min <= Max,
+          Post => Clamp'Result in Min .. Max;
+
+   -- ========================================================================
+   -- 10. DIGITAL ROOT (Modulo-9 invariant)
+   -- ========================================================================
+   
+   function Digital_Root (N : Integer) return Integer
+     with Pre => N >= 0,
+          Post => Digital_Root'Result in 1 .. 9;
+
+   -- ========================================================================
+   -- 11. FONCTIONS ATMOSPHÉRIQUES (héritées)
+   -- ========================================================================
+
+   function Compute_Pressure_At_Height
+     (Height : Height_Type;
+      P0     : Pressure_Type) return Pressure_Type
+     with Pre => Height in 0 .. 50000 and P0 in 1000 .. 11000,
+          Post => Compute_Pressure_At_Height'Result in 1000 .. 11000;
+
+   function Compute_Temperature_At_Height
+     (Height     : Height_Type;
+      T0         : Temp_Type;
+      Lapse_Rate : Integer) return Temp_Type
+     with Pre => Height in 0 .. 50000 and T0 in -500 .. 500,
+          Post => Compute_Temperature_At_Height'Result in -500 .. 500;
+
+   function Compute_Density
+     (Pressure : Pressure_Type;
+      Temp_K   : Temp_K_Type) return Integer
+     with Pre => Pressure in 1000 .. 11000 and Temp_K in 2000 .. 3500,
+          Post => Compute_Density'Result in 0 .. 5000;
+
+   function Compute_Stability_Index
+     (Layer : Layer_Array) return Integer
+     with Pre => (for all I in Layer_Type => Layer (I).Checksum in 0 .. 9),
+          Post => Compute_Stability_Index'Result in 0 .. 100;
+
+   function Compute_Spatial_Gradient
+     (Layer : Layer_Array) return Integer
+     with Pre => (for all I in Layer_Type => Layer (I).Checksum in 0 .. 9),
+          Post => Compute_Spatial_Gradient'Result in -500 .. 500;
+
+   function Compute_Jet_Shift
+     (Layer : Layer_Array;
+      Day   : Day_Type) return Integer
+     with Pre => (for all I in Layer_Type => Layer (I).Checksum in 0 .. 9),
+          Post => Compute_Jet_Shift'Result in -10000 .. 10000;
+
+   -- ========================================================================
+   -- 12. FONCTIONS DE DÉTECTION (avec apprentissage)
+   -- ========================================================================
+
+   function Detect_Poison
+     (Detector : Poison_Detector;
+      Phi      : Integer;
+      Psi      : Integer;
+      Ux       : Integer;
+      Vy       : Integer;
+      W        : Integer;
+      Grad_T   : Integer) return Boolean
+     with Pre => Phi in -60000 .. -40000 and Psi in 480000 .. 481000,
+          Post => Detect_Poison'Result = 
+                    (Detector.Covariance_Total > COVARIANCE_THRESHOLD or
+                     Detector.Gradient_Total > GRADIENT_THRESHOLD);
+
+   procedure Update_Poison_Detector
+     (Detector : in out Poison_Detector;
+      Phi      : Integer;
+      Psi      : Integer;
+      Ux       : Integer;
+      Vy       : Integer;
+      W        : Integer;
+      Grad_T   : Integer)
+     with Pre => Phi in -60000 .. -40000 and Psi in 480000 .. 481000,
+          Post => (if Detector.Alert then Detector.Checksum = 9);
+
+   -- ========================================================================
+   -- 13. FONCTIONS PHYSIQUES
+   -- ========================================================================
+
+   function Read_Physical_Sensors
+     (State : V15_1_State) return Physical_Sensor_Data
+     with Pre => State.Checksum in 0 .. 9,
+          Post => Read_Physical_Sensors'Result.Checksum in 0 .. 9;
+
+   function Validate_Sensors
+     (Data : Physical_Sensor_Data) return Boolean
+     with Pre => Data.Checksum in 0 .. 9,
+          Post => Validate_Sensors'Result = (Data.Checksum = 9);
+
+   procedure Isolate_Block
+     (State    : in out V15_1_State;
+      Block_ID : Block_ID)
+     with Pre => State.Checksum in 0 .. 9 and Block_ID in 1 .. 16,
+          Post => (if State.Checksum = 9 then
+                      State.Isolated_Blocks = State.Isolated_Blocks'Old + 1 and
+                      State.Learning.Checksum = 9);
+
+   procedure Reduce_Clock
+     (State         : in out V15_1_State;
+      Frequency_MHz : Clock_MHz)
+     with Pre => State.Checksum in 0 .. 9 and
+                 Frequency_MHz in MIN_CLOCK .. MAX_CLOCK,
+          Post => (if State.Checksum = 9 then
+                      State.Clock_Current = Frequency_MHz and
+                      State.Learning.Checksum = 9);
+
+   procedure Restore_Clock
+     (State : in out V15_1_State)
+     with Pre => State.Checksum in 0 .. 9,
+          Post => (if State.Checksum = 9 then
+                      State.Clock_Current = MAX_CLOCK and
+                      State.Learning.Checksum = 9);
+
+   -- ========================================================================
+   -- 14. MODULE D'APPRENTISSAGE CONTINU PHYSIQUE (CAL)
+   -- ========================================================================
+
+   function Compute_Learning_Performance
+     (State  : V15_1_State;
+      Result : V15_1_Result) return Confidence_Type
+     with Pre => State.Checksum in 0 .. 9 and Result.Checksum in 0 .. 9,
+          Post => Compute_Learning_Performance'Result in 0 .. 100;
+
+   procedure Learn_From_Cycle
+     (State  : in out V15_1_State;
+      Result : in     V15_1_Result)
+     with Pre => State.Checksum in 0 .. 9 and Result.Checksum in 0 .. 9,
+          Post => (if State.Learning.Stable then State.Learning.Checksum = 9);
+
+   procedure Learn_Physical_Profile
+     (State : in out V15_1_State)
+     with Pre => State.Checksum in 0 .. 9,
+          Post => (if State.Learning.Stable then State.Learning.Checksum = 9);
+
+   procedure Detect_Physical_Anomaly
+     (State    : in out V15_1_State;
+      Anomaly  : out Boolean)
+     with Pre => State.Checksum in 0 .. 9,
+          Post => (if State.Checksum = 9 then State.Learning.Checksum = 9);
+
+   procedure Apply_Adaptation
+     (State     : in out V15_1_State;
+      Adapt     : in     Adaptation_Type;
+      New_Value : in     Integer)
+     with Pre => State.Checksum in 0 .. 9,
+          Post => (if State.Learning.Stable then State.Learning.Checksum = 9);
+
+   procedure Rollback_Adaptation
+     (State : in out V15_1_State)
+     with Pre => State.Checksum in 0 .. 9,
+          Post => (if State.Learning.Stable then State.Learning.Checksum = 9);
+
+   function Get_Adaptation_History
+     (State : V15_1_State) return Adaptation_History
+     with Pre => State.Checksum in 0 .. 9,
+          Post => (for all I in 1 .. State.Learning.History_Count =>
+                      Get_Adaptation_History'Result (I).Checksum = 9);
+
+   -- ========================================================================
+   -- 15. IA INTERFACE
+   -- ========================================================================
+
+   procedure IA_Query
+     (State      : in     V15_1_State;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Confidence_Type)
+     with Pre => State.Checksum in 0 .. 9 and Question'Length > 0,
+          Post => Confidence in 0 .. 100;
+
+   procedure IA_Contribute
+     (State      : in out V15_1_State;
+      Suggestion : in     String;
+      Value      : in     Integer;
+      Confidence : in     Confidence_Type)
+     with Pre => State.Checksum in 0 .. 9 and
+                 Confidence in 0 .. 100 and
+                 Suggestion'Length > 0,
+          Post => (if State.Learning.Stable then State.Learning.Checksum = 9);
+
+   -- ========================================================================
+   -- 16. SIMULATION COMPLÈTE V15.1
+   -- ========================================================================
+
+   type V15_1_Result is record
+      Surface_Temp        : Temp_Type := 0;
+      Layer_1_Temp        : Temp_Type := 0;
+      Layer_2_Temp        : Temp_Type := 0;
+      Layer_3_Temp        : Temp_Type := 0;
+      Layer_4_Temp        : Temp_Type := 0;
+      Layer_5_Temp        : Temp_Type := 0;
+      Layer_6_Temp        : Temp_Type := 0;
+      Stability           : Integer := 0;
+      Spatial_Gradient    : Integer := 0;
+      Jet_Shift           : Integer := 0;
+      Poison_Detector     : Poison_Detector;
+      Learning            : Learning_Module;
+      Learning_Performance : Confidence_Type := 50;
+      Adaptations_Applied : Integer := 0;
+      Sensors             : Physical_Sensor_Data;
+      Clock_Current       : Clock_MHz := 500;
+      Isolated_Blocks     : Integer := 0;
+      Thermal_Status      : Temp_C := 25;
+      Physical_Alert      : Boolean := False;
+      Checksum            : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => V15_1_Result.Checksum in 0 .. 9;
+
+   procedure Run_Simulation_V15_1
+     (State  : in out V15_1_State;
+      Result :    out V15_1_Result)
+     with Pre => State.Checksum in 0 .. 9,
+          Post => (if State.Checksum = 9 and not State.Poison_Detector.Alert then
+                      Result.Checksum = 9 and
+                      State.Poison_Detector.Checksum = 9 and
+                      State.Learning.Checksum = 9);
+
+   procedure Compute_Atmospheric_Profile
+     (State  : in out V15_1_State;
+      Status : out Boolean)
+     with Pre => State.Checksum in 0 .. 9,
+          Post => (if Status then
+                      State.Checksum = 9 and
+                      (for all I in Layer_Type => State.Layers (I).Checksum = 9));
+
+end V15_1_Hardware_Hardened;
