@@ -1,0 +1,46 @@
+-- ========================================================================
+-- V14.3 — DETECTION DES POISONS INVISIBLES (COVARIANCE TOTALE)
+-- ========================================================================
+
+type Poison_Detector is record
+   Phi_Tracker      : Phi_Tracker;
+   Psi_Tracker      : Psi_Tracker;
+   Coupling_Tracker : Coupling_Tracker;
+   Covariance_Total : Integer range 0 .. 10000 := 0;
+   Alert            : Boolean := False;
+   Checksum         : Integer range 0 .. 9 := 9;
+end record;
+
+function Detect_Poison
+   (Detector : Poison_Detector;
+    Phi      : Integer;
+    Psi      : Integer;
+    Ux       : Integer;
+    Vy       : Integer;
+    W        : Integer) return Boolean
+is
+   Cov_Phi  : Integer := 0;
+   Cov_Psi  : Integer := 0;
+   Cov_Coup : Integer := 0;
+   Total    : Integer := 0;
+begin
+   -- 1. Variance de Φ (dérive de phase)
+   Cov_Phi := Saturating_Add (Detector.Phi_Tracker.Covariance, Phi * Phi);
+   
+   -- 2. Variance de Ψ (cohérence structurelle)
+   Cov_Psi := Saturating_Add (Detector.Psi_Tracker.Covariance, Psi * Psi);
+   
+   -- 3. Variance du couplage non-linéaire (U·V)
+   Cov_Coup := Saturating_Add (Detector.Coupling_Tracker.Covariance, (Ux * Vy) / 1000);
+   
+   -- 4. Covariance totale
+   Total := Saturating_Add (Cov_Phi, Cov_Psi);
+   Total := Saturating_Add (Total, Cov_Coup);
+   
+   -- 5. Détection : si la covariance totale augmente sans cause externe
+   if Total > 10000 then
+      return True;
+   end if;
+   
+   return False;
+end Detect_Poison;
