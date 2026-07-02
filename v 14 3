@@ -1,0 +1,279 @@
+package body V14_1_Unexpected_Events with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- 4.1 Wind Impact
+   -- ========================================================================
+
+   function Wind_Impact (W : Wind_Event) return Impact_Type is
+      Impact : Integer := 0;
+   begin
+      -- Vent fort → refroidissement
+      if W.Speed > 30 then
+         Impact := -((W.Speed - 30) / 5) * 5;
+      end if;
+      
+      -- Rafales
+      if W.Gust_Factor > 120 then
+         Impact := Impact - 10;
+      end if;
+      
+      -- Direction (Nord → froid, Sud → chaud)
+      if W.Direction > 315 or W.Direction < 45 then
+         Impact := Impact - 10;  -- Nord
+      elsif W.Direction > 135 and W.Direction < 225 then
+         Impact := Impact + 10;  -- Sud
+      end if;
+      
+      return Clamp (Impact, -100, 100);
+   end Wind_Impact;
+
+   -- ========================================================================
+   -- 4.2 Cloud Impact
+   -- ========================================================================
+
+   function Cloud_Impact (C : Cloud_Event; Day : Day_Type) return Impact_Type is
+      Impact : Integer := 0;
+   begin
+      -- Couverture nuageuse
+      if C.Cover > 70 then
+         Impact := -20;
+      elsif C.Cover > 40 then
+         Impact := -10;
+      elsif C.Cover < 20 then
+         Impact := 10;
+      end if;
+      
+      -- Type de nuages
+      case C.Type is
+         when 1 => Impact := Impact - 5;   -- Stratus → refroidit
+         when 2 => Impact := Impact + 5;   -- Cumulus → neutre
+         when 3 => Impact := Impact + 10;  -- Cirrus → réchauffe
+         when 4 => Impact := Impact - 15;  -- Nimbus → refroidit
+         when others => null;
+      end case;
+      
+      return Clamp (Impact, -100, 100);
+   end Cloud_Impact;
+
+   -- ========================================================================
+   -- 4.3 Pressure Impact
+   -- ========================================================================
+
+   function Pressure_Impact (P : Pressure_Event) return Impact_Type is
+      Impact : Integer := 0;
+   begin
+      -- Pression élevée → dôme de chaleur
+      if P.Value > 1018 then
+         Impact := (P.Value - 1018) * 2;
+      elsif P.Value < 1005 then
+         Impact := (P.Value - 1005) * 2;
+      end if;
+      
+      -- Tendance
+      if P.Trend > 2 then
+         Impact := Impact + 5;   -- Pression en hausse → réchauffe
+      elsif P.Trend < -2 then
+         Impact := Impact - 5;   -- Pression en baisse → refroidit
+      end if;
+      
+      return Clamp (Impact, -100, 100);
+   end Pressure_Impact;
+
+   -- ========================================================================
+   -- 4.4 Urban Impact
+   -- ========================================================================
+
+   function Urban_Impact (U : Urban_Event; Hour : Hour_Type) return Impact_Type is
+      Impact : Integer := 0;
+   begin
+      -- Îlot de chaleur urbain
+      Impact := U.Heat_Island;
+      
+      -- Variation horaire
+      if Hour > 10 and Hour < 16 then
+         Impact := Impact - 5;   -- Journée : moins d'effet
+      elsif Hour > 20 or Hour < 6 then
+         Impact := Impact + 10;  -- Nuit : plus d'effet
+      end if;
+      
+      -- Végétation
+      if U.Vegetation > 30 then
+         Impact := Impact - (U.Vegetation / 10);
+      end if;
+      
+      return Clamp (Impact, -100, 100);
+   end Urban_Impact;
+
+   -- ========================================================================
+   -- 4.5 Humidity Impact
+   -- ========================================================================
+
+   function Humidity_Impact (H : Humidity_Event) return Impact_Type is
+      Impact : Integer := 0;
+   begin
+      -- Humidité élevée → chaleur ressentie plus forte
+      if H.Relative > 70 then
+         Impact := Impact + 10;
+      elsif H.Relative < 30 then
+         Impact := Impact - 5;
+      end if;
+      
+      -- Point de rosée
+      if H.Dew_Point > 20 then
+         Impact := Impact + 10;
+      elsif H.Dew_Point < 5 then
+         Impact := Impact - 10;
+      end if;
+      
+      return Clamp (Impact, -100, 100);
+   end Humidity_Impact;
+
+   -- ========================================================================
+   -- 4.6 Total Unexpected Impact
+   -- ========================================================================
+
+   function Total_Unexpected_Impact (E : Unexpected_Events) return Impact_Type is
+      Total : Integer := 0;
+   begin
+      Total := Wind_Impact (E.Wind) +
+               Cloud_Impact (E.Cloud, E.Date) +
+               Pressure_Impact (E.Pressure) +
+               Urban_Impact (E.Urban, E.Hour) +
+               Humidity_Impact (E.Humidity);
+      
+      return Clamp (Total, -100, 100);
+   end Total_Unexpected_Impact;
+
+   -- ========================================================================
+   -- 5.1 Paris July Events
+   -- ========================================================================
+
+   function Get_Paris_July_Events (Day : Day_Type; Hour : Hour_Type) return Unexpected_Events is
+      E : Unexpected_Events;
+   begin
+      E.Date := Day;
+      E.Hour := Hour;
+      
+      -- Vents modérés, parfois forts
+      E.Wind.Speed := 15 + (Day mod 10) * 2;
+      E.Wind.Direction := 220 + (Day mod 30);
+      E.Wind.Gust_Factor := 110 + (Day mod 20);
+      E.Wind.Duration := 6;
+      
+      -- Nuages variables
+      E.Cloud.Cover := 30 + (Day mod 50);
+      E.Cloud.Type := 2 + (Day mod 3);
+      E.Cloud.Height := 2000 + (Day mod 3000);
+      
+      -- Pression stable
+      E.Pressure.Value := 1015 + (Day mod 5);
+      E.Pressure.Trend := 0;
+      
+      -- Urban Heat Island
+      E.Urban.Heat_Island := 15;
+      E.Urban.Population := 12;
+      E.Urban.Vegetation := 20;
+      
+      -- Humidité
+      E.Humidity.Relative := 60 + (Day mod 20);
+      E.Humidity.Specific := 8 + (Day mod 5);
+      E.Humidity.Dew_Point := 12 + (Day mod 8);
+      
+      E.Checksum := 9;
+      return E;
+   end Get_Paris_July_Events;
+
+   -- ========================================================================
+   -- 5.2 Blida July Events
+   -- ========================================================================
+
+   function Get_Blida_July_Events (Day : Day_Type; Hour : Hour_Type) return Unexpected_Events is
+      E : Unexpected_Events;
+   begin
+      E.Date := Day;
+      E.Hour := Hour;
+      
+      -- Vents chauds du Sud (Sirocco)
+      E.Wind.Speed := 20 + (Day mod 15);
+      E.Wind.Direction := 180 + (Day mod 20);
+      E.Wind.Gust_Factor := 120 + (Day mod 30);
+      E.Wind.Duration := 8;
+      
+      -- Peu de nuages
+      E.Cloud.Cover := 10 + (Day mod 20);
+      E.Cloud.Type := 3;
+      E.Cloud.Height := 4000 + (Day mod 2000);
+      
+      -- Pression basse
+      E.Pressure.Value := 1010 + (Day mod 5);
+      E.Pressure.Trend := -1;
+      
+      -- Urban Heat
+      E.Urban.Heat_Island := 10;
+      E.Urban.Population := 1;
+      E.Urban.Vegetation := 5;
+      
+      -- Humidité très basse
+      E.Humidity.Relative := 20 + (Day mod 10);
+      E.Humidity.Specific := 3 + (Day mod 2);
+      E.Humidity.Dew_Point := 5 + (Day mod 5);
+      
+      E.Checksum := 9;
+      return E;
+   end Get_Blida_July_Events;
+
+   -- ========================================================================
+   -- 5.3 Svalbard July Events
+   -- ========================================================================
+
+   function Get_Svalbard_July_Events (Day : Day_Type; Hour : Hour_Type) return Unexpected_Events is
+      E : Unexpected_Events;
+   begin
+      E.Date := Day;
+      E.Hour := Hour;
+      
+      -- Vents polaires
+      E.Wind.Speed := 30 + (Day mod 20);
+      E.Wind.Direction := 30 + (Day mod 40);
+      E.Wind.Gust_Factor := 130 + (Day mod 30);
+      E.Wind.Duration := 12;
+      
+      -- Nuages épais
+      E.Cloud.Cover := 70 + (Day mod 20);
+      E.Cloud.Type := 1;
+      E.Cloud.Height := 1000 + (Day mod 1000);
+      
+      -- Pression basse
+      E.Pressure.Value := 1005 + (Day mod 5);
+      E.Pressure.Trend := -2;
+      
+      -- Pas d'urbain
+      E.Urban.Heat_Island := 0;
+      E.Urban.Population := 0;
+      E.Urban.Vegetation := 0;
+      
+      -- Humidité élevée
+      E.Humidity.Relative := 80 + (Day mod 10);
+      E.Humidity.Specific := 5 + (Day mod 3);
+      E.Humidity.Dew_Point := 2 + (Day mod 3);
+      
+      E.Checksum := 9;
+      return E;
+   end Get_Svalbard_July_Events;
+
+   -- ========================================================================
+   -- 6. Clamp helper
+   -- ========================================================================
+
+   function Clamp (Value, Min, Max : Integer) return Impact_Type is
+   begin
+      if Value < Min then
+         return Impact_Type (Min);
+      elsif Value > Max then
+         return Impact_Type (Max);
+      else
+         return Impact_Type (Value);
+      end if;
+   end Clamp;
+
+end V14_1_Unexpected_Events;
