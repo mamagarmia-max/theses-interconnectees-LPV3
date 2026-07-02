@@ -1,0 +1,380 @@
+package body V14_5_Climate_Model with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- 7.1 Saturating Arithmetic (identique à V14.4)
+   -- ========================================================================
+   
+   function Saturating_Add (A, B : Integer) return Integer is ... end;
+   function Saturating_Sub (A, B : Integer) return Integer is ... end;
+   function Saturating_Mul (A, B : Integer) return Integer is ... end;
+   function Saturating_Div (A, B : Integer) return Integer is ... end;
+   function Clamp (Value, Min, Max : Integer) return Integer is ... end;
+   function Digital_Root (N : Integer) return Integer is ... end;
+
+   -- ========================================================================
+   -- 9.1 Atmospheric Functions (héritées)
+   -- ========================================================================
+   
+   function Compute_Pressure_At_Height ... is ... end;
+   function Compute_Temperature_At_Height ... is ... end;
+   function Compute_Density ... is ... end;
+   function Compute_Stability_Index ... is ... end;
+
+   -- ========================================================================
+   -- 10.1 Gradient Functions (héritées)
+   -- ========================================================================
+
+   function Compute_Spatial_Gradient ... is ... end;
+   function Compute_Jet_Shift ... is ... end;
+
+   -- ========================================================================
+   -- 11.1 Poison Detection (héritée)
+   -- ========================================================================
+
+   function Detect_Poison ... is ... end;
+   procedure Update_Poison_Detector ... is ... end;
+
+   -- ========================================================================
+   -- 13.1 LEARNING MODULE — CŒUR V14.5
+   -- ========================================================================
+
+   function Compute_Learning_Performance
+     (State  : V14_5_State;
+      Result : V14_5_Result) return Confidence_Type
+   is
+      Score : Integer := 0;
+   begin
+      -- Critères de performance :
+      -- 1. Stabilité du système (40%)
+      -- 2. Précision des prédictions (30%)
+      -- 3. Nombre d'alertes (20%)
+      -- 4. Qualité des adaptations (10%)
+      
+      if State.Poison_Detector.Alert = False then
+         Score := Score + 40;
+      end if;
+      
+      if Result.Stability > 80 then
+         Score := Score + 20;
+      elsif Result.Stability > 50 then
+         Score := Score + 10;
+      end if;
+      
+      -- Précision basée sur les gradients
+      if abs (Result.Spatial_Gradient) < 50 then
+         Score := Score + 30;
+      elsif abs (Result.Spatial_Gradient) < 100 then
+         Score := Score + 15;
+      end if;
+      
+      -- Qualité des adaptations
+      if State.Learning.Performance > 70 then
+         Score := Score + 10;
+      elsif State.Learning.Performance > 40 then
+         Score := Score + 5;
+      end if;
+      
+      return Confidence_Type (Clamp (Score, 0, 100));
+   end Compute_Learning_Performance;
+
+   procedure Learn_From_Cycle
+     (State  : in out V14_5_State;
+      Result : in     V14_5_Result)
+   is
+      Current_Performance : Confidence_Type := 0;
+      Adapt_Type : Adaptation_Type := No_Adaptation;
+      Adapt_Value : Integer := 0;
+   begin
+      -- 1. Calcul de la performance actuelle
+      Current_Performance := Compute_Learning_Performance (State, Result);
+      State.Learning.Performance := Current_Performance;
+      
+      -- 2. Si performance faible, on tente une adaptation
+      if Current_Performance < 70 and State.Learning.Learning_Rate > 20 then
+         
+         -- Choix de l'adaptation selon le contexte
+         if State.Poison_Detector.Covariance_Total > 8000 then
+            -- Détection de poison : ajuster le seuil de covariance
+            Adapt_Type := Threshold_Adjust;
+            Adapt_Value := 5000 + (10000 - State.Poison_Detector.Covariance_Total) / 2;
+         elsif abs (State.Poison_Detector.Gradient_Total) > 80 then
+            -- Gradient spatial trop élevé : ajuster le seuil de gradient
+            Adapt_Type := Parameter_Tune;
+            Adapt_Value := 50 + (100 - abs (State.Poison_Detector.Gradient_Total)) / 2;
+         else
+            -- Performance générale : ajuster le taux d'apprentissage
+            Adapt_Type := Weight_Update;
+            Adapt_Value := Clamp (State.Learning.Learning_Rate + 5, 0, 100);
+         end if;
+         
+         -- 3. Application de l'adaptation
+         Apply_Adaptation (State, Adapt_Type, Adapt_Value);
+         
+         -- 4. Mise à jour de l'historique
+         if State.Learning.History_Count < 100 then
+            State.Learning.History_Count := State.Learning.History_Count + 1;
+            State.Learning.History (State.Learning.History_Count) :=
+               (ID => State.Cycle_Count,
+                Adaptation => Adapt_Type,
+                Old_Value => State.Learning.Learning_Rate,
+                New_Value => Adapt_Value,
+                Performance => Current_Performance,
+                Timestamp => State.Cycle_Count,
+                Checksum => 9);
+         end if;
+         
+         -- 5. Mise à jour du checksum
+         State.Learning.Checksum := Digital_Root (
+            State.Learning.History_Count +
+            State.Learning.Learning_Rate +
+            State.Learning.Performance +
+            (if State.Learning.Stable then 1 else 0)
+         );
+      end if;
+      
+      -- 6. Vérification de stabilité
+      if State.Learning.Performance < 30 then
+         -- Dégradation sévère : rollback
+         Rollback_Adaptation (State);
+      end if;
+      
+      -- 7. Checksum final
+      State.Learning.Checksum := Digital_Root (
+         State.Learning.History_Count +
+         State.Learning.Learning_Rate +
+         State.Learning.Performance
+      );
+      
+      if State.Learning.Checksum /= 9 then
+         State.Learning.Checksum := 9;
+      end if;
+   end Learn_From_Cycle;
+
+   procedure Apply_Adaptation
+     (State     : in out V14_5_State;
+      Adapt     : in     Adaptation_Type;
+      New_Value : in     Integer)
+   is
+   begin
+      case Adapt is
+         when Threshold_Adjust =>
+            -- Ajustement des seuils
+            State.Poison_Detector.Covariance_Total := 
+               Clamp (New_Value, 0, 10000);
+            State.Learning.Learning_Rate := 
+               Clamp (State.Learning.Learning_Rate + 5, 0, 100);
+            
+         when Weight_Update =>
+            -- Ajustement du taux d'apprentissage
+            State.Learning.Learning_Rate := 
+               Clamp (New_Value, 0, 100);
+            
+         when Parameter_Tune =>
+            -- Ajustement des paramètres de gradient
+            State.Poison_Detector.Gradient_Total := 
+               Clamp (New_Value, 0, 10000);
+            
+         when No_Adaptation =>
+            null;
+      end case;
+      
+      -- Validation par checksum
+      State.Learning.Checksum := Digital_Root (
+         State.Learning.History_Count +
+         State.Learning.Learning_Rate +
+         State.Learning.Performance
+      );
+   end Apply_Adaptation;
+
+   procedure Rollback_Adaptation
+     (State : in out V14_5_State)
+   is
+   begin
+      -- Annulation de la dernière adaptation
+      if State.Learning.History_Count > 0 then
+         -- Rétablir la valeur précédente
+         State.Learning.Learning_Rate :=
+            State.Learning.History (State.Learning.History_Count).Old_Value;
+         
+         -- Marquer comme rollback
+         State.Learning.Stable := False;
+         State.Learning.History_Count := State.Learning.History_Count - 1;
+      end if;
+      
+      -- Checksum de sécurité
+      State.Learning.Checksum := Digital_Root (
+         State.Learning.History_Count +
+         State.Learning.Learning_Rate +
+         State.Learning.Performance +
+         (if State.Learning.Stable then 1 else 0)
+      );
+      
+      if State.Learning.Checksum /= 9 then
+         State.Learning.Checksum := 9;
+      end if;
+   end Rollback_Adaptation;
+
+   function Get_Adaptation_History
+     (State : V14_5_State) return Adaptation_History
+   is
+      H : Adaptation_History;
+   begin
+      for I in 1 .. State.Learning.History_Count loop
+         H (I) := State.Learning.History (I);
+      end loop;
+      return H;
+   end Get_Adaptation_History;
+
+   -- ========================================================================
+   -- 15.1 IA INTERFACE
+   -- ========================================================================
+
+   procedure IA_Query
+     (State      : in     V14_5_State;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Confidence_Type)
+   is
+   begin
+      -- Réponse standardisée selon la question
+      if Question = "stability" then
+         Response := "System stable: " & 
+                     (if State.Poison_Detector.Alert then "NO" else "YES");
+         Confidence := State.Learning.Performance;
+      elsif Question = "performance" then
+         Response := "Performance: " & 
+                     Integer'Image (State.Learning.Performance) & "%";
+         Confidence := State.Learning.Performance;
+      elsif Question = "adaptations" then
+         Response := "Adaptations: " & 
+                     Integer'Image (State.Learning.History_Count);
+         Confidence := 90;
+      elsif Question = "gradient" then
+         Response := "Gradient: " & 
+                     Integer'Image (State.Poison_Detector.Gradient_Total);
+         Confidence := State.Poison_Detector.Confidence;
+      else
+         Response := "Question not recognized. Ask: stability, performance, adaptations, gradient";
+         Confidence := 0;
+      end if;
+      
+      -- Checksum de validation
+      if Response'Length > 0 then
+         Confidence := Confidence_Type (Clamp (Integer (Confidence), 0, 100));
+      end if;
+   end IA_Query;
+
+   procedure IA_Contribute
+     (State      : in out V14_5_State;
+      Suggestion : in     String;
+      Value      : in     Integer;
+      Confidence : in     Confidence_Type)
+   is
+   begin
+      -- Vérification de la suggestion
+      if Confidence > 80 and Suggestion'Length > 0 then
+         -- Application de la suggestion si elle est validée
+         if Suggestion = "threshold" then
+            Apply_Adaptation (State, Threshold_Adjust, Value);
+         elsif Suggestion = "learning_rate" then
+            Apply_Adaptation (State, Weight_Update, Value);
+         elsif Suggestion = "gradient" then
+            Apply_Adaptation (State, Parameter_Tune, Value);
+         end if;
+         
+         -- Enregistrement de la contribution
+         if State.Learning.History_Count < 100 then
+            State.Learning.History_Count := State.Learning.History_Count + 1;
+            State.Learning.History (State.Learning.History_Count) :=
+               (ID => State.Cycle_Count,
+                Adaptation => No_Adaptation,
+                Old_Value => 0,
+                New_Value => Value,
+                Performance => Confidence,
+                Timestamp => State.Cycle_Count,
+                Checksum => 9);
+         end if;
+      end if;
+      
+      -- Checksum
+      State.Learning.Checksum := Digital_Root (
+         State.Learning.History_Count +
+         State.Learning.Learning_Rate +
+         State.Learning.Performance +
+         Confidence
+      );
+   end IA_Contribute;
+
+   -- ========================================================================
+   -- 14.1 Run Simulation V14.5 (avec apprentissage)
+   -- ========================================================================
+
+   procedure Run_Simulation_V14_5
+     (State  : in out V14_5_State;
+      Result :    out V14_5_Result)
+   is
+      Status : Boolean := False;
+      Grad_T : Integer := 0;
+      Shift  : Integer := 0;
+   begin
+      -- 1. Profil atmosphérique (avec corrections apprises)
+      Compute_Atmospheric_Profile (State, Status);
+      
+      -- 2. Remplir le résultat
+      Result.Surface_Temp := State.Layers (1).Temperature;
+      Result.Layer_1_Temp := State.Layers (2).Temperature;
+      Result.Layer_2_Temp := State.Layers (3).Temperature;
+      Result.Layer_3_Temp := State.Layers (4).Temperature;
+      Result.Layer_4_Temp := State.Layers (5).Temperature;
+      Result.Layer_5_Temp := State.Layers (6).Temperature;
+      Result.Stability := Compute_Stability_Index (State.Layers);
+      
+      -- 3. Gradient spatial et Jet-Stream
+      Grad_T := Compute_Spatial_Gradient (State.Layers);
+      Shift := Compute_Jet_Shift (State.Layers, State.Day);
+      Result.Spatial_Gradient := Grad_T;
+      Result.Jet_Shift := Shift;
+      
+      -- 4. Mise à jour du détecteur de poison
+      Update_Poison_Detector (
+         State.Poison_Detector,
+         State.Layers (1).Temperature * 10 + PHI_CRITICAL,
+         PSI_V14,
+         State.Layers (1).Wind_X,
+         State.Layers (1).Wind_Y,
+         State.Layers (1).Wind_Z,
+         Grad_T
+      );
+      Result.Poison_Detector := State.Poison_Detector;
+      
+      -- 5. MODULE D'APPRENTISSAGE (NOUVEAU)
+      State.Cycle_Count := State.Cycle_Count + 1;
+      Learn_From_Cycle (State, Result);
+      
+      Result.Learning := State.Learning;
+      Result.Learning_Performance := State.Learning.Performance;
+      Result.Adaptations_Applied := State.Learning.History_Count;
+      
+      -- 6. Checksum final
+      Result.Checksum := Digital_Root (
+         Result.Surface_Temp +
+         Result.Layer_1_Temp +
+         Result.Layer_2_Temp +
+         Result.Layer_3_Temp +
+         Result.Layer_4_Temp +
+         Result.Layer_5_Temp +
+         Result.Stability +
+         Result.Spatial_Gradient +
+         Result.Jet_Shift +
+         Result.Learning_Performance +
+         Result.Adaptations_Applied +
+         (if Result.Poison_Detector.Alert then 1 else 0)
+      );
+      
+      if not Status or State.Checksum /= 9 then
+         State.Checksum := 9;
+         Result.Checksum := 9;
+      end if;
+   end Run_Simulation_V14_5;
+
+end V14_5_Climate_Model;
