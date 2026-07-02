@@ -1,0 +1,123 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.1 UNEXPECTED EVENTS LIBRARY — Aléas locaux pour affiner V14
+-- ============================================================================
+-- Cette bibliothèque regroupe les éléments imprévus qui influencent le climat
+-- local : vents soudains, dômes de chaleur, nuages, etc.
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 14.1.0
+-- Date : 02 Juillet 2026
+
+package V14_1_Unexpected_Events with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. TYPES DE BASE
+   -- ========================================================================
+   
+   subtype Impact_Type is Integer range -100 .. 100;  -- ×10°C
+   subtype Probability_Type is Integer range 0 .. 100; -- %
+   subtype Hour_Type is Integer range 0 .. 23;
+   subtype Day_Type is Integer range 1 .. 365;
+
+   -- ========================================================================
+   -- 2. ÉVÉNEMENTS IMPRÉVUS (CATÉGORIES)
+   -- ========================================================================
+
+   type Wind_Event is record
+      Speed         : Integer range 0 .. 200;   -- km/h
+      Direction     : Integer range 0 .. 360;   -- degrés
+      Gust_Factor   : Integer range 0 .. 200;   -- %
+      Duration      : Integer range 1 .. 24;    -- heures
+      Impact        : Impact_Type := 0;         -- ×10°C
+   end record;
+
+   type Cloud_Event is record
+      Cover         : Integer range 0 .. 100;   -- %
+      Type          : Integer range 1 .. 4;     -- 1=Stratus, 2=Cumulus, 3=Cirrus, 4=Nimbus
+      Height        : Integer range 0 .. 12000; -- mètres
+      Impact        : Impact_Type := 0;         -- ×10°C
+   end record;
+
+   type Pressure_Event is record
+      Value         : Integer range 980 .. 1050; -- hPa
+      Trend         : Integer range -10 .. 10;  -- hPa/h
+      Impact        : Impact_Type := 0;         -- ×10°C
+   end record;
+
+   type Urban_Event is record
+      Heat_Island   : Integer range 0 .. 50;    -- ×10°C
+      Population    : Integer range 0 .. 100;   -- millions
+      Vegetation    : Integer range 0 .. 100;   -- %
+      Impact        : Impact_Type := 0;         -- ×10°C
+   end record;
+
+   type Humidity_Event is record
+      Specific      : Integer range 0 .. 100;   -- g/kg
+      Relative      : Integer range 0 .. 100;   -- %
+      Dew_Point     : Integer range -50 .. 50;  -- °C
+      Impact        : Impact_Type := 0;         -- ×10°C
+   end record;
+
+   -- ========================================================================
+   -- 3. STRUCTURE COMPLÈTE DES ALÉAS
+   -- ========================================================================
+
+   type Unexpected_Events is record
+      Wind          : Wind_Event;
+      Cloud         : Cloud_Event;
+      Pressure      : Pressure_Event;
+      Urban         : Urban_Event;
+      Humidity      : Humidity_Event;
+      Date          : Day_Type := 1;
+      Hour          : Hour_Type := 0;
+      Checksum      : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Unexpected_Events.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 4. FONCTIONS DE CALCUL D'IMPACT
+   -- ========================================================================
+
+   function Wind_Impact (W : Wind_Event) return Impact_Type
+     with Post => Wind_Impact'Result in -100 .. 100;
+   -- Calcule l'impact du vent sur la température
+
+   function Cloud_Impact (C : Cloud_Event; Day : Day_Type) return Impact_Type
+     with Post => Cloud_Impact'Result in -100 .. 100;
+   -- Calcule l'impact des nuages sur la température
+
+   function Pressure_Impact (P : Pressure_Event) return Impact_Type
+     with Post => Pressure_Impact'Result in -100 .. 100;
+   -- Calcule l'impact de la pression sur la température
+
+   function Urban_Impact (U : Urban_Event; Hour : Hour_Type) return Impact_Type
+     with Post => Urban_Impact'Result in -100 .. 100;
+   -- Calcule l'impact urbain (îlot de chaleur) selon l'heure
+
+   function Humidity_Impact (H : Humidity_Event) return Impact_Type
+     with Post => Humidity_Impact'Result in -100 .. 100;
+   -- Calcule l'impact de l'humidité sur la température
+
+   function Total_Unexpected_Impact (E : Unexpected_Events) return Impact_Type
+     with Post => Total_Unexpected_Impact'Result in -100 .. 100;
+   -- Somme des impacts de tous les aléas
+
+   -- ========================================================================
+   -- 5. PROFILS D'ALÉAS PRÉDÉFINIS (PAR VILLE / MOIS)
+   -- ========================================================================
+
+   function Get_Paris_July_Events (Day : Day_Type; Hour : Hour_Type) return Unexpected_Events;
+
+   function Get_Blida_July_Events (Day : Day_Type; Hour : Hour_Type) return Unexpected_Events;
+
+   function Get_Svalbard_July_Events (Day : Day_Type; Hour : Hour_Type) return Unexpected_Events;
+
+end V14_1_Unexpected_Events;
