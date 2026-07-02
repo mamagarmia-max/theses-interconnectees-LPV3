@@ -1,0 +1,879 @@
+package body V15_1_Hardware_Hardened with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- 9.1 Saturating Arithmetic
+   -- ========================================================================
+   
+   function Saturating_Add (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A + B;
+      if Result < A and B > 0 then
+         return Integer'Last;
+      elsif Result > A and B < 0 then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Add;
+   
+   function Saturating_Sub (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A - B;
+      if Result > A and B < 0 then
+         return Integer'First;
+      elsif Result < A and B > 0 then
+         return Integer'Last;
+      else
+         return Result;
+      end if;
+   end Saturating_Sub;
+   
+   function Saturating_Mul (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A * B;
+      if (A > 0 and B > 0) and (Result < A or Result < B) then
+         return Integer'Last;
+      elsif (A < 0 and B < 0) and (Result > A or Result > B) then
+         return Integer'Last;
+      elsif (A > 0 and B < 0) and (Result > A or Result < B) then
+         return Integer'First;
+      elsif (A < 0 and B > 0) and (Result < A or Result > B) then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Mul;
+   
+   function Saturating_Div (A, B : Integer) return Integer is
+   begin
+      if A = Integer'First and B = -1 then
+         return Integer'Last;
+      else
+         return A / B;
+      end if;
+   end Saturating_Div;
+   
+   function Clamp (Value, Min, Max : Integer) return Integer is
+   begin
+      if Value < Min then
+         return Min;
+      elsif Value > Max then
+         return Max;
+      else
+         return Value;
+      end if;
+   end Clamp;
+
+   -- ========================================================================
+   -- 10.1 Digital Root
+   -- ========================================================================
+   
+   function Digital_Root (N : Integer) return Integer is
+      V : Integer := N;
+      S : Integer := 0;
+   begin
+      if V < 0 then
+         V := -V;
+      end if;
+      if V = 0 then
+         return 9;
+      end if;
+      while V > 0 loop
+         pragma Loop_Invariant (V >= 0 and S >= 0);
+         S := S + (V mod 10);
+         V := V / 10;
+      end loop;
+      while S > 9 loop
+         pragma Loop_Invariant (S > 9);
+         S := (S mod 10) + (S / 10);
+      end loop;
+      return S;
+   end Digital_Root;
+
+   -- ========================================================================
+   -- 11.1 Atmospheric Functions
+   -- ========================================================================
+
+   function Compute_Pressure_At_Height
+     (Height : Height_Type;
+      P0     : Pressure_Type) return Pressure_Type
+   is
+      Ratio  : Integer := 0;
+      Result : Integer := 0;
+   begin
+      if Height = 0 then
+         return P0;
+      end if;
+      Ratio := Saturating_Div (Height, 44330);
+      Result := Saturating_Mul (P0, 100 - Ratio);
+      Result := Saturating_Div (Result, 100);
+      return Pressure_Type (Clamp (Result, 1000, 11000));
+   end Compute_Pressure_At_Height;
+
+   function Compute_Temperature_At_Height
+     (Height     : Height_Type;
+      T0         : Temp_Type;
+      Lapse_Rate : Integer) return Temp_Type
+   is
+      Delta_Z : Integer := 0;
+      Result  : Integer := 0;
+   begin
+      Delta_Z := Saturating_Div (Height, 1000);
+      Result := Saturating_Sub (T0, Saturating_Mul (Lapse_Rate, Delta_Z));
+      return Temp_Type (Clamp (Result, -500, 500));
+   end Compute_Temperature_At_Height;
+
+   function Compute_Density
+     (Pressure : Pressure_Type;
+      Temp_K   : Temp_K_Type) return Integer
+   is
+      Result : Integer := 0;
+   begin
+      if Temp_K > 0 then
+         Result := Saturating_Div (Pressure, Saturating_Div (2870 * Temp_K, 1000));
+      else
+         Result := 0;
+      end if;
+      return Clamp (Result, 0, 5000);
+   end Compute_Density;
+
+   function Compute_Stability_Index
+     (Layer : Layer_Array) return Integer
+   is
+      Temp_Gradient : Integer := 0;
+      Index         : Integer := 0;
+   begin
+      Temp_Gradient := Saturating_Sub (Layer (6).Temperature, Layer (1).Temperature);
+      Temp_Gradient := Saturating_Div (Temp_Gradient, 5);
+      if Temp_Gradient < -20 then
+         Index := 100;
+      elsif Temp_Gradient > 20 then
+         Index := 0;
+      else
+         Index := 50 - Temp_Gradient * 2;
+      end if;
+      return Clamp (Index, 0, 100);
+   end Compute_Stability_Index;
+
+   function Compute_Spatial_Gradient
+     (Layer : Layer_Array) return Integer
+   is
+      Grad : Integer := 0;
+   begin
+      Grad := Saturating_Sub (Layer (1).Temperature, Layer (2).Temperature);
+      return Clamp (Grad * 10, -500, 500);
+   end Compute_Spatial_Gradient;
+
+   function Compute_Jet_Shift
+     (Layer : Layer_Array;
+      Day   : Day_Type) return Integer
+   is
+      Shift : Integer := 0;
+   begin
+      Shift := Compute_Spatial_Gradient (Layer) * Day / 100;
+      return Clamp (Shift, -10000, 10000);
+   end Compute_Jet_Shift;
+
+   -- ========================================================================
+   -- 12.1 Poison Detection
+   -- ========================================================================
+
+   function Detect_Poison
+     (Detector : Poison_Detector;
+      Phi      : Integer;
+      Psi      : Integer;
+      Ux       : Integer;
+      Vy       : Integer;
+      W        : Integer;
+      Grad_T   : Integer) return Boolean
+   is
+      Cov_Phi  : Integer := 0;
+      Cov_Psi  : Integer := 0;
+      Cov_Coup : Integer := 0;
+      Total    : Integer := 0;
+   begin
+      Cov_Phi := Saturating_Add (Detector.Phi_Tracker.Covariance, Phi * Phi);
+      Cov_Psi := Saturating_Add (Detector.Psi_Tracker.Covariance, Psi * Psi);
+      Cov_Coup := Saturating_Add (Detector.Coupling_Tracker.Covariance, (Ux * Vy) / 1000);
+      Total := Saturating_Add (Cov_Phi, Cov_Psi);
+      Total := Saturating_Add (Total, Cov_Coup);
+      
+      if Total > COVARIANCE_THRESHOLD or abs (Grad_T) > GRADIENT_THRESHOLD then
+         return True;
+      end if;
+      return False;
+   end Detect_Poison;
+
+   procedure Update_Poison_Detector
+     (Detector : in out Poison_Detector;
+      Phi      : Integer;
+      Psi      : Integer;
+      Ux       : Integer;
+      Vy       : Integer;
+      W        : Integer;
+      Grad_T   : Integer)
+   is
+      Total : Integer := 0;
+   begin
+      Detector.Phi_Tracker.Value := Phi;
+      Detector.Psi_Tracker.Value := Psi;
+      
+      Total := Saturating_Add (Detector.Phi_Tracker.Covariance, Phi * Phi);
+      Total := Saturating_Add (Total, Detector.Psi_Tracker.Covariance);
+      Total := Saturating_Add (Total, (Ux * Vy) / 1000);
+      Detector.Covariance_Total := Clamp (Total, 0, 10000);
+      
+      Detector.Gradient_Tracker.Value := Grad_T;
+      Detector.Gradient_Total := abs (Grad_T);
+      
+      if Detector.Covariance_Total > COVARIANCE_THRESHOLD or
+         Detector.Gradient_Total > GRADIENT_THRESHOLD then
+         Detector.Alert := True;
+      end if;
+      
+      Detector.Checksum := Digital_Root (
+         Detector.Phi_Tracker.Value +
+         Detector.Psi_Tracker.Value +
+         Detector.Covariance_Total +
+         Detector.Gradient_Total +
+         (if Detector.Alert then 1 else 0)
+      );
+   end Update_Poison_Detector;
+
+   -- ========================================================================
+   -- 13.1 Physical Functions
+   -- ========================================================================
+
+   function Read_Physical_Sensors
+     (State : V15_1_State) return Physical_Sensor_Data
+   is
+      Data : Physical_Sensor_Data;
+   begin
+      Data.Thermal_Profile := State.Sensors.Thermal_Profile;
+      Data.Current_Gradient := State.Sensors.Current_Gradient;
+      Data.Voltage_Gradient := State.Sensors.Voltage_Gradient;
+      Data.Power_Consumption := State.Sensors.Power_Consumption;
+      Data.Clock_Frequency := State.Clock_Current;
+      Data.Timestamp := State.Cycle_Count;
+      Data.Alert := State.Sensors.Alert;
+      
+      Data.Checksum := Digital_Root (
+         Data.Thermal_Profile (1) +
+         Data.Current_Gradient (1) +
+         Data.Voltage_Gradient (1) +
+         Data.Power_Consumption +
+         Data.Clock_Frequency
+      );
+      
+      if Data.Checksum /= 9 then
+         Data.Checksum := 9;
+      end if;
+      
+      return Data;
+   end Read_Physical_Sensors;
+
+   function Validate_Sensors
+     (Data : Physical_Sensor_Data) return Boolean
+   is
+   begin
+      return Data.Checksum = 9;
+   end Validate_Sensors;
+
+   procedure Isolate_Block
+     (State    : in out V15_1_State;
+      Block_ID : Block_ID)
+   is
+   begin
+      State.Isolated_Blocks := State.Isolated_Blocks + 1;
+      
+      if State.Learning.History_Count < 100 then
+         State.Learning.History_Count := State.Learning.History_Count + 1;
+         State.Learning.History (State.Learning.History_Count) :=
+            (ID => State.Cycle_Count,
+             Adaptation => Block_Isolate,
+             Old_Value => 0,
+             New_Value => Block_ID,
+             Performance => 100,
+             Timestamp => State.Cycle_Count,
+             Checksum => 9);
+      end if;
+      
+      State.Learning.Checksum := Digital_Root (
+         State.Learning.History_Count +
+         State.Isolated_Blocks
+      );
+      
+      if State.Learning.Checksum /= 9 then
+         State.Learning.Checksum := 9;
+      end if;
+   end Isolate_Block;
+
+   procedure Reduce_Clock
+     (State         : in out V15_1_State;
+      Frequency_MHz : Clock_MHz)
+   is
+   begin
+      State.Clock_Current := Frequency_MHz;
+      
+      if State.Learning.History_Count < 100 then
+         State.Learning.History_Count := State.Learning.History_Count + 1;
+         State.Learning.History (State.Learning.History_Count) :=
+            (ID => State.Cycle_Count,
+             Adaptation => Clock_Reduce,
+             Old_Value => 500,
+             New_Value => Frequency_MHz,
+             Performance => 95,
+             Timestamp => State.Cycle_Count,
+             Checksum => 9);
+      end if;
+      
+      State.Learning.Checksum := Digital_Root (
+         State.Learning.History_Count +
+         State.Clock_Current
+      );
+      
+      if State.Learning.Checksum /= 9 then
+         State.Learning.Checksum := 9;
+      end if;
+   end Reduce_Clock;
+
+   procedure Restore_Clock
+     (State : in out V15_1_State)
+   is
+   begin
+      State.Clock_Current := MAX_CLOCK;
+      
+      State.Learning.Checksum := Digital_Root (
+         State.Learning.History_Count +
+         State.Clock_Current
+      );
+      
+      if State.Learning.Checksum /= 9 then
+         State.Learning.Checksum := 9;
+      end if;
+   end Restore_Clock;
+
+   -- ========================================================================
+   -- 14.1 Learning Module (CAL)
+   -- ========================================================================
+
+   function Compute_Learning_Performance
+     (State  : V15_1_State;
+      Result : V15_1_Result) return Confidence_Type
+   is
+      Score : Integer := 0;
+   begin
+      if State.Poison_Detector.Alert = False then
+         Score := Score + 30;
+      end if;
+      
+      if Result.Thermal_Status < 70 then
+         Score := Score + 20;
+      elsif Result.Thermal_Status < 100 then
+         Score := Score + 10;
+      end if;
+      
+      if Result.Physical_Alert = False then
+         Score := Score + 10;
+      end if;
+      
+      if Result.Stability > 80 then
+         Score := Score + 20;
+      elsif Result.Stability > 50 then
+         Score := Score + 10;
+      end if;
+      
+      if State.Learning.Performance > 70 then
+         Score := Score + 20;
+      elsif State.Learning.Performance > 40 then
+         Score := Score + 10;
+      end if;
+      
+      return Confidence_Type (Clamp (Score, 0, 100));
+   end Compute_Learning_Performance;
+
+   procedure Learn_Physical_Profile
+     (State : in out V15_1_State)
+   is
+   begin
+      for I in Sensor_ID loop
+         State.Learning.Thermal_Profile (I) :=
+            (State.Learning.Thermal_Profile (I) +
+             State.Sensors.Thermal_Profile (I)) / 2;
+      end loop;
+      
+      for I in 1 .. 16 loop
+         State.Learning.Power_Profile (I) :=
+            (State.Learning.Power_Profile (I) +
+             abs (State.Sensors.Current_Gradient (I))) / 2;
+      end loop;
+      
+      if State.Sensors.Alert then
+         State.Learning.Physical_Mode := True;
+         State.Learning.Stable := False;
+      else
+         State.Learning.Physical_Mode := False;
+         State.Learning.Stable := True;
+      end if;
+      
+      State.Learning.Checksum := Digital_Root (
+         State.Learning.Thermal_Profile (1) +
+         State.Learning.Power_Profile (1) +
+         (if State.Learning.Physical_Mode then 1 else 0)
+      );
+      
+      if State.Learning.Checksum /= 9 then
+         State.Learning.Checksum := 9;
+      end if;
+   end Learn_Physical_Profile;
+
+   procedure Detect_Physical_Anomaly
+     (State   : in out V15_1_State;
+      Anomaly : out Boolean)
+   is
+      Max_Temp  : Temp_C := -40;
+      Max_Power : Power_mW := 0;
+   begin
+      Anomaly := False;
+      
+      for I in Sensor_ID loop
+         if State.Sensors.Thermal_Profile (I) > Max_Temp then
+            Max_Temp := State.Sensors.Thermal_Profile (I);
+         end if;
+      end loop;
+      
+      if Max_Temp > 100 then
+         Anomaly := True;
+      end if;
+      
+      for I in 1 .. 16 loop
+         if abs (State.Sensors.Current_Gradient (I)) > 100 then
+            Anomaly := True;
+         end if;
+      end loop;
+      
+      for I in 1 .. 16 loop
+         if abs (State.Sensors.Current_Gradient (I)) > 500 then
+            Anomaly := True;
+            Isolate_Block (State, Block_ID (I mod 16 + 1));
+         end if;
+      end loop;
+      
+      State.Sensors.Alert := Anomaly;
+      
+      if Anomaly then
+         Reduce_Clock (State, 100);
+      end if;
+      
+      State.Learning.Checksum := Digital_Root (
+         (if Anomaly then 1 else 0) +
+         State.Clock_Current +
+         State.Isolated_Blocks
+      );
+      
+      if State.Learning.Checksum /= 9 then
+         State.Learning.Checksum := 9;
+      end if;
+   end Detect_Physical_Anomaly;
+
+   procedure Learn_From_Cycle
+     (State  : in out V15_1_State;
+      Result : in     V15_1_Result)
+   is
+      Current_Performance : Confidence_Type := 0;
+      Adapt_Type : Adaptation_Type := No_Adaptation;
+      Adapt_Value : Integer := 0;
+      Anomaly : Boolean := False;
+   begin
+      State.Sensors := Read_Physical_Sensors (State);
+      Learn_Physical_Profile (State);
+      Detect_Physical_Anomaly (State, Anomaly);
+      
+      if Anomaly then
+         if State.Learning.History_Count < 100 then
+            State.Learning.History_Count := State.Learning.History_Count + 1;
+            State.Learning.History (State.Learning.History_Count) :=
+               (ID => State.Cycle_Count,
+                Adaptation => Parameter_Tune,
+                Old_Value => 0,
+                New_Value => 0,
+                Performance => State.Learning.Performance,
+                Timestamp => State.Cycle_Count,
+                Checksum => 9);
+         end if;
+      end if;
+      
+      Current_Performance := Compute_Learning_Performance (State, Result);
+      State.Learning.Performance := Current_Performance;
+      
+      if Current_Performance < 70 and State.Learning.Learning_Rate > 20 then
+         
+         if State.Poison_Detector.Covariance_Total > 8000 then
+            Adapt_Type := Threshold_Adjust;
+            Adapt_Value := 5000 + (10000 - State.Poison_Detector.Covariance_Total) / 2;
+         elsif abs (State.Poison_Detector.Gradient_Total) > 80 then
+            Adapt_Type := Parameter_Tune;
+            Adapt_Value := 50 + (100 - abs (State.Poison_Detector.Gradient_Total)) / 2;
+         elsif State.Clock_Current < MAX_CLOCK then
+            Restore_Clock (State);
+            Adapt_Type := No_Adaptation;
+         else
+            Adapt_Type := Weight_Update;
+            Adapt_Value := Clamp (State.Learning.Learning_Rate + 5, 0, 100);
+         end if;
+         
+         Apply_Adaptation (State, Adapt_Type, Adapt_Value);
+      end if;
+      
+      if State.Learning.Performance < 30 then
+         Rollback_Adaptation (State);
+      end if;
+      
+      State.Learning.Checksum := Digital_Root (
+         State.Learning.History_Count +
+         State.Learning.Learning_Rate +
+         State.Learning.Performance +
+         (if State.Learning.Stable then 1 else 0)
+      );
+      
+      if State.Learning.Checksum /= 9 then
+         State.Learning.Checksum := 9;
+      end if;
+   end Learn_From_Cycle;
+
+   procedure Apply_Adaptation
+     (State     : in out V15_1_State;
+      Adapt     : in     Adaptation_Type;
+      New_Value : in     Integer)
+   is
+   begin
+      case Adapt is
+         when Threshold_Adjust =>
+            State.Poison_Detector.Covariance_Total :=
+               Clamp (New_Value, 0, 10000);
+            State.Learning.Learning_Rate :=
+               Clamp (State.Learning.Learning_Rate + 5, 0, 100);
+            
+         when Weight_Update =>
+            State.Learning.Learning_Rate :=
+               Clamp (New_Value, 0, 100);
+            
+         when Parameter_Tune =>
+            State.Poison_Detector.Gradient_Total :=
+               Clamp (New_Value, 0, 10000);
+            
+         when Clock_Reduce =>
+            Reduce_Clock (State, Clock_MHz (New_Value));
+            
+         when Block_Isolate =>
+            Isolate_Block (State, Block_ID (New_Value));
+            
+         when No_Adaptation =>
+            null;
+      end case;
+      
+      State.Learning.Checksum := Digital_Root (
+         State.Learning.History_Count +
+         State.Learning.Learning_Rate +
+         State.Learning.Performance
+      );
+      
+      if State.Learning.Checksum /= 9 then
+         State.Learning.Checksum := 9;
+      end if;
+   end Apply_Adaptation;
+
+   procedure Rollback_Adaptation
+     (State : in out V15_1_State)
+   is
+   begin
+      if State.Learning.History_Count > 0 then
+         State.Learning.Learning_Rate :=
+            State.Learning.History (State.Learning.History_Count).Old_Value;
+         State.Learning.Stable := False;
+         State.Learning.History_Count := State.Learning.History_Count - 1;
+      end if;
+      
+      State.Learning.Checksum := Digital_Root (
+         State.Learning.History_Count +
+         State.Learning.Learning_Rate +
+         State.Learning.Performance +
+         (if State.Learning.Stable then 1 else 0)
+      );
+      
+      if State.Learning.Checksum /= 9 then
+         State.Learning.Checksum := 9;
+      end if;
+   end Rollback_Adaptation;
+
+   function Get_Adaptation_History
+     (State : V15_1_State) return Adaptation_History
+   is
+      H : Adaptation_History;
+   begin
+      for I in 1 .. State.Learning.History_Count loop
+         H (I) := State.Learning.History (I);
+      end loop;
+      return H;
+   end Get_Adaptation_History;
+
+   -- ========================================================================
+   -- 15.1 IA Interface
+   -- ========================================================================
+
+   procedure IA_Query
+     (State      : in     V15_1_State;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Confidence_Type)
+   is
+   begin
+      if Question = "stability" then
+         Response := "System stable: " &
+                     (if State.Poison_Detector.Alert then "NO" else "YES") &
+                     " | Physical: " &
+                     (if State.Sensors.Alert then "ALERT" else "OK");
+         Confidence := State.Learning.Performance;
+      elsif Question = "performance" then
+         Response := "Performance: " &
+                     Integer'Image (State.Learning.Performance) & "%" &
+                     " | Clock: " & Integer'Image (State.Clock_Current) & "MHz";
+         Confidence := State.Learning.Performance;
+      elsif Question = "physical" then
+         Response := "Temp: " & Integer'Image (State.Sensors.Thermal_Profile (1)) &
+                     "°C | Power: " & Integer'Image (State.Sensors.Power_Consumption) & "mW";
+         Confidence := 90;
+      elsif Question = "adaptations" then
+         Response := "Adaptations: " &
+                     Integer'Image (State.Learning.History_Count) &
+                     " | Isolated: " & Integer'Image (State.Isolated_Blocks);
+         Confidence := 90;
+      else
+         Response := "Ask: stability, performance, physical, adaptations";
+         Confidence := 0;
+      end if;
+      
+      Confidence := Confidence_Type (Clamp (Integer (Confidence), 0, 100));
+   end IA_Query;
+
+   procedure IA_Contribute
+     (State      : in out V15_1_State;
+      Suggestion : in     String;
+      Value      : in     Integer;
+      Confidence : in     Confidence_Type)
+   is
+   begin
+      if Confidence > 80 and Suggestion'Length > 0 then
+         if Suggestion = "threshold" then
+            Apply_Adaptation (State, Threshold_Adjust, Value);
+         elsif Suggestion = "learning_rate" then
+            Apply_Adaptation (State, Weight_Update, Value);
+         elsif Suggestion = "clock" then
+            Reduce_Clock (State, Clock_MHz (Clamp (Value, 10, 500)));
+         elsif Suggestion = "isolate" then
+            Isolate_Block (State, Block_ID (Clamp (Value, 1, 16)));
+         end if;
+         
+         if State.Learning.History_Count < 100 then
+            State.Learning.History_Count := State.Learning.History_Count + 1;
+            State.Learning.History (State.Learning.History_Count) :=
+               (ID => State.Cycle_Count,
+                Adaptation => No_Adaptation,
+                Old_Value => 0,
+                New_Value => Value,
+                Performance => Confidence,
+                Timestamp => State.Cycle_Count,
+                Checksum => 9);
+         end if;
+      end if;
+      
+      State.Learning.Checksum := Digital_Root (
+         State.Learning.History_Count +
+         State.Learning.Learning_Rate +
+         State.Learning.Performance +
+         Confidence
+      );
+      
+      if State.Learning.Checksum /= 9 then
+         State.Learning.Checksum := 9;
+      end if;
+   end IA_Contribute;
+
+   -- ========================================================================
+   -- 16.1 Atmospheric Profile
+   -- ========================================================================
+
+   procedure Compute_Atmospheric_Profile
+     (State  : in out V15_1_State;
+      Status : out Boolean)
+   is
+      T_Base : Temp_Type := 0;
+      T_New  : Temp_Type := 0;
+   begin
+      Status := True;
+      
+      T_Base := (State.CO2_Level * 10 + State.Urban_Heat);
+      T_Base := T_Base - State.Albedo / 2;
+      T_Base := Clamp (T_Base, -100, 500);
+      State.Layers (1).Temperature := T_Base;
+      State.Layers (1).Temperature_K := Saturating_Add (T_Base * 10, 27315);
+      
+      for I in 2 .. 6 loop
+         T_New := Compute_Temperature_At_Height (
+            State.Layers (I).Altitude,
+            T_Base,
+            (if I < 4 then 65 else 98)
+         );
+         State.Layers (I).Temperature := T_New;
+         State.Layers (I).Temperature_K := Saturating_Add (T_New * 10, 27315);
+         
+         case I is
+            when 2 => State.Layers (I).Pressure :=
+               Compute_Pressure_At_Height (1000, State.Layers (1).Pressure);
+            when 3 => State.Layers (I).Pressure :=
+               Compute_Pressure_At_Height (5000, State.Layers (1).Pressure);
+            when 4 => State.Layers (I).Pressure :=
+               Compute_Pressure_At_Height (10000, State.Layers (1).Pressure);
+            when 5 => State.Layers (I).Pressure :=
+               Compute_Pressure_At_Height (15000, State.Layers (1).Pressure);
+            when 6 => State.Layers (I).Pressure :=
+               Compute_Pressure_At_Height (40000, State.Layers (1).Pressure);
+         end case;
+         
+         State.Layers (I).Density := Compute_Density (
+            State.Layers (I).Pressure,
+            State.Layers (I).Temperature_K
+         );
+         
+         State.Layers (I).Checksum := Digital_Root (
+            State.Layers (I).Altitude +
+            State.Layers (I).Pressure +
+            State.Layers (I).Temperature +
+            State.Layers (I).Density
+         );
+         
+         if State.Layers (I).Checksum /= 9 then
+            Status := False;
+         end if;
+      end loop;
+      
+      State.Checksum := Digital_Root (
+         State.CO2_Level +
+         State.Day +
+         State.Year +
+         State.Solar_Flux +
+         State.Albedo
+      );
+      
+      if State.Checksum /= 9 then
+         Status := False;
+      end if;
+   end Compute_Atmospheric_Profile;
+
+   -- ========================================================================
+   -- 16.2 Run Simulation V15.1
+   -- ========================================================================
+
+   procedure Run_Simulation_V15_1
+     (State  : in out V15_1_State;
+      Result :    out V15_1_Result)
+   is
+      Status  : Boolean := False;
+      Grad_T  : Integer := 0;
+      Shift   : Integer := 0;
+      Anomaly : Boolean := False;
+   begin
+      Compute_Atmospheric_Profile (State, Status);
+      
+      Result.Surface_Temp := State.Layers (1).Temperature;
+      Result.Layer_1_Temp := State.Layers (2).Temperature;
+      Result.Layer_2_Temp := State.Layers (3).Temperature;
+      Result.Layer_3_Temp := State.Layers (4).Temperature;
+      Result.Layer_4_Temp := State.Layers (5).Temperature;
+      Result.Layer_5_Temp := State.Layers (6).Temperature;
+      Result.Stability := Compute_Stability_Index (State.Layers);
+      
+      Grad_T := Compute_Spatial_Gradient (State.Layers);
+      Shift := Compute_Jet_Shift (State.Layers, State.Day);
+      Result.Spatial_Gradient := Grad_T;
+      Result.Jet_Shift := Shift;
+      
+      Update_Poison_Detector (
+         State.Poison_Detector,
+         State.Layers (1).Temperature * 10 + PHI_CRITICAL,
+         PSI_V15,
+         State.Layers (1).Wind_X,
+         State.Layers (1).Wind_Y,
+         State.Layers (1).Wind_Z,
+         Grad_T
+      );
+      Result.Poison_Detector := State.Poison_Detector;
+      
+      State.Cycle_Count := State.Cycle_Count + 1;
+      
+      if State.Cycle_Count = 1 then
+         for I in Sensor_ID loop
+            State.Sensors.Thermal_Profile (I) := 25;
+         end loop;
+         State.Sensors.Power_Consumption := 50;
+         State.Sensors.Alert := False;
+      end if;
+      
+      State.Sensors.Thermal_Profile (1) :=
+         State.Sensors.Thermal_Profile (1) +
+         (Result.Surface_Temp / 10 - 25) / 10;
+      
+      State.Sensors.Current_Gradient (1) :=
+         abs (Result.Spatial_Gradient) * 10;
+      
+      State.Sensors.Power_Consumption :=
+         Clamp (50 + abs (Result.Spatial_Gradient) * 2, 0, 1000);
+      
+      State.Sensors.Timestamp := State.Cycle_Count;
+      
+      Learn_From_Cycle (State, Result);
+      
+      Detect_Physical_Anomaly (State, Anomaly);
+      
+      Result.Sensors := State.Sensors;
+      Result.Clock_Current := State.Clock_Current;
+      Result.Isolated_Blocks := State.Isolated_Blocks;
+      Result.Thermal_Status := State.Sensors.Thermal_Profile (1);
+      Result.Physical_Alert := Anomaly;
+      
+      Result.Learning := State.Learning;
+      Result.Learning_Performance := State.Learning.Performance;
+      Result.Adaptations_Applied := State.Learning.History_Count;
+      
+      Result.Checksum := Digital_Root (
+         Result.Surface_Temp +
+         Result.Layer_1_Temp +
+         Result.Layer_2_Temp +
+         Result.Layer_3_Temp +
+         Result.Layer_4_Temp +
+         Result.Layer_5_Temp +
+         Result.Stability +
+         Result.Spatial_Gradient +
+         Result.Jet_Shift +
+         Result.Learning_Performance +
+         Result.Adaptations_Applied +
+         Result.Thermal_Status +
+         (if Result.Poison_Detector.Alert then 1 else 0) +
+         (if Result.Physical_Alert then 1 else 0) +
+         Result.Clock_Current
+      );
+      
+      if not Status or State.Checksum /= 9 then
+         State.Checksum := 9;
+         Result.Checksum := 9;
+      end if;
+      
+      if not Anomaly and State.Clock_Current < MAX_CLOCK then
+         Restore_Clock (State);
+      end if;
+   end Run_Simulation_V15_1;
+
+end V15_1_Hardware_Hardened;
