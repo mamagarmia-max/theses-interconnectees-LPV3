@@ -1,0 +1,264 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.4 — Deterministic Climate Model with Spatial Gradient Poison Detection
+-- ============================================================================
+-- Version 14.4 : Détection des glissements de phase géographiques
+--   - Filtre de Kalman sur Φ_critical
+--   - Filtre de Kalman sur Ψ_V14
+--   - Filtre de Kalman sur couplage non-linéaire (U·V)
+--   - Covariance totale (E_total)
+--   - NOUVEAU : Filtre sur le gradient spatial (∂T/∂x)
+--   - NOUVEAU : Détection des dérives de Jet-Stream
+--   - Alerte déclenchée si gradient spatial > seuil
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 14.4.0
+-- Date : 02 Juillet 2026
+-- ============================================================================
+
+package V14_4_Climate_Model with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. INVARIANTS V14
+   -- ========================================================================
+   
+   PSI_V14         : constant := 480168;        -- ×10 : 48,016.8 kg·m⁻²
+   PHI_CRITICAL    : constant := -51100;        -- ×1000 : -51.1 mV
+   BETA            : constant := 1_000_000;     -- 10⁶
+   K_CYCLES        : constant := 7;             -- Heptadic closure
+   ALPHA_INV       : constant := 13703599913;   -- 1/α × 10⁵
+   
+   -- Seuils de détection
+   COVARIANCE_THRESHOLD : constant := 10000;
+   GRADIENT_THRESHOLD   : constant := 100;      -- 10°C / 100 km
+
+   -- ========================================================================
+   -- 2. TYPES DE BASE
+   -- ========================================================================
+   
+   subtype Temp_Type is Integer range -500 .. 500;
+   subtype Temp_K_Type is Integer range 2000 .. 3500;
+   subtype Pressure_Type is Integer range 1000 .. 11000;
+   subtype Height_Type is Integer range 0 .. 50000;
+   subtype CO2_Type is Integer range 0 .. 10_000;
+   subtype Humidity_Type is Integer range 0 .. 1000;
+   subtype Day_Type is Integer range 1 .. 365;
+   subtype Year_Type is Integer range 2020 .. 2030;
+   subtype Layer_Type is Integer range 1 .. 6;
+
+   -- ========================================================================
+   -- 3. TRACKERS (Kalman)
+   -- ========================================================================
+
+   type Phi_Tracker is record
+      Value      : Integer range -60000 .. -40000 := -51100;
+      Derivative : Integer range -1000 .. 1000 := 0;
+      Covariance : Integer range 0 .. 10000 := 0;
+      Alert      : Boolean := False;
+      Checksum   : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Phi_Tracker.Checksum in 0 .. 9;
+
+   type Psi_Tracker is record
+      Value      : Integer range 480000 .. 481000 := 480168;
+      Derivative : Integer range -1000 .. 1000 := 0;
+      Covariance : Integer range 0 .. 10000 := 0;
+      Alert      : Boolean := False;
+      Checksum   : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Psi_Tracker.Checksum in 0 .. 9;
+
+   type Coupling_Tracker is record
+      Value      : Integer := 0;
+      Derivative : Integer := 0;
+      Covariance : Integer range 0 .. 10000 := 0;
+      Alert      : Boolean := False;
+      Checksum   : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Coupling_Tracker.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 4. GRADIENT TRACKER (NOUVEAU — V14.4)
+   -- ========================================================================
+
+   type Gradient_Tracker is record
+      Value      : Integer := 0;               -- ∂T/∂x ×100
+      Derivative : Integer := 0;               -- d(∂T/∂x)/dt
+      Covariance : Integer range 0 .. 10000 := 0;
+      Jet_Shift  : Integer := 0;               -- Décalage du Jet-Stream (km)
+      Alert      : Boolean := False;
+      Checksum   : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Gradient_Tracker.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 5. DETECTEUR DE POISON (COVARIANCE TOTALE + GRADIENT SPATIAL)
+   -- ========================================================================
+
+   type Poison_Detector is record
+      Phi_Tracker      : Phi_Tracker;
+      Psi_Tracker      : Psi_Tracker;
+      Coupling_Tracker : Coupling_Tracker;
+      Gradient_Tracker : Gradient_Tracker;      -- NOUVEAU
+      Covariance_Total : Integer range 0 .. 10000 := 0;
+      Gradient_Total   : Integer range 0 .. 10000 := 0;  -- NOUVEAU
+      Alert            : Boolean := False;
+      Checksum         : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Poison_Detector.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 6. FONCTIONS DE DÉTECTION
+   -- ========================================================================
+
+   function Detect_Poison
+     (Detector : Poison_Detector;
+      Phi      : Integer;
+      Psi      : Integer;
+      Ux       : Integer;
+      Vy       : Integer;
+      W        : Integer;
+      Grad_T   : Integer) return Boolean
+     with Pre => Phi in -60000 .. -40000 and
+                 Psi in 480000 .. 481000,
+          Post => Detect_Poison'Result = 
+                    (Detector.Covariance_Total > COVARIANCE_THRESHOLD or
+                     Detector.Gradient_Total > GRADIENT_THRESHOLD);
+
+   procedure Update_Poison_Detector
+     (Detector : in out Poison_Detector;
+      Phi      : Integer;
+      Psi      : Integer;
+      Ux       : Integer;
+      Vy       : Integer;
+      W        : Integer;
+      Grad_T   : Integer)
+     with Pre => Phi in -60000 .. -40000 and
+                 Psi in 480000 .. 481000,
+          Post => (if Detector.Alert then
+                      Detector.Checksum = 9);
+
+   -- ========================================================================
+   -- 7. SATURATING ARITHMETIC
+   -- ========================================================================
+   
+   function Saturating_Add (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Add'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Sub (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Sub'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Mul (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Mul'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Div (A, B : Integer) return Integer
+     with Pre => B /= 0,
+          Post => Saturating_Div'Result in Integer'First .. Integer'Last;
+   
+   function Clamp (Value, Min, Max : Integer) return Integer
+     with Pre => Min <= Max,
+          Post => Clamp'Result in Min .. Max;
+
+   -- ========================================================================
+   -- 8. DIGITAL ROOT (Modulo-9 invariant)
+   -- ========================================================================
+   
+   function Digital_Root (N : Integer) return Integer
+     with Pre => N >= 0,
+          Post => Digital_Root'Result in 1 .. 9;
+
+   -- ========================================================================
+   -- 9. COUCHE ATMOSPHÉRIQUE
+   -- ========================================================================
+
+   type Atmospheric_Layer is record
+      Altitude     : Height_Type := 0;
+      Pressure     : Pressure_Type := 0;
+      Temperature  : Temp_Type := 0;
+      Temperature_K : Temp_K_Type := 0;
+      Humidity     : Humidity_Type := 0;
+      Density      : Integer := 0;
+      Wind_X       : Integer := 0;
+      Wind_Y       : Integer := 0;
+      Wind_Z       : Integer := 0;
+      Checksum     : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Atmospheric_Layer.Checksum in 0 .. 9;
+
+   type Layer_Array is array (Layer_Type) of Atmospheric_Layer;
+
+   -- ========================================================================
+   -- 10. FONCTIONS DE GRADIENT SPATIAL (V14.4)
+   -- ========================================================================
+
+   function Compute_Spatial_Gradient
+     (Layer : Layer_Array) return Integer
+     with Pre => (for all I in Layer_Type => Layer (I).Checksum in 0 .. 9),
+          Post => Compute_Spatial_Gradient'Result in -500 .. 500;
+   -- Calcule le gradient horizontal de température (∂T/∂x) ×100
+
+   function Compute_Jet_Shift
+     (Layer : Layer_Array;
+      Day   : Day_Type) return Integer
+     with Pre => (for all I in Layer_Type => Layer (I).Checksum in 0 .. 9),
+          Post => Compute_Jet_Shift'Result in -10000 .. 10000;
+   -- Calcule le décalage du Jet-Stream en km
+
+   -- ========================================================================
+   -- 11. SIMULATION COMPLÈTE V14.4
+   -- ========================================================================
+
+   type V14_4_State is record
+      Layers         : Layer_Array;
+      CO2_Level      : CO2_Type := 0;
+      Day            : Day_Type := 1;
+      Year           : Year_Type := 2026;
+      Solar_Flux     : Integer := 0;
+      Albedo         : Integer := 0;
+      Ice_Mass_N     : Integer := 0;
+      Ice_Mass_S     : Integer := 0;
+      Urban_Heat     : Integer := 0;
+      Population     : Integer := 0;
+      Poison_Detector : Poison_Detector;
+      Checksum       : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => V14_4_State.Checksum in 0 .. 9;
+
+   type V14_4_Result is record
+      Surface_Temp     : Temp_Type := 0;
+      Layer_1_Temp     : Temp_Type := 0;
+      Layer_2_Temp     : Temp_Type := 0;
+      Layer_3_Temp     : Temp_Type := 0;
+      Layer_4_Temp     : Temp_Type := 0;
+      Layer_5_Temp     : Temp_Type := 0;
+      Layer_6_Temp     : Temp_Type := 0;
+      Stability        : Integer := 0;
+      Spatial_Gradient : Integer := 0;
+      Jet_Shift        : Integer := 0;
+      Poison_Detector  : Poison_Detector;
+      Checksum         : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => V14_4_Result.Checksum in 0 .. 9;
+
+   procedure Run_Simulation_V14_4
+     (State  : in out V14_4_State;
+      Result :    out V14_4_Result)
+     with Pre => State.Checksum in 0 .. 9,
+          Post => (if State.Checksum = 9 and not State.Poison_Detector.Alert then
+                      Result.Checksum = 9 and
+                      State.Poison_Detector.Checksum = 9);
+
+end V14_4_Climate_Model;
