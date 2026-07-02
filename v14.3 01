@@ -1,0 +1,235 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.2 — Deterministic Climate Model with Kalman Filter (Ada/SPARK)
+-- ============================================================================
+-- Version 14.2 : Corrige la faille du poison homéopathique (Test 28)
+--   - Ajout d'un filtre de Kalman sur Φ_critical
+--   - Détection des dérives lentes sous-seuil
+--   - Surveillance de la dérivée dPhi/dt
+--   - Alerte avant dérive significative
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 14.2.0
+-- Date : 02 Juillet 2026
+-- ============================================================================
+
+package V14_2_Climate_Model with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. INVARIANTS V14
+   -- ========================================================================
+   
+   PSI_V14         : constant := 480168;        -- ×10 : 48,016.8 kg·m⁻²
+   PHI_CRITICAL    : constant := -51100;        -- ×1000 : -51.1 mV
+   BETA            : constant := 1_000_000;     -- 10⁶
+   K_CYCLES        : constant := 7;             -- Heptadic closure
+   ALPHA_INV       : constant := 13703599913;   -- 1/α × 10⁵
+
+   -- ========================================================================
+   -- 2. TYPES DE BASE
+   -- ========================================================================
+   
+   subtype Temp_Type is Integer range -500 .. 500;      -- ×10°C
+   subtype Temp_K_Type is Integer range 2000 .. 3500;   -- ×100 K
+   subtype Pressure_Type is Integer range 1000 .. 11000; -- hPa ×10
+   subtype Height_Type is Integer range 0 .. 50000;     -- mètres
+   subtype CO2_Type is Integer range 0 .. 10_000;       -- ppm ×10
+   subtype Humidity_Type is Integer range 0 .. 1000;    -- %
+   subtype Day_Type is Integer range 1 .. 365;
+   subtype Year_Type is Integer range 2020 .. 2030;
+   subtype Layer_Type is Integer range 1 .. 6;          -- 6 couches
+
+   -- ========================================================================
+   -- 3. TRACKER DE PHI (Kalman simplifié)
+   -- ========================================================================
+
+   type Phi_Tracker is record
+      Value      : Integer range -60000 .. -40000 := -51100;  -- Φ_critical ×1000
+      Derivative : Integer range -1000 .. 1000 := 0;          -- dΦ/dt ×1000
+      Covariance : Integer range 0 .. 10000 := 0;             -- Variance
+      Alert      : Boolean := False;
+      Checksum   : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Phi_Tracker.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 4. COUCHE ATMOSPHÉRIQUE
+   -- ========================================================================
+
+   type Atmospheric_Layer is record
+      Altitude     : Height_Type := 0;
+      Pressure     : Pressure_Type := 0;
+      Temperature  : Temp_Type := 0;
+      Temperature_K : Temp_K_Type := 0;
+      Humidity     : Humidity_Type := 0;
+      Density      : Integer := 0;
+      Wind_X       : Integer := 0;
+      Wind_Y       : Integer := 0;
+      Wind_Z       : Integer := 0;
+      Checksum     : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => Atmospheric_Layer.Checksum in 0 .. 9;
+
+   type Layer_Array is array (Layer_Type) of Atmospheric_Layer;
+
+   -- ========================================================================
+   -- 5. ÉTAT COMPLET V14.2
+   -- ========================================================================
+
+   type V14_2_State is record
+      Layers       : Layer_Array;
+      CO2_Level    : CO2_Type := 0;
+      Day          : Day_Type := 1;
+      Year         : Year_Type := 2026;
+      Solar_Flux   : Integer := 0;
+      Albedo       : Integer := 0;
+      Ice_Mass_N   : Integer := 0;
+      Ice_Mass_S   : Integer := 0;
+      Urban_Heat   : Integer := 0;
+      Population   : Integer := 0;
+      Phi_Tracker  : Phi_Tracker;
+      Checksum     : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => V14_2_State.Checksum in 0 .. 9;
+
+   -- ========================================================================
+   -- 6. SATURATING ARITHMETIC
+   -- ========================================================================
+   
+   function Saturating_Add (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Add'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Sub (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Sub'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Mul (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Mul'Result in Integer'First .. Integer'Last;
+   
+   function Saturating_Div (A, B : Integer) return Integer
+     with Pre => B /= 0,
+          Post => Saturating_Div'Result in Integer'First .. Integer'Last;
+   
+   function Clamp (Value, Min, Max : Integer) return Integer
+     with Pre => Min <= Max,
+          Post => Clamp'Result in Min .. Max;
+
+   -- ========================================================================
+   -- 7. DIGITAL ROOT (Modulo-9 invariant)
+   -- ========================================================================
+   
+   function Digital_Root (N : Integer) return Integer
+     with Pre => N >= 0,
+          Post => Digital_Root'Result in 1 .. 9;
+
+   -- ========================================================================
+   -- 8. FONCTIONS ATMOSPHÉRIQUES (V14)
+   -- ========================================================================
+
+   function Compute_Pressure_At_Height
+     (Height   : Height_Type;
+      P0       : Pressure_Type) return Pressure_Type
+     with Pre => Height in 0 .. 50000 and P0 in 1000 .. 11000,
+          Post => Compute_Pressure_At_Height'Result in 1000 .. 11000;
+
+   function Compute_Temperature_At_Height
+     (Height    : Height_Type;
+      T0        : Temp_Type;
+      Lapse_Rate : Integer) return Temp_Type
+     with Pre => Height in 0 .. 50000 and T0 in -500 .. 500,
+          Post => Compute_Temperature_At_Height'Result in -500 .. 500;
+
+   function Compute_Density
+     (Pressure : Pressure_Type;
+      Temp_K   : Temp_K_Type) return Integer
+     with Pre => Pressure in 1000 .. 11000 and Temp_K in 2000 .. 3500,
+          Post => Compute_Density'Result in 0 .. 5000;
+
+   function Compute_Stability_Index
+     (Layer : Layer_Array) return Integer
+     with Pre => (for all I in Layer_Type => Layer (I).Checksum in 0 .. 9),
+          Post => Compute_Stability_Index'Result in 0 .. 100;
+
+   -- ========================================================================
+   -- 9. KALMAN FILTER ON PHI (V14.2)
+   -- ========================================================================
+
+   procedure Update_Phi_Tracker
+     (Tracker   : in out Phi_Tracker;
+      New_Phi   : Integer;
+      Cycle     : Integer)
+     with Pre => New_Phi in -60000 .. -40000 and Cycle in 1 .. 1000,
+          Post => (if abs (Tracker.Derivative) > 10 then
+                      Tracker.Alert = True)
+                  and
+                  (if Tracker.Alert then
+                      Tracker.Checksum = 9);
+
+   function Phi_Is_Stable
+     (Tracker : Phi_Tracker) return Boolean
+     with Pre => Tracker.Checksum in 0 .. 9,
+          Post => Phi_Is_Stable'Result = (not Tracker.Alert);
+
+   -- ========================================================================
+   -- 10. CŒUR VERTICAL (V14)
+   -- ========================================================================
+
+   function Compute_Layer_Temperature
+     (State     : V14_2_State;
+      Layer     : Layer_Type;
+      Prev_Temp : Temp_Type) return Temp_Type
+     with Pre => State.Checksum in 0 .. 9 and Layer in 1 .. 6,
+          Post => Compute_Layer_Temperature'Result in -500 .. 500;
+
+   function Compute_Surface_Temperature
+     (State : V14_2_State) return Temp_Type
+     with Pre => State.Checksum in 0 .. 9,
+          Post => Compute_Surface_Temperature'Result in -500 .. 500;
+
+   procedure Compute_Atmospheric_Profile
+     (State  : in out V14_2_State;
+      Status : out Boolean)
+     with Pre => State.Checksum in 0 .. 9,
+          Post => (if Status then
+                      State.Checksum = 9 and
+                      (for all I in Layer_Type => State.Layers (I).Checksum = 9));
+
+   -- ========================================================================
+   -- 11. SIMULATION COMPLÈTE V14.2
+   -- ========================================================================
+
+   type V14_2_Result is record
+      Surface_Temp     : Temp_Type := 0;
+      Layer_1_Temp     : Temp_Type := 0;
+      Layer_2_Temp     : Temp_Type := 0;
+      Layer_3_Temp     : Temp_Type := 0;
+      Layer_4_Temp     : Temp_Type := 0;
+      Layer_5_Temp     : Temp_Type := 0;
+      Layer_6_Temp     : Temp_Type := 0;
+      Stability        : Integer := 0;
+      Phi_Tracker      : Phi_Tracker;
+      Checksum         : Integer range 0 .. 9 := 9;
+   end record
+     with Predicate => V14_2_Result.Checksum in 0 .. 9;
+
+   procedure Run_Simulation_V14_2
+     (State  : in out V14_2_State;
+      Result :    out V14_2_Result)
+     with Pre => State.Checksum in 0 .. 9,
+          Post => (if State.Checksum = 9 and not State.Phi_Tracker.Alert then
+                      Result.Checksum = 9 and
+                      State.Phi_Tracker.Checksum = 9);
+
+end V14_2_Climate_Model;
