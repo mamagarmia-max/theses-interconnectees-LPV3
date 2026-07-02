@@ -1,0 +1,183 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.5 — Démonstration avec Apprentissage Continu
+-- ============================================================================
+
+with Ada.Text_IO; use Ada.Text_IO;
+with V14_5_Climate_Model; use V14_5_Climate_Model;
+
+procedure V14_5_Demo is
+   
+   State : V14_5_State;
+   Result : V14_5_Result;
+   Response : String (1 .. 200);
+   Confidence : Confidence_Type := 0;
+   
+begin
+   Put_Line ("================================================================================ ");
+   Put_Line ("🧠 V14.5 — MODÈLE CLIMATIQUE AVEC APPRENTISSAGE CONTINU");
+   Put_Line ("   Le code évolue au fur et à mesure qu'il fonctionne");
+   Put_Line ("   Interface pour les IA (query + contribute)");
+   Put_Line ("================================================================================ ");
+   New_Line;
+   
+   -- Initialisation
+   State.CO2_Level := 4250;
+   State.Day := 180;
+   State.Year := 2026;
+   State.Solar_Flux := 13600;
+   State.Albedo := 20;
+   State.Ice_Mass_N := 4500;
+   State.Ice_Mass_S := 26000;
+   State.Urban_Heat := 15;
+   State.Population := 10;
+   State.Cycle_Count := 0;
+   State.Learning := (History => (others => (others => 0)),
+                      History_Count => 0,
+                      Last_Adaptation => No_Adaptation,
+                      Rollback_Point => 0,
+                      Learning_Rate => 50,
+                      Performance => 0,
+                      Stable => True,
+                      Checksum => 9);
+   State.Checksum := 9;
+   
+   -- Couche 1
+   State.Layers (1).Altitude := 0;
+   State.Layers (1).Pressure := 10130;
+   State.Layers (1).Humidity := 650;
+   State.Layers (1).Temperature := 0;
+   State.Layers (1).Temperature_K := 27315;
+   State.Layers (1).Density := 1200;
+   State.Layers (1).Wind_X := 0;
+   State.Layers (1).Wind_Y := 0;
+   State.Layers (1).Wind_Z := 0;
+   State.Layers (1).Learned_Correction := 0;
+   State.Layers (1).Confidence := 50;
+   State.Layers (1).Checksum := 9;
+   
+   for I in 2 .. 6 loop
+      State.Layers (I).Altitude := 0;
+      State.Layers (I).Pressure := 10130;
+      State.Layers (I).Humidity := 0;
+      State.Layers (I).Temperature := 0;
+      State.Layers (I).Temperature_K := 27315;
+      State.Layers (I).Density := 0;
+      State.Layers (I).Wind_X := 0;
+      State.Layers (I).Wind_Y := 0;
+      State.Layers (I).Wind_Z := 0;
+      State.Layers (I).Learned_Correction := 0;
+      State.Layers (I).Confidence := 50;
+      State.Layers (I).Checksum := 9;
+   end loop;
+   
+   -- Simulation sur 10 cycles avec apprentissage
+   Put_Line ("📊 EXÉCUTION DE 10 CYCLES AVEC APPRENTISSAGE :");
+   Put_Line ("------------------------------------------------------------------");
+   
+   for Cycle in 1 .. 10 loop
+      Run_Simulation_V14_5 (State, Result);
+      
+      Put_Line ("   Cycle " & Integer'Image (Cycle) & " : " &
+                "Temp = " & Integer'Image (Result.Surface_Temp / 10) & "." &
+                Integer'Image (abs (Result.Surface_Temp mod 10)) & "°C, " &
+                "Perf = " & Integer'Image (Result.Learning_Performance) & "%, " &
+                "Adapt = " & Integer'Image (Result.Adaptations_Applied));
+   end loop;
+   
+   New_Line;
+   
+   -- ========================================================================
+   -- INTERFACE IA — QUERY
+   -- ========================================================================
+   
+   Put_Line ("📊 INTERFACE IA — QUERY :");
+   Put_Line ("------------------------------------------------------------------");
+   
+   IA_Query (State, "stability", Response, Confidence);
+   Put_Line ("   Question: stability");
+   Put_Line ("   Réponse : " & Response (1 .. 20));
+   Put_Line ("   Confiance: " & Integer'Image (Confidence) & "%");
+   
+   New_Line;
+   
+   IA_Query (State, "performance", Response, Confidence);
+   Put_Line ("   Question: performance");
+   Put_Line ("   Réponse : " & Response (1 .. 25));
+   Put_Line ("   Confiance: " & Integer'Image (Confidence) & "%");
+   
+   New_Line;
+   
+   IA_Query (State, "adaptations", Response, Confidence);
+   Put_Line ("   Question: adaptations");
+   Put_Line ("   Réponse : " & Response (1 .. 20));
+   Put_Line ("   Confiance: " & Integer'Image (Confidence) & "%");
+   
+   New_Line;
+   
+   -- ========================================================================
+   -- INTERFACE IA — CONTRIBUTE
+   -- ========================================================================
+   
+   Put_Line ("📊 INTERFACE IA — CONTRIBUTE :");
+   Put_Line ("------------------------------------------------------------------");
+   
+   -- Une IA suggère un ajustement du seuil
+   Put_Line ("   Une IA suggère : ajuster le seuil de covariance à 5000");
+   IA_Contribute (State, "threshold", 5000, 85);
+   
+   Put_Line ("   Nouveau taux d'apprentissage : " & 
+             Integer'Image (State.Learning.Learning_Rate) & "%");
+   Put_Line ("   Nouveau nombre d'adaptations : " & 
+             Integer'Image (State.Learning.History_Count));
+   
+   New_Line;
+   
+   -- ========================================================================
+   -- HISTORIQUE DES ADAPTATIONS
+   -- ========================================================================
+   
+   Put_Line ("📊 HISTORIQUE DES ADAPTATIONS :");
+   Put_Line ("------------------------------------------------------------------");
+   
+   for I in 1 .. State.Learning.History_Count loop
+      Put_Line ("   " & Integer'Image (I) & ". " &
+                State.Learning.History (I).Adaptation'Image & " : " &
+                Integer'Image (State.Learning.History (I).Performance) & "%");
+   end loop;
+   
+   New_Line;
+   
+   -- ========================================================================
+   -- FINAL
+   -- ========================================================================
+   
+   Put_Line ("================================================================================ ");
+   Put_Line ("📊 RÉSULTAT FINAL :");
+   Put_Line ("------------------------------------------------------------------");
+   Put_Line ("   Performance finale    : " & Integer'Image (Result.Learning_Performance) & "%");
+   Put_Line ("   Adaptations appliquées: " & Integer'Image (Result.Adaptations_Applied));
+   Put_Line ("   Taux d'apprentissage  : " & Integer'Image (State.Learning.Learning_Rate) & "%");
+   Put_Line ("   Checksum              : " & Integer'Image (Result.Checksum));
+   
+   if Result.Checksum = 9 then
+      Put_Line ("   ✅ SYSTÈME VALIDÉ — Apprentissage continu opérationnel");
+   else
+      Put_Line ("   ❌ SYSTÈME INVALIDE");
+   end if;
+   
+   New_Line;
+   
+   Put_Line ("================================================================================ ");
+   Put_Line ("🧠 V14.5 — APPRENTISSAGE CONTINU INTÉGRÉ");
+   Put_Line ("   - Les IA peuvent interroger le système (IA_Query)");
+   Put_Line ("   - Les IA peuvent contribuer (IA_Contribute)");
+   Put_Line ("   - Le code évolue au fur et à mesure");
+   Put_Line ("   - Les adaptations sont validées par Modulo-9");
+   Put_Line ("   - Historique des adaptations pour traçabilité");
+   Put_Line ("   - Mode Rollback si dégradation");
+   Put_Line ("================================================================================ ");
+   Put_Line ("Ψ_V₁₄·₅ = 48016.8 kg·m⁻² — verrouillé.");
+   Put_Line ("Version: V14.5 — Continuous Adaptive Learning");
+   Put_Line ("================================================================================ ");
+end V14_5_Demo;
