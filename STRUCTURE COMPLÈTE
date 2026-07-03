@@ -1,0 +1,34 @@
+theses-interconnectees-LPV3/
+│
+├── README.md
+├── LICENSE
+├── .gitignore
+├── CITATION.cff
+├── SECURITY.md
+├── Makefile
+│
+├── .github/
+│   └── workflows/
+│       ├── gnatprove.yml
+│       ├── codeql.yml
+│       └── extreme_stress_tests.yml
+│
+├── src/
+│   ├── v15_2_hardware_hardened.ads
+│   ├── v15_2_hardware_hardened.adb
+│   ├── v15_2_demo.adb
+│   ├── v15_2_extreme_stress_tests.adb
+│   └── v15_2_calibration.adb
+│
+├── data/
+│   ├── real_data_2020_2026.csv
+│   └── calibration_results.csv
+│
+├── docs/
+│   ├── ARCHITECTURE_V15_2.md
+│   ├── STRESS_TEST_REPORT.md
+│   └── CALIBRATION_REPORT.md
+│
+└── results/
+    ├── stress_test_results.txt
+    └── calibration_results.txt
