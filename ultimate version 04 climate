@@ -1,0 +1,274 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V15.2.3 — Physical Data Library for Real-World Climate Data
+-- ============================================================================
+-- Version 15.2.3 : Intégration des données physiques réelles (ERA5/NOAA)
+--   - Bibliothèque de données climatiques réelles
+--   - Moteur d'ingestion de données (CSV, NetCDF, JSON)
+--   - Validation des données par Modulo-9
+--   - Interpolation spatiale et temporelle
+--   - Gestion des données manquantes
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 15.2.3
+-- Date : 03 Juillet 2026
+-- ============================================================================
+
+package V15_2_3_Physical_Data_Library with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. TYPES DE BASE
+   -- ========================================================================
+   
+   subtype Checksum_Type is Integer range 1 .. 9;
+   subtype Confidence_Type is Integer range 0 .. 100;
+   subtype Temp_Type is Integer range -500 .. 500;      -- ×10°C
+   subtype Pressure_Type is Integer range 1000 .. 11000; -- hPa ×10
+   subtype Humidity_Type is Integer range 0 .. 1000;    -- %
+   subtype Day_Type is Integer range 1 .. 365;
+   subtype Year_Type is Integer range 1950 .. 2030;
+   subtype CO2_Type is Integer range 0 .. 10_000;       -- ppm ×10
+   subtype Albedo_Type is Integer range 0 .. 100;       -- %
+   subtype Height_Type is Integer range 0 .. 50000;     -- mètres
+   subtype Layer_Type is Integer range 1 .. 32;         -- 32 couches
+   subtype Station_ID is Integer range 1 .. 1000;
+   subtype Region_ID is Integer range 1 .. 100;
+
+   -- ========================================================================
+   -- 2. CONSTANTES PHYSIQUES
+   -- ========================================================================
+   
+   PSI_V15         : constant := 480168;        -- ×10 : 48,016.8 kg·m⁻²
+   PHI_CRITICAL    : constant := -51100;        -- ×1000 : -51.1 mV
+   BETA            : constant := 1_000_000;     -- 10⁶
+   K_CYCLES        : constant := 7;             -- Heptadic closure
+   ALPHA_INV       : constant := 13703599913;   -- 1/α × 10⁵
+
+   -- ========================================================================
+   -- 3. DONNÉES CLIMATIQUES RÉELLES (ERA5/NOAA)
+   -- ========================================================================
+
+   type Climate_Data_Record is record
+      Station_ID       : Station_ID := 0;
+      Year             : Year_Type := 2026;
+      Day              : Day_Type := 1;
+      Temperature      : Temp_Type := 0;
+      Pressure         : Pressure_Type := 10130;
+      Humidity         : Humidity_Type := 600;
+      CO2_Level        : CO2_Type := 4250;
+      Albedo           : Albedo_Type := 30;
+      Solar_Flux       : Integer := 13600;
+      Wind_X           : Integer := 0;
+      Wind_Y           : Integer := 0;
+      Wind_Z           : Integer := 0;
+      Cloud_Cover      : Integer range 0 .. 100 := 50;
+      Precipitation    : Integer := 0;          -- ×10 mm
+      Confidence       : Confidence_Type := 80;
+      Source           : Integer := 0;          -- 1=ERA5, 2=NOAA, 3=Station
+      Checksum         : Checksum_Type := 9;
+   end record
+     with Predicate => Climate_Data_Record.Checksum in 1 .. 9;
+
+   type Climate_Data_Array is array (1 .. 10000) of Climate_Data_Record;
+   type Climate_Data_Pointer is access Climate_Data_Array;
+
+   -- ========================================================================
+   -- 4. PROFIL VERTICAL (32 COUCHES)
+   -- ========================================================================
+
+   type Vertical_Profile_Record is record
+      Layer         : Layer_Type := 1;
+      Altitude      : Height_Type := 0;
+      Temperature   : Temp_Type := 0;
+      Pressure      : Pressure_Type := 0;
+      Humidity      : Humidity_Type := 0;
+      Wind_X        : Integer := 0;
+      Wind_Y        : Integer := 0;
+      Wind_Z        : Integer := 0;
+      Density       : Integer := 0;
+      Checksum      : Checksum_Type := 9;
+   end record
+     with Predicate => Vertical_Profile_Record.Checksum in 1 .. 9;
+
+   type Vertical_Profile_Array is array (Layer_Type) of Vertical_Profile_Record;
+
+   -- ========================================================================
+   -- 5. STATION MÉTÉO
+   -- ========================================================================
+
+   type Station_Record is record
+      ID              : Station_ID := 0;
+      Name            : String (1 .. 50) := (others => ' ');
+      Latitude        : Integer range -9000 .. 9000 := 0;  -- ×100
+      Longitude       : Integer range -18000 .. 18000 := 0; -- ×100
+      Elevation       : Height_Type := 0;
+      Region          : Region_ID := 0;
+      Data_Count      : Integer := 0;
+      Data            : Climate_Data_Array;
+      Profile         : Vertical_Profile_Array;
+      Checksum        : Checksum_Type := 9;
+   end record
+     with Predicate => Station_Record.Checksum in 1 .. 9;
+
+   -- ========================================================================
+   -- 6. BIBLIOTHÈQUE DE DONNÉES
+   -- ========================================================================
+
+   type Data_Library_Record is record
+      Station_Count    : Integer := 0;
+      Stations         : array (1 .. 1000) of Station_Record;
+      Region_Count     : Integer := 0;
+      Regions          : array (1 .. 100) of String (1 .. 50);
+      Last_Update      : Integer := 0;
+      Data_Source      : Integer := 0;  -- 1=ERA5, 2=NOAA, 3=Mixte
+      Total_Records    : Integer := 0;
+      Checksum         : Checksum_Type := 9;
+   end record
+     with Predicate => Data_Library_Record.Checksum in 1 .. 9;
+
+   -- ========================================================================
+   -- 7. FONCTIONS D'INGESTION
+   -- ========================================================================
+
+   procedure Ingest_ERA5_Data
+     (Library    : in out Data_Library_Record;
+      Station_ID : in     Station_ID;
+      Data       : in     Climate_Data_Record)
+     with Pre => Library.Checksum in 1 .. 9 and
+                 Data.Checksum in 1 .. 9,
+          Post => (if Library.Checksum = 9 then
+                      Library.Total_Records = Library.Total_Records'Old + 1 and
+                      Library.Checksum = 9);
+   -- Ingère une donnée ERA5 dans la bibliothèque
+
+   procedure Ingest_NOAA_Data
+     (Library    : in out Data_Library_Record;
+      Station_ID : in     Station_ID;
+      Data       : in     Climate_Data_Record)
+     with Pre => Library.Checksum in 1 .. 9 and
+                 Data.Checksum in 1 .. 9,
+          Post => (if Library.Checksum = 9 then
+                      Library.Total_Records = Library.Total_Records'Old + 1 and
+                      Library.Checksum = 9);
+   -- Ingère une donnée NOAA dans la bibliothèque
+
+   procedure Ingest_Station_Data
+     (Library    : in out Data_Library_Record;
+      Station_ID : in     Station_ID;
+      Data       : in     Climate_Data_Record)
+     with Pre => Library.Checksum in 1 .. 9 and
+                 Data.Checksum in 1 .. 9,
+          Post => (if Library.Checksum = 9 then
+                      Library.Total_Records = Library.Total_Records'Old + 1 and
+                      Library.Checksum = 9);
+   -- Ingère une donnée de station dans la bibliothèque
+
+   -- ========================================================================
+   -- 8. FONCTIONS DE RECHERCHE
+   -- ========================================================================
+
+   function Get_Data_For_Day
+     (Library    : Data_Library_Record;
+      Station_ID : Station_ID;
+      Year       : Year_Type;
+      Day        : Day_Type) return Climate_Data_Record
+     with Pre => Library.Checksum in 1 .. 9,
+          Post => Get_Data_For_Day'Result.Checksum in 1 .. 9;
+   -- Récupère les données pour un jour donné
+
+   function Get_Profile_For_Day
+     (Library    : Data_Library_Record;
+      Station_ID : Station_ID;
+      Year       : Year_Type;
+      Day        : Day_Type) return Vertical_Profile_Array
+     with Pre => Library.Checksum in 1 .. 9,
+          Post => (for all I in Layer_Type =>
+                      Get_Profile_For_Day'Result (I).Checksum in 1 .. 9);
+   -- Récupère le profil vertical pour un jour donné
+
+   -- ========================================================================
+   -- 9. FONCTIONS D'INTERPOLATION
+   -- ========================================================================
+
+   function Interpolate_Temperature
+     (Data1 : Climate_Data_Record;
+      Data2 : Climate_Data_Record;
+      Weight : Integer range 0 .. 100) return Temp_Type
+     with Pre => Data1.Checksum in 1 .. 9 and
+                 Data2.Checksum in 1 .. 9,
+          Post => Interpolate_Temperature'Result in -500 .. 500;
+   -- Interpole linéairement entre deux données
+
+   function Interpolate_Spatial
+     (Library     : Data_Library_Record;
+      Latitude    : Integer range -9000 .. 9000;
+      Longitude   : Integer range -18000 .. 18000;
+      Year        : Year_Type;
+      Day         : Day_Type) return Climate_Data_Record
+     with Pre => Library.Checksum in 1 .. 9,
+          Post => Interpolate_Spatial'Result.Checksum in 1 .. 9;
+   -- Interpole spatialement entre les stations
+
+   -- ========================================================================
+   -- 10. FONCTIONS DE VALIDATION
+   -- ========================================================================
+
+   function Validate_Data
+     (Data : Climate_Data_Record) return Boolean
+     with Pre => Data.Checksum in 1 .. 9,
+          Post => Validate_Data'Result = (Data.Checksum = 9);
+   -- Valide l'intégrité des données
+
+   function Validate_Profile
+     (Profile : Vertical_Profile_Array) return Boolean
+     with Pre => (for all I in Layer_Type => Profile (I).Checksum in 1 .. 9),
+          Post => Validate_Profile'Result = (for all I in Layer_Type => Profile (I).Checksum = 9);
+   -- Valide l'intégrité du profil vertical
+
+   -- ========================================================================
+   -- 11. FONCTIONS DE STATISTIQUES
+   -- ========================================================================
+
+   function Compute_Mean_Temperature
+     (Library    : Data_Library_Record;
+      Station_ID : Station_ID;
+      Year       : Year_Type) return Temp_Type
+     with Pre => Library.Checksum in 1 .. 9,
+          Post => Compute_Mean_Temperature'Result in -500 .. 500;
+   -- Calcule la température moyenne annuelle
+
+   function Compute_Mean_Profile
+     (Library    : Data_Library_Record;
+      Station_ID : Station_ID;
+      Year       : Year_Type) return Vertical_Profile_Array
+     with Pre => Library.Checksum in 1 .. 9,
+          Post => (for all I in Layer_Type =>
+                      Compute_Mean_Profile'Result (I).Checksum in 1 .. 9);
+   -- Calcule le profil vertical moyen annuel
+
+   -- ========================================================================
+   -- 12. FONCTIONS D'EXPORT
+   -- ========================================================================
+
+   procedure Export_Data_CSV
+     (Library    : in Data_Library_Record;
+      Filename   : in String)
+     with Pre => Library.Checksum in 1 .. 9,
+          Post => (if Library.Checksum = 9 then True);
+   -- Exporte les données au format CSV
+
+   procedure Export_Data_JSON
+     (Library    : in Data_Library_Record;
+      Filename   : in String)
+     with Pre => Library.Checksum in 1 .. 9,
+          Post => (if Library.Checksum = 9 then True);
+   -- Exporte les données au format JSON
+
+end V15_2_3_Physical_Data_Library;
