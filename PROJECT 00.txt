@@ -1,0 +1,107 @@
+-- SPDX-License-Identifier: LPV3
+-- V15.2 — HARDWARE-HARDENED WITH CALIBRATION & EXTREME STRESS TESTS
+-- Author: Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Version: 15.2.0
+
+with Ada.Text_IO; use Ada.Text_IO;
+
+package V15_2_Hardware_Hardened with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. INVARIANTS (CALIBRÉS sur 2020-2026)
+   -- ========================================================================
+   PSI_V15_CALIB       : constant := 520000;        -- 52,000 kg·m⁻²
+   PHI_CRITICAL_CALIB  : constant := -48500;        -- -48.5 mV
+   BETA                : constant := 1_000_000;    
+   K_CYCLES            : constant := 7;            
+   MAX_CLOCK_FREQ      : constant := 500;           -- MHz
+   COVARIANCE_THRESHOLD_BASE : constant := 10000;
+
+   -- ========================================================================
+   -- 2. TYPES DE BASE
+   -- ========================================================================
+   subtype Temp_Type is Integer range -500 .. 500;        -- ×10°C
+   subtype Temp_K_Type is Integer range 2000 .. 3500;     
+   subtype Pressure_Type is Integer range 1000 .. 11000;  
+   subtype CO2_Type is Integer range 0 .. 10_000;        
+   subtype Day_Type is Integer range 1 .. 365;
+   subtype Confidence_Type is Integer range 0 .. 100;
+   subtype Clock_MHz is Integer range 10 .. 500;
+   subtype Error_Type is Integer range 0 .. 1000;
+
+   type Real_Observation is record
+      Year        : Integer range 2020 .. 2030;
+      Day         : Day_Type;
+      Temp_Obs    : Temp_Type;
+      Pressure_Obs : Pressure_Type;
+      CO2_Obs     : CO2_Type;
+   end record;
+
+   type Real_Data_Array is array (1 .. 2555) of Real_Observation;
+
+   -- ========================================================================
+   -- 3. FONCTIONS DE BASE (Avec Preuves Formelles)
+   -- ========================================================================
+   function Saturating_Add (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Add'Result in Integer'First .. Integer'Last;
+
+   function Digital_Root (N : Integer) return Integer
+     with Pre => N >= 0,
+          Post => Digital_Root'Result in 1 .. 9;
+
+   function Compute_Temperature_At_Height
+     (Height : Integer; T0 : Temp_Type; Lapse_Rate : Integer) return Temp_Type
+     with Pre => Height in 0 .. 50000 and T0 in -500 .. 500,
+          Post => Compute_Temperature_At_Height'Result in -500 .. 500;
+
+   -- ========================================================================
+   -- 4. MODULE DE CALIBRATION (NOUVEAU)
+   -- ========================================================================
+   procedure Calibrate_Constants
+     (Real_Data : in Real_Data_Array; Data_Count : in Integer;
+      Psi_Out : out Integer; Phi_Out : out Integer; Error_Out : out Error_Type);
+
+   -- ========================================================================
+   -- 5. INTERFACE IA (ENRICHIE)
+   -- ========================================================================
+   procedure IA_Query
+     (Question : in String; Response : out String; Confidence : out Confidence_Type);
+
+   -- ========================================================================
+   -- 6. TESTS EXTRÊMES
+   -- ========================================================================
+   type Stress_Test_Type is (Test_SEU, Test_Laser, Test_EMP, Test_Thermal,
+                             Test_Clock_Glitch, Test_Power_Surge,
+                             Test_Data_Corruption, Test_Phi_Drift,
+                             Test_Psi_Drift, Test_Multi_Attack);
+
+   type Stress_Test_Result is record
+      Passed : Boolean := False;
+      Detection_Time : Integer := 0; -- ns
+      Checksum : Integer range 0 .. 9 := 9;
+   end record;
+
+   procedure Run_Stress_Test (Test : in Stress_Test_Type; Result : out Stress_Test_Result);
+
+   -- ========================================================================
+   -- 7. SIMULATION COMPLÈTE
+   -- ========================================================================
+   type V15_2_Result is record
+      Surface_Temp : Temp_Type := 0;
+      Stability : Integer := 0;
+      Calibration_Error : Error_Type := 0;
+      Physical_Alert : Boolean := False;
+      Checksum : Integer range 0 .. 9 := 9;
+   end record;
+
+   procedure Run_Simulation_V15_2 (Result : out V15_2_Result);
+
+end V15_2_Hardware_Hardened;
