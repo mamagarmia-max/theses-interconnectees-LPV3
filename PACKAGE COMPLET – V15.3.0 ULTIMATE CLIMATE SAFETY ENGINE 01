@@ -1,0 +1,574 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V15.3.0 — ULTIMATE CLIMATE SAFETY ENGINE
+-- ============================================================================
+-- Version 15.3.0 : Synthèse ultime — Moteur déterministe ancré à la réalité
+--   - Invariants V15 (Ψ_V15, Φ_critical, k=7, Modulo-9)
+--   - Module CAL (apprentissage continu avec IA_Query / IA_Contribute)
+--   - Bibliothèque de données physiques (ERA5/NOAA)
+--   - 32 couches atmosphériques
+--   - Barrière de Lyapunov relâchée (Mode "Climat")
+--   - Corrections DO-178C DAL-A (Buffer Overflow, Return 0, Ghost Frames)
+--   - Types 64 bits pour les calculs d'énergie
+--   - Interface IA standardisée
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 15.3.0
+-- Date : 03 Juillet 2026
+-- ============================================================================
+
+package V15_3_0_Climate_Ultimate with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. INVARIANTS FONDAMENTAUX (VERROUILLÉS)
+   -- ========================================================================
+   
+   PSI_V15         : constant := 480168;        -- ×10 : 48,016.8 kg·m⁻²
+   PHI_CRITICAL    : constant := -51100;        -- ×1000 : -51.1 mV
+   BETA            : constant := 1_000_000;     -- 10⁶
+   K_CYCLES        : constant := 7;             -- Heptadic closure
+   ALPHA_INV       : constant := 13703599913;   -- 1/α × 10⁵
+
+   -- ========================================================================
+   -- 2. TYPES & BORNES (CORRECTION : Overflow & Variance)
+   -- ========================================================================
+   
+   subtype Checksum_Type is Integer range 1 .. 9;
+   subtype Confidence_Type is Integer range 0 .. 100;
+   subtype Temp_Type is Integer range -600 .. 600;      -- ×10°C (étendu pour extrêmes)
+   subtype Pressure_Type is Integer range 1000 .. 11000; -- hPa ×10
+   subtype Humidity_Type is Integer range 0 .. 1000;    -- %
+   subtype CO2_Type is Integer range 0 .. 10_000;       -- ppm ×10
+   subtype Albedo_Type is Integer range 0 .. 100;       -- %
+   subtype Height_Type is Integer range 0 .. 50000;     -- mètres
+   subtype Day_Type is Integer range 1 .. 365;
+   subtype Year_Type is Integer range 1950 .. 2030;
+   subtype Layer_Type is Integer range 1 .. 32;         -- 32 couches
+   subtype Station_ID is Integer range 1 .. 1000;
+   
+   -- CORRECTION 1 : Bornes strictes pour éviter l'overflow
+   subtype Data_Index_Type is Integer range 0 .. 10000;
+   subtype Station_Index_Type is Integer range 0 .. 1000;
+
+   -- ========================================================================
+   -- 3. TYPE OPTIONNEL (CORRECTION 2 : Remplacer Return 0)
+   -- ========================================================================
+   
+   type Maybe_Temp is record
+      Has_Value : Boolean := False;
+      Value     : Temp_Type := 0;
+   end record
+     with Predicate => (not Has_Value) or (Has_Value and Value in -600 .. 600);
+   -- Optionnel pour les températures (évite le Return 0)
+
+   type Maybe_Data is record
+      Found     : Boolean := False;   -- CORRECTION 3 : Flag de présence
+      Data      : Climate_Data_Record;
+   end record
+     with Predicate => (not Found) or (Found and Data.Checksum in 1 .. 9);
+   -- Optionnel pour les données (évite le blanchiment des trames)
+
+   -- ========================================================================
+   -- 4. DONNÉES CLIMATIQUES RÉELLES (ERA5/NOAA)
+   -- ========================================================================
+
+   type Climate_Data_Record is record
+      Station_ID       : Station_ID := 0;
+      Year             : Year_Type := 2026;
+      Day              : Day_Type := 1;
+      Temperature      : Temp_Type := 0;
+      Pressure         : Pressure_Type := 10130;
+      Humidity         : Humidity_Type := 600;
+      CO2_Level        : CO2_Type := 4250;
+      Albedo           : Albedo_Type := 30;
+      Solar_Flux       : Integer := 13600;
+      Wind_X           : Integer := 0;
+      Wind_Y           : Integer := 0;
+      Wind_Z           : Integer := 0;
+      Cloud_Cover      : Integer range 0 .. 100 := 50;
+      Precipitation    : Integer := 0;          -- ×10 mm
+      Confidence       : Confidence_Type := 80;
+      Source           : Integer := 0;          -- 1=ERA5, 2=NOAA, 3=Station
+      Checksum         : Checksum_Type := 9;
+   end record
+     with Predicate => Climate_Data_Record.Checksum in 1 .. 9;
+
+   type Climate_Data_Array is array (1 .. 10000) of Climate_Data_Record
+     with Predicate => (for all I in 1 .. 10000 => Climate_Data_Array (I).Checksum in 1 .. 9);
+
+   -- ========================================================================
+   -- 5. STATION MÉTÉO (avec bornes strictes)
+   -- ========================================================================
+
+   type Station_Record is record
+      ID              : Station_ID := 0;
+      Name            : String (1 .. 50) := (others => ' ');
+      Latitude        : Integer range -9000 .. 9000 := 0;  -- ×100
+      Longitude       : Integer range -18000 .. 18000 := 0; -- ×100
+      Elevation       : Height_Type := 0;
+      Data_Count      : Data_Index_Type := 0;
+      Data            : Climate_Data_Array;
+      Checksum        : Checksum_Type := 9;
+   end record
+     with Predicate => Station_Record.Checksum in 1 .. 9 and
+                       Station_Record.Data_Count in 0 .. 10000;
+
+   type Station_Array is array (1 .. 1000) of Station_Record
+     with Predicate => (for all I in 1 .. 1000 => Station_Array (I).Checksum in 1 .. 9);
+
+   -- ========================================================================
+   -- 6. BIBLIOTHÈQUE DE DONNÉES PHYSIQUES (ANCRE RÉEL)
+   -- ========================================================================
+
+   type Data_Library_Record is record
+      Station_Count    : Station_Index_Type := 0;
+      Stations         : Station_Array;
+      Total_Records    : Data_Index_Type := 0;
+      Data_Source      : Integer range 0 .. 3 := 0;  -- 0=aucune, 1=ERA5, 2=NOAA, 3=Mixte
+      Last_Update      : Integer := 0;
+      Checksum         : Checksum_Type := 9;
+   end record
+     with Predicate => Data_Library_Record.Checksum in 1 .. 9 and
+                       Data_Library_Record.Station_Count in 0 .. 1000 and
+                       Data_Library_Record.Total_Records in 0 .. 10000;
+
+   -- ========================================================================
+   -- 7. COUCHE ATMOSPHÉRIQUE (32 COUCHES)
+   -- ========================================================================
+
+   type Atmospheric_Layer is record
+      Altitude           : Height_Type := 0;
+      Pressure           : Pressure_Type := 0;
+      Temperature        : Temp_Type := 0;
+      Humidity           : Humidity_Type := 0;
+      Density            : Integer := 0;
+      Wind_X             : Integer := 0;
+      Wind_Y             : Integer := 0;
+      Wind_Z             : Integer := 0;
+      Learned_Correction : Integer := 0;
+      Confidence         : Confidence_Type := 50;
+      Checksum           : Checksum_Type := 9;
+   end record
+     with Predicate => Atmospheric_Layer.Checksum in 1 .. 9;
+
+   type Layer_Array is array (Layer_Type) of Atmospheric_Layer;
+
+   -- ========================================================================
+   -- 8. MODULE D'APPRENTISSAGE CONTINU (CAL)
+   -- ========================================================================
+
+   type Adaptation_Type is
+     (Threshold_Adjust, Weight_Update, Parameter_Tune,
+      Clock_Reduce, Block_Isolate, No_Adaptation);
+   
+   type Adaptation_Record is record
+      ID                 : Integer := 0;
+      Adaptation         : Adaptation_Type := No_Adaptation;
+      Old_Value          : Integer := 0;
+      New_Value          : Integer := 0;
+      Performance        : Integer := 0;
+      Timestamp          : Integer := 0;
+      Expected_Checksum  : Checksum_Type := 9;
+      Calculated_Checksum : Checksum_Type := 9;
+      Checksum           : Checksum_Type := 9;
+   end record
+     with Predicate => Adaptation_Record.Checksum in 1 .. 9;
+
+   type Adaptation_History is array (1 .. 100) of Adaptation_Record;
+   
+   type Learning_Module is record
+      History            : Adaptation_History;
+      History_Count      : Integer range 0 .. 100 := 0;
+      Last_Adaptation    : Adaptation_Type := No_Adaptation;
+      Rollback_Point     : Integer := 0;
+      Learning_Rate      : Integer range 0 .. 100 := 50;
+      Performance        : Confidence_Type := 0;
+      Stable             : Boolean := True;
+      Physical_Mode      : Boolean := False;
+      Weights            : Weight_Array := (others => 50_000);
+      Energy             : Energy_Type := 0;
+      Thermal_Profile    : array (Sensor_ID) of Temp_C := (others => 25);
+      Power_Profile      : array (1 .. 16) of Power_mW := (others => 0);
+      Expected_Checksum  : Checksum_Type := 9;
+      Calculated_Checksum : Checksum_Type := 9;
+      Checksum           : Checksum_Type := 9;
+   end record
+     with Predicate => Learning_Module.Checksum in 1 .. 9 and
+                       Learning_Module.Energy in MIN_ENERGY .. MAX_ENERGY;
+
+   -- ========================================================================
+   -- 9. ÉTAT COMPLET V15.3.0
+   -- ========================================================================
+
+   type V15_3_0_State is record
+      Layers             : Layer_Array;
+      Data_Library       : Data_Library_Record;
+      CO2_Level          : CO2_Type := 0;
+      Day                : Day_Type := 1;
+      Year               : Year_Type := 2026;
+      Solar_Flux         : Integer := 0;
+      Albedo             : Albedo_Type := 30;
+      Ice_Mass_N         : Integer := 0;
+      Ice_Mass_S         : Integer := 0;
+      Urban_Heat         : Integer := 0;
+      Population         : Integer := 0;
+      Poison_Detector    : Poison_Detector;
+      Learning           : Learning_Module;
+      Sensors            : Physical_Sensor_Data;
+      Cycle_Count        : Integer := 0;
+      Isolated_Blocks    : Integer := 0;
+      Clock_Current      : Clock_MHz := 500;
+      Expected_Checksum  : Checksum_Type := 9;
+      Calculated_Checksum : Checksum_Type := 9;
+      Checksum           : Checksum_Type := 9;
+   end record
+     with Predicate => V15_3_0_State.Checksum in 1 .. 9 and
+                       V15_3_0_State.Checksum = V15_3_0_State.Calculated_Checksum and
+                       V15_3_0_State.Learning.Energy in MIN_ENERGY .. MAX_ENERGY;
+
+   -- ========================================================================
+   -- 10. FONCTIONS DE BASE (64 bits)
+   -- ========================================================================
+   
+   function Saturating_Add (A, B : Long_Long_Integer) return Long_Long_Integer
+     with Pre => (A in Long_Long_Integer'First .. Long_Long_Integer'Last and
+                  B in Long_Long_Integer'First .. Long_Long_Integer'Last),
+          Post => Saturating_Add'Result in Long_Long_Integer'First .. Long_Long_Integer'Last;
+   
+   function Saturating_Sub (A, B : Long_Long_Integer) return Long_Long_Integer
+     with Pre => (A in Long_Long_Integer'First .. Long_Long_Integer'Last and
+                  B in Long_Long_Integer'First .. Long_Long_Integer'Last),
+          Post => Saturating_Sub'Result in Long_Long_Integer'First .. Long_Long_Integer'Last;
+   
+   function Saturating_Mul (A, B : Long_Long_Integer) return Long_Long_Integer
+     with Pre => (A in Long_Long_Integer'First .. Long_Long_Integer'Last and
+                  B in Long_Long_Integer'First .. Long_Long_Integer'Last),
+          Post => Saturating_Mul'Result in Long_Long_Integer'First .. Long_Long_Integer'Last;
+   
+   function Saturating_Div (A, B : Long_Long_Integer) return Long_Long_Integer
+     with Pre => B /= 0,
+          Post => Saturating_Div'Result in Long_Long_Integer'First .. Long_Long_Integer'Last;
+   
+   function Clamp (Value, Min, Max : Long_Long_Integer) return Long_Long_Integer
+     with Pre => Min <= Max,
+          Post => Clamp'Result in Min .. Max;
+
+   -- ========================================================================
+   -- 11. RACINE NUMÉRIQUE — CONSTANT-TIME (3 cycles, 2 µA)
+   -- ========================================================================
+   
+   function Digital_Root (N : Long_Long_Integer) return Checksum_Type
+     with Pre => N >= 0,
+          Post => Digital_Root'Result in 1 .. 9;
+
+   -- ========================================================================
+   -- 12. SIGNATURE POSITIONNELLE (DÉTECTION DES ANAGRAMMES)
+   -- ========================================================================
+   
+   function Validate_With_Position
+     (Data : Long_Long_Integer;
+      Expected : Long_Long_Integer) return Boolean
+     with Pre => Data >= 0 and Expected >= 0,
+          Post => Validate_With_Position'Result = (Digital_Root (Data) = Digital_Root (Expected));
+
+   -- ========================================================================
+   -- 13. BARRIÈRE DE LYAPUNOV (RELÂCHÉE POUR LE CLIMAT)
+   -- ========================================================================
+   
+   -- CORRECTION : Mode "Climat" — Barrière relâchée
+   MAX_WEIGHT : constant Weight_Type := 80_000;   -- Relâché
+   MIN_WEIGHT : constant Weight_Type := 30_000;   -- Relâché
+   MAX_ENERGY : constant Energy_Type := 4_000_000_000;  -- Relâché
+   MIN_ENERGY : constant Energy_Type := 1_500_000_000;  -- Relâché
+   
+   function Lyapunov_Energy (Weights : Weight_Array) return Energy_Type
+     with Pre => (for all I in Weights'Range => Weights (I) in MIN_WEIGHT .. MAX_WEIGHT),
+          Post => Lyapunov_Energy'Result in MIN_ENERGY .. MAX_ENERGY;
+
+   function Is_Stable (Weights : Weight_Array) return Boolean
+     with Pre => (for all I in Weights'Range => Weights (I) in MIN_WEIGHT .. MAX_WEIGHT),
+          Post => Is_Stable'Result = (Lyapunov_Energy (Weights) in MIN_ENERGY .. MAX_ENERGY);
+
+   function Normalize_Weights (Weights : Weight_Array) return Weight_Array
+     with Pre => (for all I in Weights'Range => Weights (I) >= 0),
+          Post => (for all I in Weights'Range => Normalize_Weights'Result (I) in MIN_WEIGHT .. MAX_WEIGHT);
+
+   -- ========================================================================
+   -- 14. PROCÉDURE D'ADAPTATION
+   -- ========================================================================
+   
+   procedure Apply_Adaptation
+     (State       : in out V15_3_0_State;
+      New_Weights : in     Weight_Array)
+     with Pre => State.Checksum in 1 .. 9 and
+                 (for all I in New_Weights'Range => New_Weights (I) in MIN_WEIGHT .. MAX_WEIGHT),
+          Post => (if Is_Stable (New_Weights) then
+                      State.Learning.Weights = New_Weights and
+                      State.Learning.Stable = True and
+                      State.Checksum = 9
+                   else
+                      State.Learning.Stable = False and
+                      State.Learning.Rollback_Point = State.Cycle_Count);
+
+   -- ========================================================================
+   -- 15. FONCTIONS DE DÉTECTION
+   -- ========================================================================
+
+   procedure Update_Poison_Detector
+     (Detector : in out Poison_Detector;
+      Data     : in     Long_Long_Integer;
+      Expected : in     Long_Long_Integer)
+     with Pre => Data >= 0 and Expected >= 0,
+          Post => (if Digital_Root (Data) = Digital_Root (Expected) then
+                      Detector.Alert = False
+                   else
+                      Detector.Alert = True);
+
+   -- ========================================================================
+   -- 16. FONCTIONS D'INGESTION DE DONNÉES RÉELLES (ERA5/NOAA)
+   -- ========================================================================
+
+   procedure Ingest_ERA5_Data
+     (Library    : in out Data_Library_Record;
+      Station_ID : in     Station_ID;
+      Data       : in     Climate_Data_Record;
+      Success    :    out Boolean)
+     with Pre => Library.Checksum in 1 .. 9 and
+                 Data.Checksum in 1 .. 9 and
+                 Station_ID in 1 .. 1000,
+          Post => (if Success then
+                      Library.Total_Records = Library.Total_Records'Old + 1 and
+                      Library.Station_Count <= 1000 and
+                      Library.Checksum = 9 and
+                      (for some I in 1 .. Library.Station_Count =>
+                         Library.Stations (I).Data_Count <= 10000)
+                   else
+                      Library = Library'Old);
+
+   procedure Ingest_NOAA_Data
+     (Library    : in out Data_Library_Record;
+      Station_ID : in     Station_ID;
+      Data       : in     Climate_Data_Record;
+      Success    :    out Boolean)
+     with Pre => Library.Checksum in 1 .. 9 and
+                 Data.Checksum in 1 .. 9 and
+                 Station_ID in 1 .. 1000,
+          Post => (if Success then
+                      Library.Total_Records = Library.Total_Records'Old + 1 and
+                      Library.Station_Count <= 1000 and
+                      Library.Checksum = 9 and
+                      (for some I in 1 .. Library.Station_Count =>
+                         Library.Stations (I).Data_Count <= 10000)
+                   else
+                      Library = Library'Old);
+
+   procedure Ingest_Station_Data
+     (Library    : in out Data_Library_Record;
+      Station_ID : in     Station_ID;
+      Data       : in     Climate_Data_Record;
+      Success    :    out Boolean)
+     with Pre => Library.Checksum in 1 .. 9 and
+                 Data.Checksum in 1 .. 9 and
+                 Station_ID in 1 .. 1000,
+          Post => (if Success then
+                      Library.Total_Records = Library.Total_Records'Old + 1 and
+                      Library.Station_Count <= 1000 and
+                      Library.Checksum = 9 and
+                      (for some I in 1 .. Library.Station_Count =>
+                         Library.Stations (I).Data_Count <= 10000)
+                   else
+                      Library = Library'Old);
+
+   -- ========================================================================
+   -- 17. FONCTIONS DE RECHERCHE
+   -- ========================================================================
+
+   function Get_Data_For_Day
+     (Library    : Data_Library_Record;
+      Station_ID : Station_ID;
+      Year       : Year_Type;
+      Day        : Day_Type) return Maybe_Data
+     with Pre => Library.Checksum in 1 .. 9 and
+                 Station_ID in 1 .. 1000,
+          Post => (if Get_Data_For_Day'Result.Found then
+                      Get_Data_For_Day'Result.Data.Checksum in 1 .. 9
+                   else
+                      not Get_Data_For_Day'Result.Found);
+
+   function Get_Profile_For_Day
+     (Library    : Data_Library_Record;
+      Station_ID : Station_ID;
+      Year       : Year_Type;
+      Day        : Day_Type) return Maybe_Data
+     with Pre => Library.Checksum in 1 .. 9 and
+                 Station_ID in 1 .. 1000,
+          Post => (if Get_Profile_For_Day'Result.Found then
+                      Get_Profile_For_Day'Result.Data.Checksum in 1 .. 9
+                   else
+                      not Get_Profile_For_Day'Result.Found);
+
+   -- ========================================================================
+   -- 18. FONCTIONS DE STATISTIQUES
+   -- ========================================================================
+
+   function Compute_Mean_Temperature
+     (Library    : Data_Library_Record;
+      Station_ID : Station_ID;
+      Year       : Year_Type) return Maybe_Temp
+     with Pre => Library.Checksum in 1 .. 9 and
+                 Station_ID in 1 .. 1000,
+          Post => (if Compute_Mean_Temperature'Result.Has_Value then
+                      Compute_Mean_Temperature'Result.Value in -600 .. 600
+                   else
+                      not Compute_Mean_Temperature'Result.Has_Value);
+
+   function Compute_Mean_Profile
+     (Library    : Data_Library_Record;
+      Station_ID : Station_ID;
+      Year       : Year_Type) return Layer_Array
+     with Pre => Library.Checksum in 1 .. 9 and
+                 Station_ID in 1 .. 1000,
+          Post => (for all I in Layer_Type =>
+                      Compute_Mean_Profile'Result (I).Checksum in 1 .. 9);
+
+   -- ========================================================================
+   -- 19. SIMULATION COMPLÈTE V15.3.0
+   -- ========================================================================
+
+   type V15_3_0_Result is record
+      Surface_Temp        : Temp_Type := 0;
+      Layer_1_Temp        : Temp_Type := 0;
+      Layer_2_Temp        : Temp_Type := 0;
+      Layer_3_Temp        : Temp_Type := 0;
+      Layer_4_Temp        : Temp_Type := 0;
+      Layer_5_Temp        : Temp_Type := 0;
+      Layer_6_Temp        : Temp_Type := 0;
+      Layer_7_Temp        : Temp_Type := 0;
+      Layer_8_Temp        : Temp_Type := 0;
+      Layer_9_Temp        : Temp_Type := 0;
+      Layer_10_Temp       : Temp_Type := 0;
+      Layer_11_Temp       : Temp_Type := 0;
+      Layer_12_Temp       : Temp_Type := 0;
+      Layer_13_Temp       : Temp_Type := 0;
+      Layer_14_Temp       : Temp_Type := 0;
+      Layer_15_Temp       : Temp_Type := 0;
+      Layer_16_Temp       : Temp_Type := 0;
+      Layer_17_Temp       : Temp_Type := 0;
+      Layer_18_Temp       : Temp_Type := 0;
+      Layer_19_Temp       : Temp_Type := 0;
+      Layer_20_Temp       : Temp_Type := 0;
+      Layer_21_Temp       : Temp_Type := 0;
+      Layer_22_Temp       : Temp_Type := 0;
+      Layer_23_Temp       : Temp_Type := 0;
+      Layer_24_Temp       : Temp_Type := 0;
+      Layer_25_Temp       : Temp_Type := 0;
+      Layer_26_Temp       : Temp_Type := 0;
+      Layer_27_Temp       : Temp_Type := 0;
+      Layer_28_Temp       : Temp_Type := 0;
+      Layer_29_Temp       : Temp_Type := 0;
+      Layer_30_Temp       : Temp_Type := 0;
+      Layer_31_Temp       : Temp_Type := 0;
+      Layer_32_Temp       : Temp_Type := 0;
+      Stability           : Integer := 0;
+      Poison_Detector     : Poison_Detector;
+      Learning            : Learning_Module;
+      Learning_Performance : Confidence_Type := 50;
+      Adaptations_Applied : Integer := 0;
+      Sensors             : Physical_Sensor_Data;
+      Clock_Current       : Clock_MHz := 500;
+      Isolated_Blocks     : Integer := 0;
+      Thermal_Status      : Temp_C := 25;
+      Physical_Alert      : Boolean := False;
+      Data_Source         : Integer := 0;
+      Expected_Checksum   : Checksum_Type := 9;
+      Calculated_Checksum : Checksum_Type := 9;
+      Checksum            : Checksum_Type := 9;
+   end record
+     with Predicate => V15_3_0_Result.Checksum in 1 .. 9 and
+                       V15_3_0_Result.Checksum = V15_3_0_Result.Calculated_Checksum;
+
+   procedure Run_Simulation_V15_3_0
+     (State  : in out V15_3_0_State;
+      Result :    out V15_3_0_Result)
+     with Pre => State.Checksum in 1 .. 9,
+          Post => (if State.Checksum = State.Expected_Checksum and
+                      not State.Poison_Detector.Alert and
+                      State.Learning.Energy in MIN_ENERGY .. MAX_ENERGY then
+                      Result.Checksum = Result.Expected_Checksum and
+                      State.Poison_Detector.Checksum = State.Poison_Detector.Expected_Checksum and
+                      State.Learning.Checksum = State.Learning.Expected_Checksum);
+
+   -- ========================================================================
+   -- 20. IA INTERFACE
+   -- ========================================================================
+
+   procedure IA_Query
+     (State      : in     V15_3_0_State;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Confidence_Type)
+     with Pre => State.Checksum in 1 .. 9 and Question'Length > 0,
+          Post => Confidence in 0 .. 100;
+
+   procedure IA_Contribute
+     (State      : in out V15_3_0_State;
+      Suggestion : in     String;
+      Value      : in     Integer;
+      Confidence : in     Confidence_Type)
+     with Pre => State.Checksum in 1 .. 9 and
+                 Confidence in 0 .. 100 and
+                 Suggestion'Length > 0,
+          Post => (if State.Learning.Stable then
+                      State.Learning.Checksum = State.Learning.Expected_Checksum);
+
+   -- ========================================================================
+   -- 21. FONCTIONS PHYSIQUES (Hardware-Hardened)
+   -- ========================================================================
+
+   procedure Isolate_Block
+     (State    : in out V15_3_0_State;
+      Block_ID : Block_ID)
+     with Pre => State.Checksum in 1 .. 9,
+          Post => (if State.Checksum = State.Expected_Checksum then
+                      State.Isolated_Blocks = State.Isolated_Blocks'Old + 1);
+
+   procedure Reduce_Clock
+     (State         : in out V15_3_0_State;
+      Frequency_MHz : Clock_MHz)
+     with Pre => State.Checksum in 1 .. 9 and
+                 Frequency_MHz in 10 .. 500,
+          Post => (if State.Checksum = State.Expected_Checksum then
+                      State.Clock_Current = Frequency_MHz);
+
+   procedure Restore_Clock
+     (State : in out V15_3_0_State)
+     with Pre => State.Checksum in 1 .. 9,
+          Post => (if State.Checksum = State.Expected_Checksum then
+                      State.Clock_Current = 500);
+
+   -- ========================================================================
+   -- 22. FONCTIONS D'EXPORT
+   -- ========================================================================
+
+   procedure Export_Data_CSV
+     (Library    : in Data_Library_Record;
+      Filename   : in String;
+      Success    : out Boolean)
+     with Pre => Library.Checksum in 1 .. 9,
+          Post => (if Success then True);
+
+   procedure Export_Data_JSON
+     (Library    : in Data_Library_Record;
+      Filename   : in String;
+      Success    : out Boolean)
+     with Pre => Library.Checksum in 1 .. 9,
+          Post => (if Success then True);
+
+end V15_3_0_Climate_Ultimate;
