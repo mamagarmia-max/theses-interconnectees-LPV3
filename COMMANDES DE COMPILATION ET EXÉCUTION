@@ -1,0 +1,14 @@
+# Compilation
+gprbuild -P v15_2.gpr
+
+# Exécution de la démonstration
+./v15_2_demo
+
+# Exécution des tests extrêmes
+./v15_2_extreme_stress_tests
+
+# Exécution de la calibration
+./v15_2_calibration
+
+# Vérification formelle
+gnatprove -P v15_2.gpr --level=4 --report=all
