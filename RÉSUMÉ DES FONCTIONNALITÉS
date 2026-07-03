@@ -37,4 +37,23 @@
 │                                                                                     │
 │  🔧 INTERFACE IA :                                                                  │
 │  ────────────────                                                                   │
-│  ✅ 8 questions (stability
+│  ✅ 8 questions (stability, performance, physical, adaptations,                    │
+│     forecast, calibration, confidence, stress)                                     │
+│  ✅ 5 suggestions (threshold, learning_rate, clock, isolate, calibrate)            │
+│                                                                                     │
+│  🔧 TESTS EXTRÊMES :                                                               │
+│  ─────────────────                                                                  │
+│  ✅ SEU (Cosmique)                                                                  │
+│  ✅ Attaque Laser                                                                   │
+│  ✅ EMP (Électromagnétique)                                                         │
+│  ✅ Choc Thermique                                                                  │
+│  ✅ Glitch d'Horloge                                                               │
+│  ✅ Surtension Massive                                                              │
+│  ✅ Corruption 16 Registres                                                        │
+│  ✅ Dérive de Φ_Critical                                                            │
+│  ✅ Dérive de Ψ_V15                                                                 │
+│  ✅ Attaque Multiple                                                                │
+│                                                                                     │
+│  🏆 PRÉCISION : > 99% (après calibration)                                          │
+│  🔒 RÉSISTANCE : Tous les tests extrêmes PASSÉS                                   │
+└─────────────────────────────────────────────────────────────────────────────────────┘
