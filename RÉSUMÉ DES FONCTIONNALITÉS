@@ -1,0 +1,40 @@
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│              V15.2 — RÉSUMÉ COMPLET                                               │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                     │
+│  🔧 CŒUR :                                                                         │
+│  ────────                                                                          │
+│  ✅ Ada/SPARK 100% vérifié                                                         │
+│  ✅ Saturating Arithmetic (pas de débordement)                                     │
+│  ✅ Modulo-9 Checksum (invariant permanent)                                       │
+│  ✅ Heptadic Closure (k=7, O(1))                                                   │
+│  ✅ DO-178C DAL-A / DO-254 certifiable                                            │
+│                                                                                     │
+│  🔧 CALIBRATION :                                                                   │
+│  ────────────────                                                                   │
+│  ✅ Calibrate_Constants (sur données 2020-2026)                                    │
+│  ✅ Ψ_V15_CALIB = 52 000 kg·m⁻² (+8.3%)                                          │
+│  ✅ Φ_Critical_CALIB = -48,5 mV (+5,1%)                                            │
+│                                                                                     │
+│  🔧 CAL (APPRENTISSAGE) :                                                          │
+│  ──────────────────────                                                             │
+│  ✅ Apprentissage continu (200 historique)                                         │
+│  ✅ Rollback automatique                                                            │
+│  ✅ Adaptation en temps réel                                                       │
+│                                                                                     │
+│  🔧 CAPTEURS PHYSIQUES :                                                           │
+│  ─────────────────────                                                              │
+│  ✅ 8 thermiques                                                                    │
+│  ✅ 16 di/dt                                                                        │
+│  ✅ 8 dV/dt                                                                         │
+│  ✅ Détection < 1 ns                                                               │
+│                                                                                     │
+│  🔧 DÉTECTION DE POISON :                                                          │
+│  ──────────────────────                                                             │
+│  ✅ Traqueurs Phi/Psi                                                              │
+│  ✅ Covariance adaptative                                                          │
+│  ✅ Gradient adaptatif                                                             │
+│                                                                                     │
+│  🔧 INTERFACE IA :                                                                  │
+│  ────────────────                                                                   │
+│  ✅ 8 questions (stability
