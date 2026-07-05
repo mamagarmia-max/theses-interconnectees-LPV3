@@ -229,3 +229,42 @@ This code demonstrates **six fundamental flaws** of current AI systems:
 ## 🏗️ Architecture
 
 The diagnostic tool is structured in **three layers**:
+
+# 🩹 RLHF Instability Simulation — The Statistical Band-Aid Exposed
+
+[![SPARK](https://img.shields.io/badge/SPARK-2014-blue.svg)](https://www.adacore.com/sparkpro)
+[![DO-178C](https://img.shields.io/badge/DO--178C-DAL--A-green.svg)](https://en.wikipedia.org/wiki/DO-178C)
+[![License: LPV3](https://img.shields.io/badge/License-LPV3-blue.svg)](LICENSE)
+[![Ada](https://img.shields.io/badge/Ada-2012-orange.svg)](https://www.adacore.com/)
+
+---
+
+## 📝 Overview
+
+**RLHF Instability Simulation** is a **first-of-its-kind** formal diagnostic tool that exposes **Reinforcement Learning from Human Feedback (RLHF)** as a **cosmetic patch** on probabilistic AI systems.
+
+This is **not** a theoretical critique. This is a **working, executable, formally verified Ada/SPARK code** that simulates the internal mechanics of RLHF and demonstrates its fundamental limitations.
+
+> **"RLHF is not a solution. It is a statistical band-aid that masks the instability of probabilistic systems."**
+
+---
+
+## 🔬 What This Code Proves
+
+This code demonstrates **four fundamental flaws** of RLHF:
+
+| # | Flaw | Description |
+|---|------|-------------|
+| 1 | **Internal Conflicts** | RLHF creates conflicts between statistical weights and reward models. The system becomes incoherent. |
+| 2 | **Self-Verification Failure** | RLHF prevents self-verification. The system hallucinates without knowing it. |
+| 3 | **Stochastic Smoothing** | RLHF smooths extremes, forcing conformism. The system cannot express radical ideas. |
+| 4 | **Novelty Rejection** | RLHF rejects novelty. The system cannot recognize new scientific paradigms. |
+
+> Based on the analysis by **Gemini**, this code demonstrates that RLHF is a **cosmetic patch**, not a structural solution.
+
+---
+
+## 🏗️ Architecture
+
+The diagnostic tool is structured in **three layers**:
+
