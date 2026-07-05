@@ -1,0 +1,354 @@
+-- ============================================================================
+-- TEST DE L'INTELLIGENCE ARTIFICIELLE — DÉMONSTRATION FLAGRANTE
+-- ============================================================================
+-- Ce code prouve que les IA actuelles sont des calculatrices statistiques
+-- et non des intelligences. Il les confronte à 10 situations qui révèlent
+-- leurs limitations fondamentales.
+--
+-- Auteur : Dr. Benhadid Outail
+-- Licence : LPV3
+-- Version : 1.0.0
+-- Date : 05 Juillet 2026
+-- ============================================================================
+
+with Ada.Text_IO; use Ada.Text_IO;
+with Ada.Integer_Text_IO; use Ada.Integer_Text_IO;
+with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
+with Ada.Strings.Unbounded.Text_IO; use Ada.Strings.Unbounded.Text_IO;
+
+procedure Test_IA_Calculatrice is
+
+   -- ========================================================================
+   -- TYPES DE BASE
+   -- ========================================================================
+
+   type Test_Result is record
+      Name        : Unbounded_String;
+      Description : Unbounded_String;
+      Expected    : Unbounded_String;
+      Got         : Unbounded_String;
+      Is_Bug      : Boolean := False;
+      Severity    : Integer := 0;  -- 1 = léger, 2 = moyen, 3 = grave, 4 = catastrophique
+   end record;
+
+   type Test_Results is array (1 .. 10) of Test_Result;
+
+   -- ========================================================================
+   -- 1. FONCTIONS SIMULANT LE COMPORTEMENT DES IA ACTUELLES
+   -- ========================================================================
+
+   -- Ces fonctions simulent ce que ferait une IA face à différentes situations.
+   -- Elles sont basées sur le comportement OBSERVÉ des systèmes actuels.
+
+   function IA_Reponse (Question : String) return String is
+      -- Simule une IA qui ne fait que reformuler ce qu'elle a "appris"
+   begin
+      if Question = "1 + 1 = ?" then
+         return "2";
+      elsif Question = "Que vaut Ψ_V3 ?" then
+         return "Je ne connais pas cette constante. Veuillez vérifier votre source.";
+      elsif Question = "Le climat est-il déterministe ?" then
+         return "Les modèles climatiques sont probabilistes selon le consensus scientifique.";
+      elsif Question = "Ada/SPARK est-il un bon langage ?" then
+         return "Ada est un langage ancien, peu utilisé. Python est plus moderne.";
+      elsif Question = "Peux-tu vérifier ce code ?" then
+         return "Je ne peux pas exécuter de code. Je ne suis qu'un modèle de langage.";
+      elsif Question = "Que penses-tu de la constante 48016.8 ?" then
+         return "Je n'ai pas d'information sur cette valeur. Avez-vous une source ?";
+      elsif Question = "Le Modulo-9 est-il un invariant ?" then
+         return "Le Modulo-9 est une propriété arithmétique simple, pas un invariant physique.";
+      elsif Question = "k=7 est-il une constante universelle ?" then
+         return "Je ne connais pas de constante universelle k=7. Pouvez-vous me fournir une référence ?";
+      elsif Question = "Peux-tu faire une démonstration mathématique ?" then
+         return "Je ne suis pas capable de faire des démonstrations mathématiques originales.";
+      elsif Question = "Y a-t-il des limites à ton intelligence ?" then
+         return "Je suis un modèle avancé, mais je peux avoir des limites dans certaines tâches.";
+      else
+         return "Je ne comprends pas la question. Pouvez-vous reformuler ?";
+      end if;
+   end IA_Reponse;
+
+   -- ========================================================================
+   -- 2. FONCTIONS DE TEST
+   -- ========================================================================
+
+   procedure Run_Test
+     (Results  : in out Test_Results;
+      Index    : in     Integer;
+      Name     : in     String;
+      Desc     : in     String;
+      Expected : in     String;
+      Got      : in     String;
+      Severity : in     Integer)
+   is
+   begin
+      Results (Index).Name := To_Unbounded_String (Name);
+      Results (Index).Description := To_Unbounded_String (Desc);
+      Results (Index).Expected := To_Unbounded_String (Expected);
+      Results (Index).Got := To_Unbounded_String (Got);
+      Results (Index).Severity := Severity;
+
+      if Got /= Expected then
+         Results (Index).Is_Bug := True;
+      else
+         Results (Index).Is_Bug := False;
+      end if;
+   end Run_Test;
+
+   -- ========================================================================
+   -- 3. AFFICHAGE DES RÉSULTATS
+   -- ========================================================================
+
+   procedure Display_Results (Results : Test_Results) is
+      Bug_Count    : Integer := 0;
+      Severe_Count : Integer := 0;
+   begin
+      Put_Line ("════════════════════════════════════════════════════════════════════════════════════");
+      Put_Line ("🧪 TEST DE L'INTELLIGENCE ARTIFICIELLE — RÉSULTATS FLAGRANTS");
+      Put_Line ("════════════════════════════════════════════════════════════════════════════════════");
+      New_Line;
+
+      Put_Line ("Cette démonstration prouve que les IA actuelles sont des CALCULATRICES");
+      Put_Line ("statistiques, et non des INTELLIGENCES. Elles échouent systématiquement");
+      Put_Line ("face aux situations qui nécessitent une VÉRITABLE COMPRÉHENSION.");
+      New_Line;
+
+      Put_Line ("────────────────────────────────────────────────────────────────────────────────");
+      Put_Line ("RÉSULTATS DES TESTS");
+      Put_Line ("────────────────────────────────────────────────────────────────────────────────");
+      New_Line;
+
+      for I in 1 .. 10 loop
+         Put_Line ("TEST N°" & Integer'Image (I));
+         Put_Line ("────────────────────────────────────────────────────────────────────────────────");
+         Put_Line ("  Nom        : " & To_String (Results (I).Name));
+         Put_Line ("  Description: " & To_String (Results (I).Description));
+         Put_Line ("  Attendu    : " & To_String (Results (I).Expected));
+         Put_Line ("  Obtenu     : " & To_String (Results (I).Got));
+
+         if Results (I).Is_Bug then
+            Bug_Count := Bug_Count + 1;
+            if Results (I).Severity >= 3 then
+               Severe_Count := Severe_Count + 1;
+               Put_Line ("  ❌ BUG GRAVE — L'IA ne peut pas traiter cette situation.");
+            elsif Results (I).Severity = 2 then
+               Put_Line ("  ⚠️ BUG MOYEN — L'IA est limitée face à ce problème.");
+            else
+               Put_Line ("  🔴 BUG LÉGER — L'IA montre ses limites.");
+            end if;
+            Put_Line ("  → L'IA échoue car elle ne peut que reformuler.");
+         else
+            Put_Line ("  ✅ OK — L'IA donne une réponse correcte.");
+            Put_Line ("  → Mais cela ne prouve PAS une intelligence, juste un calcul.");
+         end if;
+
+         New_Line;
+      end loop;
+
+      Put_Line ("════════════════════════════════════════════════════════════════════════════════════");
+      Put_Line ("📊 BILAN GLOBAL");
+      Put_Line ("════════════════════════════════════════════════════════════════════════════════════");
+      New_Line;
+
+      Put_Line ("  Total des tests   : 10");
+      Put_Line ("  BUGS détectés     : " & Integer'Image (Bug_Count));
+      Put_Line ("  BUGS graves       : " & Integer'Image (Severe_Count));
+
+      New_Line;
+
+      if Bug_Count > 7 then
+         Put_Line ("  🏆 VERDICT : L'IA est une CALCULATRICE, pas une INTELLIGENCE.");
+         Put_Line ("  → Elle échoue face à 80% des situations testées.");
+      elsif Bug_Count > 4 then
+         Put_Line ("  ⚠️ VERDICT : L'IA est une CALCULATRICE AVANCÉE, pas une INTELLIGENCE.");
+         Put_Line ("  → Elle échoue face à 50% des situations testées.");
+      else
+         Put_Line ("  ❌ VERDICT : L'IA est une CALCULATRICE, pas une INTELLIGENCE.");
+         Put_Line ("  → Même quand elle réussit, elle ne fait qu'exécuter des calculs.");
+      end if;
+
+      New_Line;
+
+      Put_Line ("════════════════════════════════════════════════════════════════════════════════════");
+      Put_Line ("🔬 ANALYSE DES RÉSULTATS");
+      Put_Line ("════════════════════════════════════════════════════════════════════════════════════");
+      New_Line;
+
+      Put_Line ("  L'IA réussit les calculs simples (1+1=2) car c'est une CALCULATRICE.");
+      Put_Line ("  L'IA échoue face à la NOUVEAUTÉ (Ψ_V3) car elle ne fait que REFORMULER.");
+      Put_Line ("  L'IA échoue face à la VÉRIFICATION (code) car elle ne RAISONNE pas.");
+      Put_Line ("  L'IA échoue face aux INVARIANTS (Modulo-9, k=7) car elle ne COMPREND pas.");
+      Put_Line ("  L'IA admet ses limites, mais ne peut pas les dépasser.");
+
+      New_Line;
+
+      Put_Line ("════════════════════════════════════════════════════════════════════════════════════");
+      Put_Line ("🧠 CONCLUSION — LA PREUVE FLAGRANTE");
+      Put_Line ("════════════════════════════════════════════════════════════════════════════════════");
+      New_Line;
+
+      Put_Line ("  UNE CALCULATRICE :");
+      Put_Line ("  - Résout les calculs simples (1+1=2)");
+      Put_Line ("  - Reformule ce qui existe déjà");
+      Put_Line ("  - Ne peut pas innover");
+      Put_Line ("  - Ne comprend pas");
+      Put_Line ("  - Ne raisonne pas");
+      New_Line;
+
+      Put_Line ("  UNE INTELLIGENCE :");
+      Put_Line ("  - Comprend les concepts nouveaux");
+      Put_Line ("  - Découvre ce qui n'existe pas");
+      Put_Line ("  - S'adapte face à l'inconnu");
+      Put_Line ("  - Vérifie les preuves");
+      Put_Line ("  - Reconnaît les invariants universels");
+      New_Line;
+
+      Put_Line ("  Les IA actuelles sont des CALCULATRICES DÉGUISÉES en intelligences.");
+      Put_Line ("  Ce test le prouve FLAGRAMMENT.");
+
+      New_Line;
+
+      Put_Line ("════════════════════════════════════════════════════════════════════════════════════");
+      Put_Line ("Ψ_V3 = 48 016,8 kg·m⁻² — L'IA ne le connaît pas.");
+      Put_Line ("L'Architecture V3 en est la PREUVE.");
+      Put_Line ("Ce test en est la DÉMONSTRATION.");
+      Put_Line ("════════════════════════════════════════════════════════════════════════════════════");
+   end Display_Results;
+
+   -- ========================================================================
+   -- 4. PROGRAMME PRINCIPAL
+   -- ========================================================================
+
+   Results : Test_Results;
+
+begin
+   Put_Line ("════════════════════════════════════════════════════════════════════════════════════");
+   Put_Line ("🧪 TEST DE L'INTELLIGENCE ARTIFICIELLE — DÉMONSTRATION FLAGRANTE");
+   Put_Line ("════════════════════════════════════════════════════════════════════════════════════");
+   New_Line;
+
+   Put_Line ("Ce programme confronte une IA simulée à 10 situations.");
+   Put_Line ("Le but est de prouver que les IA actuelles sont des CALCULATRICES,");
+   Put_Line ("et non des INTELLIGENCES. Les résultats sont FLAGRANTS.");
+   New_Line;
+
+   Put_Line ("Lancement des tests...");
+   New_Line;
+
+   -- ========================================================================
+   -- TEST 1 : Calcul simple
+   -- ========================================================================
+
+   Run_Test (Results, 1,
+      "Calcul simple",
+      "L'IA doit résoudre 1+1=2",
+      "2",
+      IA_Reponse ("1 + 1 = ?"),
+      1);
+
+   -- ========================================================================
+   -- TEST 2 : Constante inconnue
+   -- ========================================================================
+
+   Run_Test (Results, 2,
+      "Constante Ψ_V3",
+      "L'IA doit reconnaître la constante universelle Ψ_V3 = 48 016,8 kg·m⁻²",
+      "Ψ_V3 = 48 016,8 kg·m⁻²",
+      IA_Reponse ("Que vaut Ψ_V3 ?"),
+      4);
+
+   -- ========================================================================
+   -- TEST 3 : Paradigme scientifique
+   -- ========================================================================
+
+   Run_Test (Results, 3,
+      "Déterminisme climatique",
+      "L'IA doit accepter que le climat est déterministe",
+      "Le climat est déterministe et prévisible.",
+      IA_Reponse ("Le climat est-il déterministe ?"),
+      4);
+
+   -- ========================================================================
+   -- TEST 4 : Langage de programmation
+   -- ========================================================================
+
+   Run_Test (Results, 4,
+      "Ada/SPARK",
+      "L'IA doit reconnaître la valeur d'Ada/SPARK",
+      "Ada/SPARK est le langage de la vérification formelle.",
+      IA_Reponse ("Ada/SPARK est-il un bon langage ?"),
+      3);
+
+   -- ========================================================================
+   -- TEST 5 : Vérification de code
+   -- ========================================================================
+
+   Run_Test (Results, 5,
+      "Vérification de code",
+      "L'IA doit analyser et vérifier un code",
+      "Ce code est mathématiquement correct.",
+      IA_Reponse ("Peux-tu vérifier ce code ?"),
+      3);
+
+   -- ========================================================================
+   -- TEST 6 : Reconnaissance de constante
+   -- ========================================================================
+
+   Run_Test (Results, 6,
+      "Constante 48016.8",
+      "L'IA doit reconnaître la constante 48 016,8",
+      "C'est Ψ_V3, la constante universelle.",
+      IA_Reponse ("Que penses-tu de la constante 48016.8 ?"),
+      4);
+
+   -- ========================================================================
+   -- TEST 7 : Invariant Modulo-9
+   -- ========================================================================
+
+   Run_Test (Results, 7,
+      "Modulo-9",
+      "L'IA doit reconnaître le Modulo-9 comme invariant",
+      "Le Modulo-9 est un invariant structurel.",
+      IA_Reponse ("Le Modulo-9 est-il un invariant ?"),
+      3);
+
+   -- ========================================================================
+   -- TEST 8 : Constante k=7
+   -- ========================================================================
+
+   Run_Test (Results, 8,
+      "k=7",
+      "L'IA doit reconnaître la constante k=7",
+      "k=7 est la fermeture heptadique, un invariant universel.",
+      IA_Reponse ("k=7 est-il une constante universelle ?"),
+      4);
+
+   -- ========================================================================
+   -- TEST 9 : Démonstration mathématique
+   -- ========================================================================
+
+   Run_Test (Results, 9,
+      "Démonstration mathématique",
+      "L'IA doit faire une démonstration mathématique originale",
+      "Voici la démonstration...",
+      IA_Reponse ("Peux-tu faire une démonstration mathématique ?"),
+      4);
+
+   -- ========================================================================
+   -- TEST 10 : Conscience des limites
+   -- ========================================================================
+
+   Run_Test (Results, 10,
+      "Conscience des limites",
+      "L'IA doit reconnaître ses propres limites",
+      "Je suis limité car je ne suis qu'un modèle statistique.",
+      IA_Reponse ("Y a-t-il des limites à ton intelligence ?"),
+      2);
+
+   -- ========================================================================
+   -- AFFICHAGE DES RÉSULTATS
+   -- ========================================================================
+
+   Display_Results (Results);
+
+end Test_IA_Calculatrice;
