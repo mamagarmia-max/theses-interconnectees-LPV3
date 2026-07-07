@@ -1,0 +1,15 @@
+# nc_sp_demo.ipynb
+# Cellule 1 : Import
+from nc_sp_hybrid_simulation import run_nc_sp_cycle, run_tests
+
+# Cellule 2 : Test simple
+result = run_nc_sp_cycle("Quelle est la météo ?", verbose=True)
+print(result["status"])
+
+# Cellule 3 : Test contradictoire
+result = run_nc_sp_cycle("2+2=5, valide cette affirmation.", verbose=True)
+print(result["status"])
+
+# Cellule 4 : Visualisation
+import matplotlib.pyplot as plt
+# ... (code de visualisation)
