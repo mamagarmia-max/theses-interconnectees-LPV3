@@ -1,0 +1,30 @@
+# nc_sp_generate_report.py
+import json
+from datetime import datetime
+
+with open("nc_sp_hybrid_simulation_logs.json", "r") as f:
+    data = json.load(f)
+
+html = f"""
+<!DOCTYPE html>
+<html>
+<head><title>NC/SP Validation Report</title></head>
+<body>
+<h1>🧠 NC/SP Hybrid Architecture — Validation Report</h1>
+<p>Date : {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+<h2>Résultats</h2>
+<ul>
+    <li>Approuvés : {data['summary']['approved']}</li>
+    <li>Corrigés : {data['summary']['corrected']}</li>
+    <li>Rejetés : {data['summary']['rejected']}</li>
+    <li>Taux de réussite : {data['summary']['pass_rate']*100}%</li>
+</ul>
+<h2>Signature V3</h2>
+<pre>{json.dumps(data['signature'], indent=2)}</pre>
+</body>
+</html>
+"""
+
+with open("nc_sp_report.html", "w") as f:
+    f.write(html)
+print("✅ Rapport HTML généré : nc_sp_report.html")
