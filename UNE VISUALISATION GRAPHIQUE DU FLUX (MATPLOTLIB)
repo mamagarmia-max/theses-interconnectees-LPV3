@@ -1,0 +1,29 @@
+# nc_sp_visualize.py
+import matplotlib.pyplot as plt
+import json
+
+with open("nc_sp_hybrid_simulation_logs.json", "r") as f:
+    data = json.load(f)
+
+tests = data["tests"]
+cycles = [t["id"] for t in tests]
+checksums = [t["checksum"] for t in tests]
+statuses = [1 if t["status"] == "Approved" else 0.5 if t["status"] == "Corrected" else 0 for t in tests]
+
+fig, ax1 = plt.subplots(figsize=(10, 5))
+ax1.set_xlabel("Cycle")
+ax1.set_ylabel("Checksum", color="blue")
+ax1.plot(cycles, checksums, "bo-", label="Checksum")
+ax1.axhline(y=9, color="green", linestyle="--", label="Invariant (9)")
+
+ax2 = ax1.twinx()
+ax2.set_ylabel("Statut", color="red")
+ax2.plot(cycles, statuses, "ro-", label="Statut")
+ax2.set_yticks([0, 0.5, 1])
+ax2.set_yticklabels(["Rejected", "Corrected", "Approved"])
+
+plt.title("NC/SP Hybrid Architecture — Test Results")
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig("nc_sp_validation_plot.png")
+plt.show()
