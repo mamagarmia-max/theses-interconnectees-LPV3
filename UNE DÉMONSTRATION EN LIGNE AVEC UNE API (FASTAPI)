@@ -1,0 +1,22 @@
+# nc_sp_api.py
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from nc_sp_hybrid_simulation import run_nc_sp_cycle
+
+app = FastAPI(title="NC/SP Hybrid Architecture API")
+
+class RequestModel(BaseModel):
+    text: str
+
+@app.post("/process")
+async def process_request(req: RequestModel):
+    result = run_nc_sp_cycle(req.text, verbose=False)
+    return {
+        "status": result["status"],
+        "checksum": result["checksum"],
+        "response": result["final_response"]
+    }
+
+@app.get("/health")
+async def health():
+    return {"status": "NC/SP system operational"}
