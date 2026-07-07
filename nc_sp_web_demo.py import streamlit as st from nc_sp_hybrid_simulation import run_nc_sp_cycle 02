@@ -1,0 +1,25 @@
+# nc_sp_web_demo.py
+import streamlit as st
+from nc_sp_hybrid_simulation import run_nc_sp_cycle
+
+st.set_page_config(page_title="NC/SP Hybrid Architecture", page_icon="🧠")
+st.title("🧠 NC/SP Hybrid Architecture — Live Demo")
+st.markdown("### Central Nucleus (NC) + Personality Sphere (SP)")
+
+request = st.text_area("✏️ Entrez votre requête :", "Quelle est la météo aujourd'hui ?")
+if st.button("🚀 Lancer le cycle NC/SP"):
+    with st.spinner("Exécution du cycle..."):
+        result = run_nc_sp_cycle(request, verbose=False)
+        st.success(f"✅ Statut : {result['status']}")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("🔒 Checksum", result['checksum'])
+        with col2:
+            st.metric("🛡️ Statut", result['status'])
+
+        st.subheader("📥 Réponse finale")
+        st.write(result['final_response'])
+
+        with st.expander("📋 Logs détaillés"):
+            st.json(result)
