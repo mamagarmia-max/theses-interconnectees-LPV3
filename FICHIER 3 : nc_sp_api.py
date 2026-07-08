@@ -117,7 +117,6 @@ def get_system() -> NC_SP_System:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management."""
-    # Startup
     print("🧠 NC/SP API starting...")
     try:
         get_system()
@@ -125,7 +124,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️ System initialized in simulation mode: {e}")
     yield
-    # Shutdown
     print("🛑 NC/SP API shutting down...")
 
 app = FastAPI(
