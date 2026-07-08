@@ -1,0 +1,10 @@
+from nc_sp_automated import NC_SP_System
+
+# Initialize system
+system = NC_SP_System(api_key="your_api_key")
+
+# Process a request
+result = system.process_request("What is the capital of France?")
+
+print(f"Status: {result['response_status']}")
+print(f"Response: {result['response']}")
