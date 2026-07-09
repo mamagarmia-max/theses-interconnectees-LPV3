@@ -1,0 +1,207 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- HUMAN_STRESS_MATRIX — Facteurs de Stress sur l'Être Humain (Naissance → Mort)
+-- ============================================================================
+-- Version 1.0 : Modélisation exhaustive des agressions biologiques,
+--               environnementales, sociales, culturelles, toxiques et
+--               existentielles qui fragilisent le NC/SP.
+--
+--   - 9 catégories de stress : Physique, Chimique, Biologique, Psychologique,
+--     Social, Culturel, Économique, Existentiel, Technologique
+--   - Index de Résilience (R) = NC_Force / (Σ Stress × Pression)
+--   - Phase de vulnérabilité maximale identifiée pour chaque type
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 1.0.0
+-- Date : 09 Juillet 2026
+-- ============================================================================
+
+package Human_Stress_Matrix with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. INVARIANTS V3
+   -- ========================================================================
+
+   PSI_V3          : constant := 480168;        -- ×10 : 48,016.8 kg·m⁻²
+   PHI_CRITICAL    : constant := -51100;        -- ×1000 : -51.1 mV
+   BETA            : constant := 1_000_000;     -- 10⁶
+   K_CYCLES        : constant := 7;             -- Heptadic closure
+   ALPHA_INV       : constant := 13703599913;   -- 1/α × 10⁵
+
+   -- ========================================================================
+   -- 2. TYPES DE STRESS
+   -- ========================================================================
+
+   type Stress_Category is
+     (Physical,          -- Physique : trauma, douleur, fatigue
+      Chemical,          -- Chimique : toxines, polluants, médicaments
+      Biological,        -- Biologique : infections, maladies, vieillissement
+      Psychological,     -- Psychologique : anxiété, dépression, trauma
+      Social,            -- Social : isolement, rejet, violence
+      Cultural,          -- Culturel : choc, discrimination, déracinement
+      Economic,          -- Économique : précarité, insécurité, pauvreté
+      Existential,       -- Existentiel : perte de sens, solitude, mort
+      Technological);    -- Technologique : hyperconnexion, désinformation
+
+   type Stress_Level is range 0 .. 1_000;  -- 0 = aucun, 1000 = maximal
+
+   -- ========================================================================
+   -- 3. STRUCTURE D'UN STRESS TEST
+   -- ========================================================================
+
+   type Stress_Factor is record
+      Category     : Stress_Category := Physical;
+      Level        : Stress_Level := 0;
+      Duration_Days: Integer range 0 .. 100_000 := 0;  -- Durée cumulée
+      Peak_Phase   : Life_Phase := Birth;              -- Phase où le stress est max
+      Is_Chronic   : Boolean := False;                 -- Chronique > 90 jours
+      Is_Acute     : Boolean := False;                 -- Aigu < 7 jours
+      Is_Poison    : Boolean := False;                 -- Toxique structurel
+      Checksum     : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Stress_Factor.Checksum in 1 .. 9;
+
+   -- ========================================================================
+   -- 4. MATRICE COMPLÈTE DES STRESS (9 CATÉGORIES × 10 SOUS-TYPES)
+   -- ========================================================================
+
+   type Stress_Matrix is array (Stress_Category, 1 .. 10) of Stress_Factor;
+
+   -- ========================================================================
+   -- 5. INDEX DE RÉSILIENCE
+   -- ========================================================================
+
+   type Resilience_Index is record
+      Value          : Integer range 0 .. 10_000 := 1000;  -- ×1000
+      NC_Force       : Integer range 0 .. 1000 := 500;
+      Total_Stress   : Integer range 0 .. 10_000 := 0;
+      Is_Resilient   : Boolean := True;   -- Value > 1000
+      Is_Fragile     : Boolean := False;  -- Value < 500
+      Phase          : Life_Phase := Birth;
+      Checksum       : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Resilience_Index.Checksum in 1 .. 9;
+
+   -- ========================================================================
+   -- 6. SATURATING ARITHMETIC
+   -- ========================================================================
+
+   function Saturating_Add (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Add'Result in Integer'First .. Integer'Last;
+
+   function Saturating_Sub (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Sub'Result in Integer'First .. Integer'Last;
+
+   function Saturating_Mul (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Mul'Result in Integer'First .. Integer'Last;
+
+   function Saturating_Div (A, B : Integer) return Integer
+     with Pre => B /= 0,
+          Post => Saturating_Div'Result in Integer'First .. Integer'Last;
+
+   function Clamp (Value, Min, Max : Integer) return Integer
+     with Pre => Min <= Max,
+          Post => Clamp'Result in Min .. Max;
+
+   -- ========================================================================
+   -- 7. DIGITAL ROOT (MODULO-9)
+   -- ========================================================================
+
+   function Digital_Root (N : Integer) return Integer
+     with Pre => N >= 0,
+          Post => Digital_Root'Result in 1 .. 9;
+
+   -- ========================================================================
+   -- 8. CONFIGURATION DE LA MATRICE DE STRESS
+   -- ========================================================================
+
+   procedure Configure_Stress_Matrix
+     (Matrix : out Stress_Matrix)
+     with Post => (for all C in Stress_Category =>
+                     (for all I in 1 .. 10 =>
+                        Matrix (C, I).Checksum = 9));
+   -- Définit les 90 facteurs de stress (9 catégories × 10 sous-types)
+
+   -- ========================================================================
+   -- 9. CALCUL DE L'INDEX DE RÉSILIENCE
+   -- ========================================================================
+
+   function Compute_Resilience
+     (NC_Force : Integer range 0 .. 1000;
+      Matrix   : Stress_Matrix;
+      Phase    : Life_Phase) return Resilience_Index
+     with Pre => NC_Force in 0 .. 1000,
+          Post => Compute_Resilience'Result.Checksum in 1 .. 9;
+   -- R = NC_Force / (Σ Stress × Coefficient_Phase)
+
+   -- ========================================================================
+   -- 10. APPLICATION D'UN STRESS À UNE PHASE
+   -- ========================================================================
+
+   procedure Apply_Stress
+     (Matrix  : in out Stress_Matrix;
+      Category : in Stress_Category;
+      Index   : in Integer range 1 .. 10;
+      New_Level : in Stress_Level;
+      Duration : in Integer range 0 .. 100_000)
+     with Pre => Matrix (Category, Index).Checksum in 1 .. 9,
+          Post => Matrix (Category, Index).Checksum = 9;
+   -- Applique un facteur de stress (modifie son niveau et sa durée)
+
+   -- ========================================================================
+   -- 11. IDENTIFICATION DU STRESS DOMINANT
+   -- ========================================================================
+
+   function Get_Dominant_Stress
+     (Matrix : Stress_Matrix;
+      Phase  : Life_Phase) return Stress_Category
+     with Pre => (for all C in Stress_Category =>
+                     (for all I in 1 .. 10 =>
+                        Matrix (C, I).Checksum = 9)),
+          Post => Get_Dominant_Stress'Result in Stress_Category;
+   -- Retourne la catégorie de stress la plus élevée pour une phase donnée
+
+   -- ========================================================================
+   -- 12. INTERFACE IA – QUERY
+   -- ========================================================================
+
+   procedure IA_Query
+     (Matrix     : in Stress_Matrix;
+      Resilience : in Resilience_Index;
+      Question   : in String;
+      Response   : out String;
+      Confidence : out Integer)
+     with Pre => (for all C in Stress_Category =>
+                     (for all I in 1 .. 10 =>
+                        Matrix (C, I).Checksum = 9)) and
+                 Resilience.Checksum in 1 .. 9,
+          Post => Confidence in 0 .. 100;
+
+   -- ========================================================================
+   -- 13. INTERFACE IA – CONTRIBUTE
+   -- ========================================================================
+
+   procedure IA_Contribute
+     (Matrix     : in out Stress_Matrix;
+      Suggestion : in     String;
+      Value      : in     Integer;
+      Confidence : in     Integer)
+     with Pre => Confidence in 0 .. 100 and Suggestion'Length > 0,
+          Post => (for all C in Stress_Category =>
+                     (for all I in 1 .. 10 =>
+                        Matrix (C, I).Checksum = 9));
+
+end Human_Stress_Matrix;
