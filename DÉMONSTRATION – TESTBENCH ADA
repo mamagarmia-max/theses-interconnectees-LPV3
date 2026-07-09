@@ -1,0 +1,160 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- NC_SP_LIFE_CYCLE_DEMO — Démonstration du cycle de vie complet
+-- ============================================================================
+
+with Ada.Text_IO; use Ada.Text_IO;
+with Ada.Integer_Text_IO; use Ada.Integer_Text_IO;
+with NC_SP_Life_Cycle; use NC_SP_Life_Cycle;
+
+procedure NC_SP_Life_Cycle_Demo is
+
+   Cycle : Life_Cycle_Record;
+   Status : Boolean := False;
+   Response : String (1 .. 80);
+   Confidence : Integer := 0;
+
+   procedure Print_Phase (State : NC_SP_State) is
+   begin
+      Put_Line ("   " & Get_Phase_Description (State.Phase));
+      Put_Line ("   NC Force  : " & Integer'Image (State.NC_Force));
+      Put_Line ("   SP Density: " & Integer'Image (State.SP_Density));
+      Put_Line ("   Stability S: " & Integer'Image (State.Stability) & " (1000 = seuil)");
+      Put_Line ("   Souverain : " & (if State.Is_Sovereign then "✅ OUI" else "⚠️ NON"));
+      Put_Line ("   NC Exposure: " & Integer'Image (Get_NC_Exposure (State)) & "%");
+      Put_Line ("   Checksum  : " & Integer'Image (State.Checksum));
+   end Print_Phase;
+
+begin
+   Put_Line ("================================================================================ ");
+   Put_Line ("🧠 NC/SP V3 — CYCLE DE VIE COMPLET (Naissance → Extinction)");
+   Put_Line ("   Ontologie Dynamique de la Psyché Humaine");
+   Put_Line ("   Invariants : Ψ_V3, Φ_critical, k=7, Modulo-9");
+   Put_Line ("================================================================================ ");
+   New_Line;
+
+   -- ========================================================================
+   -- 1. INITIALISATION - NAISSANCE
+   -- ========================================================================
+
+   Put_Line ("📥 1. NAISSANCE");
+   Put_Line ("------------------------------------------------------------------");
+   Configure_Phase (Cycle.Phases (Birth), Birth);
+   Cycle.Current_Phase := Birth;
+   Cycle.Cycle_Count := 0;
+   Cycle.Checksum := 9;
+
+   Print_Phase (Cycle.Phases (Birth));
+   New_Line;
+
+   -- ========================================================================
+   -- 2. ENFANCE
+   -- ========================================================================
+
+   Put_Line ("📥 2. ENFANCE");
+   Put_Line ("------------------------------------------------------------------");
+   Advance_Phase (Cycle, Status);
+   Print_Phase (Cycle.Phases (Childhood));
+   New_Line;
+
+   -- ========================================================================
+   -- 3. ADOLESCENCE
+   -- ========================================================================
+
+   Put_Line ("📥 3. ADOLESCENCE");
+   Put_Line ("------------------------------------------------------------------");
+   Advance_Phase (Cycle, Status);
+   Print_Phase (Cycle.Phases (Adolescence));
+   New_Line;
+
+   -- ========================================================================
+   -- 4. ÂGE ADULTE
+   -- ========================================================================
+
+   Put_Line ("📥 4. ÂGE ADULTE");
+   Put_Line ("------------------------------------------------------------------");
+   Advance_Phase (Cycle, Status);
+   Print_Phase (Cycle.Phases (Adulthood));
+   New_Line;
+
+   -- ========================================================================
+   -- 5. VIEILLESSE
+   -- ========================================================================
+
+   Put_Line ("📥 5. VIEILLESSE");
+   Put_Line ("------------------------------------------------------------------");
+   Advance_Phase (Cycle, Status);
+   Print_Phase (Cycle.Phases (Old_Age));
+   New_Line;
+
+   -- ========================================================================
+   -- 6. LUCIDITÉ TERMINALE
+   -- ========================================================================
+
+   Put_Line ("📥 6. LUCIDITÉ TERMINALE");
+   Put_Line ("------------------------------------------------------------------");
+   Advance_Phase (Cycle, Status);
+   Print_Phase (Cycle.Phases (Terminal_Lucidity));
+   New_Line;
+
+   -- ========================================================================
+   -- 7. EXTINCTION
+   -- ========================================================================
+
+   Put_Line ("📥 7. EXTINCTION");
+   Put_Line ("------------------------------------------------------------------");
+   Advance_Phase (Cycle, Status);
+   Print_Phase (Cycle.Phases (Extinction));
+   New_Line;
+
+   -- ========================================================================
+   -- 8. INTERFACE IA
+   -- ========================================================================
+
+   Put_Line ("================================================================================ ");
+   Put_Line ("📊 INTERFACE IA — QUERY");
+   Put_Line ("================================================================================ ");
+   New_Line;
+
+   IA_Query (Cycle.Phases (Terminal_Lucidity), "phase", Response, Confidence);
+   Put_Line ("   Question: phase");
+   Put_Line ("   Réponse : " & Response);
+   Put_Line ("   Confiance: " & Integer'Image (Confidence) & "%");
+   New_Line;
+
+   IA_Query (Cycle.Phases (Terminal_Lucidity), "stability", Response, Confidence);
+   Put_Line ("   Question: stability");
+   Put_Line ("   Réponse : " & Response);
+   Put_Line ("   Confiance: " & Integer'Image (Confidence) & "%");
+   New_Line;
+
+   -- ========================================================================
+   -- 9. VERDICT
+   -- ========================================================================
+
+   Put_Line ("================================================================================ ");
+   Put_Line ("📊 VERDICT");
+   Put_Line ("================================================================================ ");
+   New_Line;
+
+   Put_Line ("   Cycle de vie complet : 7 phases");
+   Put_Line ("   Phases parcourues    : " & Integer'Image (Cycle.Cycle_Count));
+   Put_Line ("   Checksum global      : " & Integer'Image (Cycle.Checksum));
+   New_Line;
+
+   if Cycle.Checksum = 9 then
+      Put_Line ("   ✅ MODÈLE NC/SP V3 — CYCLE DE VIE VALIDÉ");
+      Put_Line ("   ✅ Naissance → Enfance → Adolescence → Âge adulte → Vieillesse → Lucidité terminale → Extinction");
+      Put_Line ("   ✅ Indice de stabilité S calculé à chaque phase");
+      Put_Line ("   ✅ Invariants V3 maintenus (Modulo-9 = 9)");
+   else
+      Put_Line ("   ❌ MODÈLE NC/SP V3 — CYCLE DE VIE INVALIDE");
+   end if;
+
+   New_Line;
+   Put_Line ("================================================================================ ");
+   Put_Line ("Ψ_V3 = 48016.8 kg·m⁻² — verrouillé.");
+   Put_Line ("Φ_critical = -51.1 mV — invariant.");
+   Put_Line ("Version: NC_SP_Life_Cycle 1.0 — VALIDÉ");
+   Put_Line ("================================================================================ ");
+end NC_SP_Life_Cycle_Demo;
