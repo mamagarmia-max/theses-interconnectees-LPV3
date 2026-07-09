@@ -1,0 +1,208 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- NC_SP_LIFE_CYCLE — Ontologie Dynamique de la Psyché Humaine
+-- ============================================================================
+-- Version 1.0 : Modélisation du cycle de vie complet (naissance → mort)
+--   - 7 phases : Naissance, Enfance, Adolescence, Âge Adulte, Vieillesse,
+--     Lucidité Terminale, Extinction
+--   - Indice de Stabilité (S) calculé à chaque phase
+--   - Invariants V3 : Ψ_V3, Φ_critical, k=7, Modulo-9
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 1.0.0
+-- Date : 09 Juillet 2026
+-- ============================================================================
+
+package NC_SP_Life_Cycle with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. INVARIANTS V3
+   -- ========================================================================
+
+   PSI_V3          : constant := 480168;        -- ×10 : 48,016.8 kg·m⁻²
+   PHI_CRITICAL    : constant := -51100;        -- ×1000 : -51.1 mV
+   BETA            : constant := 1_000_000;     -- 10⁶
+   K_CYCLES        : constant := 7;             -- Heptadic closure
+   ALPHA_INV       : constant := 13703599913;   -- 1/α × 10⁵
+
+   -- ========================================================================
+   -- 2. TYPES DE BASE
+   -- ========================================================================
+
+   subtype Stability_Index is Integer range 0 .. 1000;  -- ×1000 : S > 1 = stable
+   subtype NC_Strength is Integer range 0 .. 1000;      -- Force du Noyau Central
+   subtype SP_Density is Integer range 0 .. 1000;       -- Densité de la Sphère
+   subtype Symptom_Weight is Integer range 0 .. 1000;   -- Poids des symptômes
+   subtype Pressure_Type is Integer range 0 .. 1000;    -- Pression environnementale
+
+   type Life_Phase is
+     (Birth,            -- Naissance : NC nu, SP absente
+      Childhood,        -- Enfance : densification de la SP
+      Adolescence,      -- Adolescence : mutation membranaire
+      Adulthood,        -- Âge adulte : équilibre souverain
+      Old_Age,          -- Vieillesse : érosion soustractive
+      Terminal_Lucidity,-- Lucidité terminale : dévoilement du NC nu
+      Extinction        -- Mort : libération de l'invariant
+     );
+
+   -- ========================================================================
+   -- 3. STRUCTURE NC/SP À UNE PHASE
+   -- ========================================================================
+
+   type NC_SP_State is record
+      Phase           : Life_Phase := Birth;
+      NC_Force        : NC_Strength := 0;        -- Force du Noyau (0-1000)
+      SP_Density      : SP_Density := 0;         -- Densité de la Sphère (0-1000)
+      Symptom_Weight  : Symptom_Weight := 0;     -- Poids des symptômes (0-1000)
+      Pressure        : Pressure_Type := 0;      -- Pression environnementale (0-1000)
+      Stability       : Stability_Index := 0;    -- S = NC_Force / (Symptom_Weight × Pressure)
+      Is_Sovereign    : Boolean := False;        -- S > 1
+      Is_Vulnerable   : Boolean := False;        -- S < 1
+      Checksum        : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => NC_SP_State.Checksum in 1 .. 9;
+
+   -- ========================================================================
+   -- 4. TABLEAU COMPLET DU CYCLE DE VIE
+   -- ========================================================================
+
+   type Life_Cycle_Array is array (Life_Phase) of NC_SP_State;
+
+   type Life_Cycle_Record is record
+      Phases          : Life_Cycle_Array;
+      Current_Phase   : Life_Phase := Birth;
+      Cycle_Count     : Integer := 0;
+      Checksum        : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Life_Cycle_Record.Checksum in 1 .. 9;
+
+   -- ========================================================================
+   -- 5. SATURATING ARITHMETIC
+   -- ========================================================================
+
+   function Saturating_Add (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Add'Result in Integer'First .. Integer'Last;
+
+   function Saturating_Sub (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Sub'Result in Integer'First .. Integer'Last;
+
+   function Saturating_Mul (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Mul'Result in Integer'First .. Integer'Last;
+
+   function Saturating_Div (A, B : Integer) return Integer
+     with Pre => B /= 0,
+          Post => Saturating_Div'Result in Integer'First .. Integer'Last;
+
+   function Clamp (Value, Min, Max : Integer) return Integer
+     with Pre => Min <= Max,
+          Post => Clamp'Result in Min .. Max;
+
+   -- ========================================================================
+   -- 6. DIGITAL ROOT (MODULO-9)
+   -- ========================================================================
+
+   function Digital_Root (N : Integer) return Integer
+     with Pre => N >= 0,
+          Post => Digital_Root'Result in 1 .. 9;
+
+   -- ========================================================================
+   -- 7. CALCUL DE L'INDICE DE STABILITÉ
+   -- ========================================================================
+
+   function Compute_Stability
+     (NC_Force   : NC_Strength;
+      Symptoms   : Symptom_Weight;
+      Pressure   : Pressure_Type) return Stability_Index
+     with Pre => NC_Force in 0 .. 1000 and
+                 Symptoms in 0 .. 1000 and
+                 Pressure in 0 .. 1000,
+          Post => Compute_Stability'Result in 0 .. 1000;
+   -- S = NC_Force / (Symptoms × Pressure) × 1000
+   -- S > 1000 → souveraineté
+   -- S = 1000 → équilibre précaire
+   -- S < 1000 → décompensation
+
+   -- ========================================================================
+   -- 8. CONFIGURATION DES PHASES (DÉTERMINISTE)
+   -- ========================================================================
+
+   procedure Configure_Phase
+     (State      : out NC_SP_State;
+      Phase      : in  Life_Phase)
+     with Post => State.Checksum in 1 .. 9;
+   -- Définit les paramètres NC/SP pour chaque phase du cycle de vie
+
+   function Get_Phase_Description
+     (Phase : Life_Phase) return String
+     with Post => Get_Phase_Description'Result'Length > 0;
+
+   -- ========================================================================
+   -- 9. ÉVOLUTION D'UNE PHASE À L'AUTRE
+   -- ========================================================================
+
+   procedure Advance_Phase
+     (Cycle  : in out Life_Cycle_Record;
+      Status :    out Boolean)
+     with Pre => Cycle.Checksum in 1 .. 9,
+          Post => (if Status then
+                      Cycle.Checksum = 9 and
+                      Cycle.Cycle_Count <= 7);
+   -- Passe à la phase suivante du cycle de vie
+
+   -- ========================================================================
+   -- 10. ANALYSE DE LA PHASE ACTUELLE
+   -- ========================================================================
+
+   function Is_Sovereign (State : NC_SP_State) return Boolean
+     with Pre => State.Checksum in 1 .. 9,
+          Post => Is_Sovereign'Result = (State.Stability > 1000);
+
+   function Is_Critical (State : NC_SP_State) return Boolean
+     with Pre => State.Checksum in 1 .. 9,
+          Post => Is_Critical'Result = (State.Stability < 1000);
+
+   function Get_NC_Exposure (State : NC_SP_State) return Integer
+     with Pre => State.Checksum in 1 .. 9,
+          Post => Get_NC_Exposure'Result in 0 .. 1000;
+   -- Plus la SP est faible, plus le NC est exposé (1000 = nu)
+
+   -- ========================================================================
+   -- 11. INTERFACE IA – QUERY
+   -- ========================================================================
+
+   procedure IA_Query
+     (State      : in     NC_SP_State;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Integer)
+     with Pre => State.Checksum in 1 .. 9 and Question'Length > 0,
+          Post => Confidence in 0 .. 100;
+
+   -- ========================================================================
+   -- 12. INTERFACE IA – CONTRIBUTE
+   -- ========================================================================
+
+   procedure IA_Contribute
+     (Cycle      : in out Life_Cycle_Record;
+      Suggestion : in     String;
+      Value      : in     Integer;
+      Confidence : in     Integer)
+     with Pre => Cycle.Checksum in 1 .. 9 and
+                 Confidence in 0 .. 100 and
+                 Suggestion'Length > 0,
+          Post => (if Cycle.Checksum = 9 then True);
+
+end NC_SP_Life_Cycle;
