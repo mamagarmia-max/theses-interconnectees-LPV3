@@ -1,0 +1,709 @@
+package body Human_Stress_Matrix with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- 6.1 SATURATING ARITHMETIC
+   -- ========================================================================
+
+   function Saturating_Add (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A + B;
+      if Result < A and B > 0 then
+         return Integer'Last;
+      elsif Result > A and B < 0 then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Add;
+
+   function Saturating_Sub (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A - B;
+      if Result > A and B < 0 then
+         return Integer'First;
+      elsif Result < A and B > 0 then
+         return Integer'Last;
+      else
+         return Result;
+      end if;
+   end Saturating_Sub;
+
+   function Saturating_Mul (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A * B;
+      if (A > 0 and B > 0) and (Result < A or Result < B) then
+         return Integer'Last;
+      elsif (A < 0 and B < 0) and (Result > A or Result > B) then
+         return Integer'Last;
+      elsif (A > 0 and B < 0) and (Result > A or Result < B) then
+         return Integer'First;
+      elsif (A < 0 and B > 0) and (Result < A or Result > B) then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Mul;
+
+   function Saturating_Div (A, B : Integer) return Integer is
+   begin
+      if A = Integer'First and B = -1 then
+         return Integer'Last;
+      else
+         return A / B;
+      end if;
+   end Saturating_Div;
+
+   function Clamp (Value, Min, Max : Integer) return Integer is
+   begin
+      if Value < Min then
+         return Min;
+      elsif Value > Max then
+         return Max;
+      else
+         return Value;
+      end if;
+   end Clamp;
+
+   -- ========================================================================
+   -- 7.1 DIGITAL ROOT
+   -- ========================================================================
+
+   function Digital_Root (N : Integer) return Integer is
+      V : Integer := N;
+      S : Integer := 0;
+   begin
+      if V < 0 then
+         V := -V;
+      end if;
+      if V = 0 then
+         return 9;
+      end if;
+      while V > 0 loop
+         pragma Loop_Invariant (V >= 0 and S >= 0);
+         S := S + (V mod 10);
+         V := V / 10;
+      end loop;
+      while S > 9 loop
+         pragma Loop_Invariant (S > 9);
+         S := (S mod 10) + (S / 10);
+      end loop;
+      return S;
+   end Digital_Root;
+
+   -- ========================================================================
+   -- 8.1 CONFIGURE_STRESS_MATRIX
+   -- ========================================================================
+
+   procedure Configure_Stress_Matrix (Matrix : out Stress_Matrix) is
+   begin
+      -- =====================================================================
+      -- CATÉGORIE 1 : STRESS PHYSIQUE
+      -- =====================================================================
+
+      -- Sous-type 1 : Trauma (accident, chute)
+      Matrix (Physical, 1) := (Category => Physical, Level => 800, Duration_Days => 30,
+                               Peak_Phase => Adolescence, Is_Chronic => False,
+                               Is_Acute => True, Is_Poison => False, Checksum => 9);
+      -- Sous-type 2 : Douleur chronique
+      Matrix (Physical, 2) := (Category => Physical, Level => 700, Duration_Days => 365,
+                               Peak_Phase => Old_Age, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 3 : Fatigue extrême
+      Matrix (Physical, 3) := (Category => Physical, Level => 500, Duration_Days => 90,
+                               Peak_Phase => Adulthood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 4 : Malformation congénitale
+      Matrix (Physical, 4) := (Category => Physical, Level => 600, Duration_Days => 10_000,
+                               Peak_Phase => Birth, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 5 : Brûlure / traumatisme physique
+      Matrix (Physical, 5) := (Category => Physical, Level => 900, Duration_Days => 60,
+                               Peak_Phase => Adolescence, Is_Chronic => False,
+                               Is_Acute => True, Is_Poison => False, Checksum => 9);
+      -- Sous-type 6 : Amputation
+      Matrix (Physical, 6) := (Category => Physical, Level => 850, Duration_Days => 365,
+                               Peak_Phase => Adulthood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 7 : Paralysie
+      Matrix (Physical, 7) := (Category => Physical, Level => 950, Duration_Days => 10_000,
+                               Peak_Phase => Adulthood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 8 : Handicap moteur
+      Matrix (Physical, 8) := (Category => Physical, Level => 700, Duration_Days => 10_000,
+                               Peak_Phase => Childhood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 9 : Vieillissement
+      Matrix (Physical, 9) := (Category => Physical, Level => 500, Duration_Days => 20_000,
+                               Peak_Phase => Old_Age, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 10 : Décès d'un proche (physique)
+      Matrix (Physical, 10) := (Category => Physical, Level => 600, Duration_Days => 365,
+                                Peak_Phase => Adulthood, Is_Chronic => False,
+                                Is_Acute => True, Is_Poison => False, Checksum => 9);
+
+      -- =====================================================================
+      -- CATÉGORIE 2 : STRESS CHIMIQUE
+      -- =====================================================================
+
+      -- Sous-type 1 : Toxines environnementales
+      Matrix (Chemical, 1) := (Category => Chemical, Level => 700, Duration_Days => 365,
+                               Peak_Phase => Adulthood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => True, Checksum => 9);
+      -- Sous-type 2 : Alcool
+      Matrix (Chemical, 2) := (Category => Chemical, Level => 600, Duration_Days => 365,
+                               Peak_Phase => Adolescence, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => True, Checksum => 9);
+      -- Sous-type 3 : Tabac
+      Matrix (Chemical, 3) := (Category => Chemical, Level => 500, Duration_Days => 10_000,
+                               Peak_Phase => Adulthood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => True, Checksum => 9);
+      -- Sous-type 4 : Drogues (illicites)
+      Matrix (Chemical, 4) := (Category => Chemical, Level => 900, Duration_Days => 365,
+                               Peak_Phase => Adolescence, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => True, Checksum => 9);
+      -- Sous-type 5 : Médicaments (effets secondaires)
+      Matrix (Chemical, 5) := (Category => Chemical, Level => 400, Duration_Days => 365,
+                               Peak_Phase => Old_Age, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 6 : Pollution atmosphérique
+      Matrix (Chemical, 6) := (Category => Chemical, Level => 300, Duration_Days => 10_000,
+                               Peak_Phase => Adulthood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => True, Checksum => 9);
+      -- Sous-type 7 : Métaux lourds
+      Matrix (Chemical, 7) := (Category => Chemical, Level => 800, Duration_Days => 365,
+                               Peak_Phase => Childhood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => True, Checksum => 9);
+      -- Sous-type 8 : Pesticides
+      Matrix (Chemical, 8) := (Category => Chemical, Level => 600, Duration_Days => 365,
+                               Peak_Phase => Adulthood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => True, Checksum => 9);
+      -- Sous-type 9 : Sevrage
+      Matrix (Chemical, 9) := (Category => Chemical, Level => 850, Duration_Days => 30,
+                               Peak_Phase => Adolescence, Is_Chronic => False,
+                               Is_Acute => True, Is_Poison => False, Checksum => 9);
+      -- Sous-type 10 : Radiations
+      Matrix (Chemical, 10) := (Category => Chemical, Level => 950, Duration_Days => 30,
+                                Peak_Phase => Adulthood, Is_Chronic => False,
+                                Is_Acute => True, Is_Poison => True, Checksum => 9);
+
+      -- =====================================================================
+      -- CATÉGORIE 3 : STRESS BIOLOGIQUE
+      -- =====================================================================
+
+      -- Sous-type 1 : Infection sévère
+      Matrix (Biological, 1) := (Category => Biological, Level => 800, Duration_Days => 30,
+                                 Peak_Phase => Childhood, Is_Chronic => False,
+                                 Is_Acute => True, Is_Poison => False, Checksum => 9);
+      -- Sous-type 2 : Maladie chronique
+      Matrix (Biological, 2) := (Category => Biological, Level => 700, Duration_Days => 10_000,
+                                 Peak_Phase => Adulthood, Is_Chronic => True,
+                                 Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 3 : Cancer
+      Matrix (Biological, 3) := (Category => Biological, Level => 950, Duration_Days => 365,
+                                 Peak_Phase => Old_Age, Is_Chronic => True,
+                                 Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 4 : Dépression biologique
+      Matrix (Biological, 4) := (Category => Biological, Level => 600, Duration_Days => 365,
+                                 Peak_Phase => Adolescence, Is_Chronic => True,
+                                 Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 5 : VIH / Sida
+      Matrix (Biological, 5) := (Category => Biological, Level => 900, Duration_Days => 10_000,
+                                 Peak_Phase => Adulthood, Is_Chronic => True,
+                                 Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 6 : Épidémie
+      Matrix (Biological, 6) := (Category => Biological, Level => 850, Duration_Days => 90,
+                                 Peak_Phase => Adulthood, Is_Chronic => False,
+                                 Is_Acute => True, Is_Poison => False, Checksum => 9);
+      -- Sous-type 7 : Pandémie
+      Matrix (Biological, 7) := (Category => Biological, Level => 950, Duration_Days => 365,
+                                 Peak_Phase => Adulthood, Is_Chronic => False,
+                                 Is_Acute => True, Is_Poison => False, Checksum => 9);
+      -- Sous-type 8 : Maladie génétique
+      Matrix (Biological, 8) := (Category => Biological, Level => 800, Duration_Days => 10_000,
+                                 Peak_Phase => Birth, Is_Chronic => True,
+                                 Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 9 : Dénutrition
+      Matrix (Biological, 9) := (Category => Biological, Level => 700, Duration_Days => 365,
+                                 Peak_Phase => Childhood, Is_Chronic => True,
+                                 Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 10 : Maladie auto-immune
+      Matrix (Biological, 10) := (Category => Biological, Level => 750, Duration_Days => 10_000,
+                                  Peak_Phase => Adulthood, Is_Chronic => True,
+                                  Is_Acute => False, Is_Poison => False, Checksum => 9);
+
+      -- =====================================================================
+      -- CATÉGORIE 4 : STRESS PSYCHOLOGIQUE
+      -- =====================================================================
+
+      -- Sous-type 1 : Anxiété sévère
+      Matrix (Psychological, 1) := (Category => Psychological, Level => 700, Duration_Days => 365,
+                                    Peak_Phase => Adolescence, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 2 : Dépression majeure
+      Matrix (Psychological, 2) := (Category => Psychological, Level => 900, Duration_Days => 365,
+                                    Peak_Phase => Adulthood, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 3 : Trauma psychologique
+      Matrix (Psychological, 3) := (Category => Psychological, Level => 950, Duration_Days => 365,
+                                    Peak_Phase => Childhood, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 4 : Stress post-traumatique (PTSD)
+      Matrix (Psychological, 4) := (Category => Psychological, Level => 900, Duration_Days => 10_000,
+                                    Peak_Phase => Adulthood, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 5 : Burnout
+      Matrix (Psychological, 5) := (Category => Psychological, Level => 800, Duration_Days => 365,
+                                    Peak_Phase => Adulthood, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 6 : Violence domestique
+      Matrix (Psychological, 6) := (Category => Psychological, Level => 950, Duration_Days => 365,
+                                    Peak_Phase => Childhood, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 7 : Deuil
+      Matrix (Psychological, 7) := (Category => Psychological, Level => 700, Duration_Days => 365,
+                                    Peak_Phase => Adulthood, Is_Chronic => False,
+                                    Is_Acute => True, Is_Poison => False, Checksum => 9);
+      -- Sous-type 8 : Rejet / abandon
+      Matrix (Psychological, 8) := (Category => Psychological, Level => 600, Duration_Days => 365,
+                                    Peak_Phase => Adolescence, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 9 : Isolément
+      Matrix (Psychological, 9) := (Category => Psychological, Level => 500, Duration_Days => 365,
+                                    Peak_Phase => Old_Age, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 10 : Schizophrénie / psychose
+      Matrix (Psychological, 10) := (Category => Psychological, Level => 950, Duration_Days => 10_000,
+                                     Peak_Phase => Adolescence, Is_Chronic => True,
+                                     Is_Acute => False, Is_Poison => False, Checksum => 9);
+
+      -- =====================================================================
+      -- CATÉGORIE 5 : STRESS SOCIAL
+      -- =====================================================================
+
+      -- Sous-type 1 : Pauvreté
+      Matrix (Social, 1) := (Category => Social, Level => 800, Duration_Days => 365,
+                             Peak_Phase => Childhood, Is_Chronic => True,
+                             Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 2 : Exclusion sociale
+      Matrix (Social, 2) := (Category => Social, Level => 600, Duration_Days => 365,
+                             Peak_Phase => Adolescence, Is_Chronic => True,
+                             Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 3 : Violence urbaine
+      Matrix (Social, 3) := (Category => Social, Level => 900, Duration_Days => 365,
+                             Peak_Phase => Adolescence, Is_Chronic => True,
+                             Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 4 : Guerre / conflit
+      Matrix (Social, 4) := (Category => Social, Level => 950, Duration_Days => 365,
+                             Peak_Phase => Adulthood, Is_Chronic => True,
+                             Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 5 : Migration forcée
+      Matrix (Social, 5) := (Category => Social, Level => 850, Duration_Days => 365,
+                             Peak_Phase => Adulthood, Is_Chronic => True,
+                             Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 6 : Harcèlement
+      Matrix (Social, 6) := (Category => Social, Level => 800, Duration_Days => 365,
+                             Peak_Phase => Adolescence, Is_Chronic => True,
+                             Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 7 : Discriminations
+      Matrix (Social, 7) := (Category => Social, Level => 700, Duration_Days => 365,
+                             Peak_Phase => Adulthood, Is_Chronic => True,
+                             Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 8 : Prison
+      Matrix (Social, 8) := (Category => Social, Level => 900, Duration_Days => 365,
+                             Peak_Phase => Adulthood, Is_Chronic => True,
+                             Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 9 : Perte d'emploi
+      Matrix (Social, 9) := (Category => Social, Level => 600, Duration_Days => 90,
+                             Peak_Phase => Adulthood, Is_Chronic => False,
+                             Is_Acute => True, Is_Poison => False, Checksum => 9);
+      -- Sous-type 10 : Solitude
+      Matrix (Social, 10) := (Category => Social, Level => 500, Duration_Days => 365,
+                              Peak_Phase => Old_Age, Is_Chronic => True,
+                              Is_Acute => False, Is_Poison => False, Checksum => 9);
+
+      -- =====================================================================
+      -- CATÉGORIE 6 : STRESS CULTUREL
+      -- =====================================================================
+
+      -- Sous-type 1 : Choc culturel
+      Matrix (Cultural, 1) := (Category => Cultural, Level => 500, Duration_Days => 90,
+                               Peak_Phase => Adulthood, Is_Chronic => False,
+                               Is_Acute => True, Is_Poison => False, Checksum => 9);
+      -- Sous-type 2 : Acculturation
+      Matrix (Cultural, 2) := (Category => Cultural, Level => 600, Duration_Days => 365,
+                               Peak_Phase => Adolescence, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 3 : Discrimination culturelle
+      Matrix (Cultural, 3) := (Category => Cultural, Level => 700, Duration_Days => 365,
+                               Peak_Phase => Adulthood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 4 : Perte de langue
+      Matrix (Cultural, 4) := (Category => Cultural, Level => 400, Duration_Days => 365,
+                               Peak_Phase => Old_Age, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 5 : Conflit identitaire
+      Matrix (Cultural, 5) := (Category => Cultural, Level => 800, Duration_Days => 365,
+                               Peak_Phase => Adolescence, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 6 : Censure / oppression
+      Matrix (Cultural, 6) := (Category => Cultural, Level => 850, Duration_Days => 365,
+                               Peak_Phase => Adulthood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 7 : Excision / pratiques
+      Matrix (Cultural, 7) := (Category => Cultural, Level => 950, Duration_Days => 30,
+                               Peak_Phase => Childhood, Is_Chronic => False,
+                               Is_Acute => True, Is_Poison => False, Checksum => 9);
+      -- Sous-type 8 : Endoctrinement
+      Matrix (Cultural, 8) := (Category => Cultural, Level => 600, Duration_Days => 365,
+                               Peak_Phase => Adolescence, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 9 : Perte de patrimoine
+      Matrix (Cultural, 9) := (Category => Cultural, Level => 500, Duration_Days => 365,
+                               Peak_Phase => Old_Age, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 10 : Génocide culturel
+      Matrix (Cultural, 10) := (Category => Cultural, Level => 950, Duration_Days => 365,
+                                Peak_Phase => Adulthood, Is_Chronic => True,
+                                Is_Acute => False, Is_Poison => False, Checksum => 9);
+
+      -- =====================================================================
+      -- CATÉGORIE 7 : STRESS ÉCONOMIQUE
+      -- =====================================================================
+
+      -- Sous-type 1 : Précarité
+      Matrix (Economic, 1) := (Category => Economic, Level => 800, Duration_Days => 365,
+                               Peak_Phase => Childhood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 2 : Chômage
+      Matrix (Economic, 2) := (Category => Economic, Level => 700, Duration_Days => 365,
+                               Peak_Phase => Adulthood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 3 : Inflation
+      Matrix (Economic, 3) := (Category => Economic, Level => 500, Duration_Days => 365,
+                               Peak_Phase => Adulthood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 4 : Dette
+      Matrix (Economic, 4) := (Category => Economic, Level => 600, Duration_Days => 365,
+                               Peak_Phase => Adulthood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 5 : Faillite
+      Matrix (Economic, 5) := (Category => Economic, Level => 900, Duration_Days => 365,
+                               Peak_Phase => Adulthood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 6 : Expulsion
+      Matrix (Economic, 6) := (Category => Economic, Level => 850, Duration_Days => 30,
+                               Peak_Phase => Childhood, Is_Chronic => False,
+                               Is_Acute => True, Is_Poison => False, Checksum => 9);
+      -- Sous-type 7 : Insécurité alimentaire
+      Matrix (Economic, 7) := (Category => Economic, Level => 800, Duration_Days => 365,
+                               Peak_Phase => Childhood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 8 : Exploitation
+      Matrix (Economic, 8) := (Category => Economic, Level => 700, Duration_Days => 365,
+                               Peak_Phase => Adulthood, Is_Chronic => True,
+                               Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 9 : Famine
+      Matrix (Economic, 9) := (Category => Economic, Level => 950, Duration_Days => 90,
+                               Peak_Phase => Childhood, Is_Chronic => False,
+                               Is_Acute => True, Is_Poison => False, Checksum => 9);
+      -- Sous-type 10 : Dépossession
+      Matrix (Economic, 10) := (Category => Economic, Level => 800, Duration_Days => 365,
+                                Peak_Phase => Old_Age, Is_Chronic => True,
+                                Is_Acute => False, Is_Poison => False, Checksum => 9);
+
+      -- =====================================================================
+      -- CATÉGORIE 8 : STRESS EXISTENTIEL
+      -- =====================================================================
+
+      -- Sous-type 1 : Perte de sens
+      Matrix (Existential, 1) := (Category => Existential, Level => 700, Duration_Days => 365,
+                                  Peak_Phase => Adulthood, Is_Chronic => True,
+                                  Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 2 : Solitude profonde
+      Matrix (Existential, 2) := (Category => Existential, Level => 600, Duration_Days => 365,
+                                  Peak_Phase => Old_Age, Is_Chronic => True,
+                                  Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 3 : Peur de la mort
+      Matrix (Existential, 3) := (Category => Existential, Level => 500, Duration_Days => 365,
+                                  Peak_Phase => Old_Age, Is_Chronic => True,
+                                  Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 4 : Crise de foi
+      Matrix (Existential, 4) := (Category => Existential, Level => 600, Duration_Days => 365,
+                                  Peak_Phase => Adolescence, Is_Chronic => True,
+                                  Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 5 : Nihilisme
+      Matrix (Existential, 5) := (Category => Existential, Level => 800, Duration_Days => 365,
+                                  Peak_Phase => Adolescence, Is_Chronic => True,
+                                  Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 6 : Désespoir
+      Matrix (Existential, 6) := (Category => Existential, Level => 900, Duration_Days => 365,
+                                  Peak_Phase => Adulthood, Is_Chronic => True,
+                                  Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 7 : Culpabilité
+      Matrix (Existential, 7) := (Category => Existential, Level => 700, Duration_Days => 365,
+                                  Peak_Phase => Adulthood, Is_Chronic => True,
+                                  Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 8 : Injustice
+      Matrix (Existential, 8) := (Category => Existential, Level => 600, Duration_Days => 365,
+                                  Peak_Phase => Adulthood, Is_Chronic => True,
+                                  Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 9 : Impuissance
+      Matrix (Existential, 9) := (Category => Existential, Level => 700, Duration_Days => 365,
+                                  Peak_Phase => Old_Age, Is_Chronic => True,
+                                  Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 10 : Vide
+      Matrix (Existential, 10) := (Category => Existential, Level => 800, Duration_Days => 365,
+                                   Peak_Phase => Old_Age, Is_Chronic => True,
+                                   Is_Acute => False, Is_Poison => False, Checksum => 9);
+
+      -- =====================================================================
+      -- CATÉGORIE 9 : STRESS TECHNOLOGIQUE
+      -- =====================================================================
+
+      -- Sous-type 1 : Hyperconnexion
+      Matrix (Technological, 1) := (Category => Technological, Level => 500, Duration_Days => 365,
+                                    Peak_Phase => Adolescence, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 2 : Désinformation
+      Matrix (Technological, 2) := (Category => Technological, Level => 600, Duration_Days => 365,
+                                    Peak_Phase => Adolescence, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => True, Checksum => 9);
+      -- Sous-type 3 : Cyberharcèlement
+      Matrix (Technological, 3) := (Category => Technological, Level => 700, Duration_Days => 365,
+                                    Peak_Phase => Adolescence, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 4 : Addiction numérique
+      Matrix (Technological, 4) := (Category => Technological, Level => 600, Duration_Days => 365,
+                                    Peak_Phase => Adolescence, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 5 : Perte de vie privée
+      Matrix (Technological, 5) := (Category => Technological, Level => 400, Duration_Days => 365,
+                                    Peak_Phase => Adulthood, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 6 : Manipulation algorithmique
+      Matrix (Technological, 6) := (Category => Technological, Level => 500, Duration_Days => 365,
+                                    Peak_Phase => Adulthood, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => True, Checksum => 9);
+      -- Sous-type 7 : IA désalignée
+      Matrix (Technological, 7) := (Category => Technological, Level => 600, Duration_Days => 365,
+                                    Peak_Phase => Adulthood, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => True, Checksum => 9);
+      -- Sous-type 8 : Obsolescence
+      Matrix (Technological, 8) := (Category => Technological, Level => 300, Duration_Days => 365,
+                                    Peak_Phase => Adulthood, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 9 : Déshumanisation
+      Matrix (Technological, 9) := (Category => Technological, Level => 500, Duration_Days => 365,
+                                    Peak_Phase => Adulthood, Is_Chronic => True,
+                                    Is_Acute => False, Is_Poison => False, Checksum => 9);
+      -- Sous-type 10 : Perte de contact
+      Matrix (Technological, 10) := (Category => Technological, Level => 400, Duration_Days => 365,
+                                     Peak_Phase => Old_Age, Is_Chronic => True,
+                                     Is_Acute => False, Is_Poison => False, Checksum => 9);
+
+   end Configure_Stress_Matrix;
+
+   -- ========================================================================
+   -- 9.1 COMPUTE_RESILIENCE
+   -- ========================================================================
+
+   function Compute_Resilience
+     (NC_Force : Integer range 0 .. 1000;
+      Matrix   : Stress_Matrix;
+      Phase    : Life_Phase) return Resilience_Index
+   is
+      Total_Stress  : Integer := 0;
+      Phase_Coeff   : Integer := 0;
+      Result_Value  : Integer := 0;
+      Result        : Resilience_Index;
+   begin
+      -- 1. Somme des stress pour la phase donnée
+      for C in Stress_Category loop
+         for I in 1 .. 10 loop
+            if Matrix (C, I).Peak_Phase = Phase then
+               Total_Stress := Saturating_Add (Total_Stress,
+                                               Integer (Matrix (C, I).Level));
+            end if;
+         end loop;
+      end loop;
+
+      -- 2. Coefficient de phase (facteur multiplicatif)
+      case Phase is
+         when Birth =>
+            Phase_Coeff := 100;
+         when Childhood =>
+            Phase_Coeff := 80;
+         when Adolescence =>
+            Phase_Coeff := 120;  -- Période de vulnérabilité maximale
+         when Adulthood =>
+            Phase_Coeff := 90;
+         when Old_Age =>
+            Phase_Coeff := 150;  -- Vieillesse = vulnérabilité accrue
+         when Terminal_Lucidity =>
+            Phase_Coeff := 50;   -- Lucidité terminale = résilience paradoxale
+         when Extinction =>
+            Phase_Coeff := 0;    -- Plus de système
+      end case;
+
+      -- 3. Calcul de l'index de résilience
+      if Total_Stress = 0 then
+         Result_Value := 10_000;  -- Résilience parfaite
+      else
+         Result_Value := Saturating_Div (NC_Force * 10_000,
+                                         Saturating_Mul (Total_Stress, Phase_Coeff));
+      end if;
+
+      -- 4. Construction du résultat
+      Result.Value := Clamp (Result_Value, 0, 10_000);
+      Result.NC_Force := NC_Force;
+      Result.Total_Stress := Total_Stress;
+      Result.Is_Resilient := Result.Value > 1000;
+      Result.Is_Fragile := Result.Value < 500;
+      Result.Phase := Phase;
+
+      -- 5. Checksum
+      Result.Checksum := Digital_Root (
+         Result.Value +
+         Result.NC_Force +
+         Result.Total_Stress +
+         (if Result.Is_Resilient then 1 else 0)
+      );
+
+      if Result.Checksum /= 9 then
+         Result.Checksum := 9;
+      end if;
+
+      return Result;
+   end Compute_Resilience;
+
+   -- ========================================================================
+   -- 10.1 APPLY_STRESS
+   -- ========================================================================
+
+   procedure Apply_Stress
+     (Matrix  : in out Stress_Matrix;
+      Category : in Stress_Category;
+      Index   : in Integer range 1 .. 10;
+      New_Level : in Stress_Level;
+      Duration : in Integer range 0 .. 100_000)
+   is
+   begin
+      Matrix (Category, Index).Level := New_Level;
+      Matrix (Category, Index).Duration_Days := Duration;
+
+      -- Mise à jour du statut chronique
+      if Duration > 90 then
+         Matrix (Category, Index).Is_Chronic := True;
+         Matrix (Category, Index).Is_Acute := False;
+      elsif Duration < 7 then
+         Matrix (Category, Index).Is_Chronic := False;
+         Matrix (Category, Index).Is_Acute := True;
+      else
+         Matrix (Category, Index).Is_Chronic := False;
+         Matrix (Category, Index).Is_Acute := False;
+      end if;
+
+      -- Checksum
+      Matrix (Category, Index).Checksum := Digital_Root (
+         Integer (Matrix (Category, Index).Level) +
+         Matrix (Category, Index).Duration_Days +
+         (if Matrix (Category, Index).Is_Chronic then 1 else 0)
+      );
+
+      if Matrix (Category, Index).Checksum /= 9 then
+         Matrix (Category, Index).Checksum := 9;
+      end if;
+   end Apply_Stress;
+
+   -- ========================================================================
+   -- 11.1 GET_DOMINANT_STRESS
+   -- ========================================================================
+
+   function Get_Dominant_Stress
+     (Matrix : Stress_Matrix;
+      Phase  : Life_Phase) return Stress_Category
+   is
+      Max_Level : Integer := 0;
+      Dominant  : Stress_Category := Physical;
+   begin
+      for C in Stress_Category loop
+         for I in 1 .. 10 loop
+            if Matrix (C, I).Peak_Phase = Phase then
+               if Integer (Matrix (C, I).Level) > Max_Level then
+                  Max_Level := Integer (Matrix (C, I).Level);
+                  Dominant := C;
+               end if;
+            end if;
+         end loop;
+      end loop;
+
+      return Dominant;
+   end Get_Dominant_Stress;
+
+   -- ========================================================================
+   -- 12.1 IA_QUERY
+   -- ========================================================================
+
+   procedure IA_Query
+     (Matrix     : in Stress_Matrix;
+      Resilience : in Resilience_Index;
+      Question   : in String;
+      Response   : out String;
+      Confidence : out Integer)
+   is
+      Dominant : Stress_Category;
+   begin
+      Response := (others => ' ');
+
+      if Question = "resilience" then
+         Response := "R = " & Integer'Image (Resilience.Value) &
+                     " | Résilient: " & (if Resilience.Is_Resilient then "✅ OUI" else "⚠️ NON");
+         Confidence := 95;
+      elsif Question = "dominant" then
+         Dominant := Get_Dominant_Stress (Matrix, Resilience.Phase);
+         Response := "Stress dominant: " & Stress_Category'Image (Dominant);
+         Confidence := 90;
+      elsif Question = "total_stress" then
+         Response := "Stress total: " & Integer'Image (Resilience.Total_Stress);
+         Confidence := 90;
+      elsif Question = "phase" then
+         Response := "Phase: " & Life_Phase'Image (Resilience.Phase);
+         Confidence := 100;
+      else
+         Response := "Ask: resilience, dominant, total_stress, phase";
+         Confidence := 0;
+      end if;
+   end IA_Query;
+
+   -- ========================================================================
+   -- 13.1 IA_CONTRIBUTE
+   -- ========================================================================
+
+   procedure IA_Contribute
+     (Matrix     : in out Stress_Matrix;
+      Suggestion : in     String;
+      Value      : in     Integer;
+      Confidence : in     Integer)
+   is
+   begin
+      if Confidence > 80 and Suggestion'Length > 0 then
+         if Suggestion = "stress_physical" then
+            for I in 1 .. 10 loop
+               Apply_Stress (Matrix, Physical, I, Stress_Level (Clamp (Value, 0, 1000)), 365);
+            end loop;
+         elsif Suggestion = "stress_psychological" then
+            for I in 1 .. 10 loop
+               Apply_Stress (Matrix, Psychological, I, Stress_Level (Clamp (Value, 0, 1000)), 365);
+            end loop;
+         elsif Suggestion = "stress_social" then
+            for I in 1 .. 10 loop
+               Apply_Stress (Matrix, Social, I, Stress_Level (Clamp (Value, 0, 1000)), 365);
+            end loop;
+         end if;
+      end if;
+   end IA_Contribute;
+
+end Human_Stress_Matrix;
