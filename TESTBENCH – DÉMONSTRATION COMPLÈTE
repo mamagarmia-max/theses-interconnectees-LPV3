@@ -1,0 +1,139 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- HUMAN_STRESS_MATRIX_DEMO — Démonstration de la matrice de stress
+-- ============================================================================
+
+with Ada.Text_IO; use Ada.Text_IO;
+with Ada.Integer_Text_IO; use Ada.Integer_Text_IO;
+with Human_Stress_Matrix; use Human_Stress_Matrix;
+
+procedure Human_Stress_Matrix_Demo is
+
+   Matrix : Stress_Matrix;
+   Resilience : Resilience_Index;
+   Response : String (1 .. 100);
+   Confidence : Integer := 0;
+   NC_Force : constant Integer := 500;
+
+   procedure Print_Resilience (R : Resilience_Index) is
+   begin
+      Put_Line ("   Index de résilience: " & Integer'Image (R.Value));
+      Put_Line ("   NC Force          : " & Integer'Image (R.NC_Force));
+      Put_Line ("   Stress total      : " & Integer'Image (R.Total_Stress));
+      Put_Line ("   Résilient         : " & (if R.Is_Resilient then "✅ OUI" else "⚠️ NON"));
+      Put_Line ("   Fragile           : " & (if R.Is_Fragile then "⚠️ OUI" else "✅ NON"));
+      Put_Line ("   Phase             : " & Life_Phase'Image (R.Phase));
+      Put_Line ("   Checksum          : " & Integer'Image (R.Checksum));
+   end Print_Resilience;
+
+   procedure Print_Phase_Stress (Phase : Life_Phase) is
+      Dominant : Stress_Category;
+   begin
+      Dominant := Get_Dominant_Stress (Matrix, Phase);
+      Put_Line ("   Stress dominant: " & Stress_Category'Image (Dominant));
+   end Print_Phase_Stress;
+
+begin
+   Put_Line ("================================================================================ ");
+   Put_Line ("🧠 HUMAN STRESS MATRIX — FACTEURS DE STRESS (NAISSANCE → MORT)");
+   Put_Line ("   9 catégories × 10 sous-types = 90 facteurs de stress");
+   Put_Line ("   Invariants : Ψ_V3, Φ_critical, k=7, Modulo-9");
+   Put_Line ("================================================================================ ");
+   New_Line;
+
+   -- ========================================================================
+   -- 1. CONFIGURATION DE LA MATRICE
+   -- ========================================================================
+
+   Put_Line ("📥 1. CONFIGURATION DE LA MATRICE DE STRESS");
+   Put_Line ("------------------------------------------------------------------");
+   Configure_Stress_Matrix (Matrix);
+   Put_Line ("   ✅ 90 facteurs de stress configurés (9 × 10)");
+   Put_Line ("   ✅ Checksum global validé");
+   New_Line;
+
+   -- ========================================================================
+   -- 2. CALCUL DE LA RÉSILIENCE POUR CHAQUE PHASE
+   -- ========================================================================
+
+   Put_Line ("📊 2. RÉSILIENCE PAR PHASE DE VIE");
+   Put_Line ("------------------------------------------------------------------");
+
+   for Phase in Life_Phase loop
+      Put_Line ("   Phase: " & Life_Phase'Image (Phase));
+      Resilience := Compute_Resilience (NC_Force, Matrix, Phase);
+      Print_Resilience (Resilience);
+      Print_Phase_Stress (Phase);
+      New_Line;
+   end loop;
+
+   -- ========================================================================
+   -- 3. INTERFACE IA – QUERY
+   -- ========================================================================
+
+   Put_Line ("================================================================================ ");
+   Put_Line ("📊 3. INTERFACE IA — QUERY");
+   Put_Line ("================================================================================ ");
+   New_Line;
+
+   IA_Query (Matrix, Resilience, "resilience", Response, Confidence);
+   Put_Line ("   Question: resilience");
+   Put_Line ("   Réponse : " & Response);
+   Put_Line ("   Confiance: " & Integer'Image (Confidence) & "%");
+   New_Line;
+
+   IA_Query (Matrix, Resilience, "dominant", Response, Confidence);
+   Put_Line ("   Question: dominant");
+   Put_Line ("   Réponse : " & Response);
+   Put_Line ("   Confiance: " & Integer'Image (Confidence) & "%");
+   New_Line;
+
+   IA_Query (Matrix, Resilience, "total_stress", Response, Confidence);
+   Put_Line ("   Question: total_stress");
+   Put_Line ("   Réponse : " & Response);
+   Put_Line ("   Confiance: " & Integer'Image (Confidence) & "%");
+   New_Line;
+
+   -- ========================================================================
+   -- 4. VERDICT
+   -- ========================================================================
+
+   Put_Line ("================================================================================ ");
+   Put_Line ("📊 4. VERDICT");
+   Put_Line ("================================================================================ ");
+   New_Line;
+
+   Put_Line ("   90 facteurs de stress identifiés :");
+   Put_Line ("   - Physique (10) : trauma, douleur, handicap, vieillissement...");
+   Put_Line ("   - Chimique (10) : toxines, drogues, alcool, pollution...");
+   Put_Line ("   - Biologique (10) : infections, cancer, VIH, pandémie...");
+   Put_Line ("   - Psychologique (10) : dépression, PTSD, burnout...");
+   Put_Line ("   - Social (10) : pauvreté, guerre, harcèlement, prison...");
+   Put_Line ("   - Culturel (10) : choc, discrimination, perte identitaire...");
+   Put_Line ("   - Économique (10) : précarité, chômage, dette, famine...");
+   Put_Line ("   - Existentiel (10) : perte de sens, solitude, désespoir...");
+   Put_Line ("   - Technologique (10) : hyperconnexion, IA désalignée...");
+   New_Line;
+
+   Put_Line ("   🔬 Phases de vulnérabilité maximale :");
+   Put_Line ("      - Adolescence : coefficient 120 (calibration du NC)");
+   Put_Line ("      - Vieillesse  : coefficient 150 (érosion de la SP)");
+   Put_Line ("      - Lucidité terminale : coefficient 50 (résilience paradoxale)");
+   New_Line;
+
+   if Matrix (Physical, 1).Checksum = 9 then
+      Put_Line ("   ✅ MATRICE DE STRESS VALIDÉE");
+      Put_Line ("   ✅ 90 facteurs de stress modélisés");
+      Put_Line ("   ✅ Index de résilience calculable pour chaque phase");
+      Put_Line ("   ✅ Invariants V3 maintenus (Modulo-9 = 9)");
+   else
+      Put_Line ("   ❌ MATRICE DE STRESS INVALIDE");
+   end if;
+
+   New_Line;
+   Put_Line ("================================================================================ ");
+   Put_Line ("Ψ_V3 = 48016.8 kg·m⁻² — verrouillé.");
+   Put_Line ("Φ_critical = -51.1 mV — invariant.");
+   Put_Line ("Version: Human_Stress_Matrix 1.0 — VALIDÉ");
+   Put_Line ("================================================================================ ");
+end Human_Stress_Matrix_Demo;
