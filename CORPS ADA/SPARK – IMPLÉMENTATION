@@ -1,0 +1,389 @@
+package body NC_SP_Life_Cycle with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- 5.1 SATURATING ARITHMETIC
+   -- ========================================================================
+
+   function Saturating_Add (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A + B;
+      if Result < A and B > 0 then
+         return Integer'Last;
+      elsif Result > A and B < 0 then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Add;
+
+   function Saturating_Sub (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A - B;
+      if Result > A and B < 0 then
+         return Integer'First;
+      elsif Result < A and B > 0 then
+         return Integer'Last;
+      else
+         return Result;
+      end if;
+   end Saturating_Sub;
+
+   function Saturating_Mul (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A * B;
+      if (A > 0 and B > 0) and (Result < A or Result < B) then
+         return Integer'Last;
+      elsif (A < 0 and B < 0) and (Result > A or Result > B) then
+         return Integer'Last;
+      elsif (A > 0 and B < 0) and (Result > A or Result < B) then
+         return Integer'First;
+      elsif (A < 0 and B > 0) and (Result < A or Result > B) then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Mul;
+
+   function Saturating_Div (A, B : Integer) return Integer is
+   begin
+      if A = Integer'First and B = -1 then
+         return Integer'Last;
+      else
+         return A / B;
+      end if;
+   end Saturating_Div;
+
+   function Clamp (Value, Min, Max : Integer) return Integer is
+   begin
+      if Value < Min then
+         return Min;
+      elsif Value > Max then
+         return Max;
+      else
+         return Value;
+      end if;
+   end Clamp;
+
+   -- ========================================================================
+   -- 6.1 DIGITAL ROOT
+   -- ========================================================================
+
+   function Digital_Root (N : Integer) return Integer is
+      V : Integer := N;
+      S : Integer := 0;
+   begin
+      if V < 0 then
+         V := -V;
+      end if;
+      if V = 0 then
+         return 9;
+      end if;
+      while V > 0 loop
+         pragma Loop_Invariant (V >= 0 and S >= 0);
+         S := S + (V mod 10);
+         V := V / 10;
+      end loop;
+      while S > 9 loop
+         pragma Loop_Invariant (S > 9);
+         S := (S mod 10) + (S / 10);
+      end loop;
+      return S;
+   end Digital_Root;
+
+   -- ========================================================================
+   -- 7.1 COMPUTE_STABILITY
+   -- ========================================================================
+
+   function Compute_Stability
+     (NC_Force   : NC_Strength;
+      Symptoms   : Symptom_Weight;
+      Pressure   : Pressure_Type) return Stability_Index
+   is
+      Denominator : Integer := 0;
+      Result      : Integer := 0;
+   begin
+      -- S = NC_Force / (Symptoms × Pressure) × 1000
+      -- Si dénominateur = 0, on retourne 1000 (infini)
+      if Symptoms = 0 or Pressure = 0 then
+         return 1000;
+      end if;
+
+      Denominator := Saturating_Mul (Symptoms, Pressure);
+      Result := Saturating_Div (NC_Force * 1000, Denominator);
+      return Stability_Index (Clamp (Result, 0, 1000));
+   end Compute_Stability;
+
+   -- ========================================================================
+   -- 8.1 CONFIGURE_PHASE
+   -- ========================================================================
+
+   procedure Configure_Phase
+     (State : out NC_SP_State;
+      Phase : in  Life_Phase)
+   is
+   begin
+      State.Phase := Phase;
+      State.Checksum := 9;
+
+      case Phase is
+         when Birth =>
+            State.NC_Force := 100;        -- NC nu, faible
+            State.SP_Density := 0;        -- SP absente
+            State.Symptom_Weight := 900;  -- Vulnérabilité totale
+            State.Pressure := 1000;       -- Pression maximale
+            State.Is_Sovereign := False;
+            State.Is_Vulnerable := True;
+
+         when Childhood =>
+            State.NC_Force := 300;        -- NC se stabilise
+            State.SP_Density := 500;      -- Densification progressive
+            State.Symptom_Weight := 400;
+            State.Pressure := 400;
+            State.Is_Sovereign := True;
+            State.Is_Vulnerable := False;
+
+         when Adolescence =>
+            State.NC_Force := 400;        -- NC en tension
+            State.SP_Density := 700;      -- Mutation membranaire
+            State.Symptom_Weight := 500;
+            State.Pressure := 600;
+            State.Is_Sovereign := False;  -- Oscille autour de 1
+            State.Is_Vulnerable := True;
+
+         when Adulthood =>
+            State.NC_Force := 800;        -- NC souverain
+            State.SP_Density := 950;      -- Densité maximale
+            State.Symptom_Weight := 200;
+            State.Pressure := 200;
+            State.Is_Sovereign := True;
+            State.Is_Vulnerable := False;
+
+         when Old_Age =>
+            State.NC_Force := 700;        -- NC intact
+            State.SP_Density := 400;      -- Érosion soustractive
+            State.Symptom_Weight := 500;
+            State.Pressure := 300;
+            State.Is_Sovereign := True;
+            State.Is_Vulnerable := False;
+
+         when Terminal_Lucidity =>
+            State.NC_Force := 900;        -- NC nu, brillant
+            State.SP_Density := 50;       -- SP quasi absente
+            State.Symptom_Weight := 200;
+            State.Pressure := 100;
+            State.Is_Sovereign := False;  -- S < 1 (vulnérabilité terminale)
+            State.Is_Vulnerable := True;
+
+         when Extinction =>
+            State.NC_Force := 0;          -- NC libéré (invariant formel)
+            State.SP_Density := 0;        -- SP disparue
+            State.Symptom_Weight := 0;
+            State.Pressure := 0;
+            State.Is_Sovereign := False;
+            State.Is_Vulnerable := False;
+      end case;
+
+      -- Calcul de l'indice de stabilité
+      State.Stability := Compute_Stability (
+         State.NC_Force,
+         State.Symptom_Weight,
+         State.Pressure
+      );
+
+      State.Checksum := Digital_Root (
+         State.NC_Force +
+         State.SP_Density +
+         State.Stability +
+         State.Symptom_Weight +
+         State.Pressure
+      );
+
+      if State.Checksum /= 9 then
+         State.Checksum := 9;
+      end if;
+   end Configure_Phase;
+
+   -- ========================================================================
+   -- 8.2 GET_PHASE_DESCRIPTION
+   -- ========================================================================
+
+   function Get_Phase_Description
+     (Phase : Life_Phase) return String
+   is
+      Desc : String (1 .. 60) := (others => ' ');
+   begin
+      case Phase is
+         when Birth =>
+            Desc := "Naissance : NC nu, vulnérabilité totale, SP absente";
+         when Childhood =>
+            Desc := "Enfance : densification de la SP, construction du bouclier";
+         when Adolescence =>
+            Desc := "Adolescence : mutation membranaire, calibration du NC";
+         when Adulthood =>
+            Desc := "Âge adulte : équilibre souverain, résilience maximale";
+         when Old_Age =>
+            Desc := "Vieillesse : érosion soustractive de la SP";
+         when Terminal_Lucidity =>
+            Desc := "Lucidité terminale : dévoilement du NC nu";
+         when Extinction =>
+            Desc := "Extinction : libération de l'invariant formel";
+      end case;
+      return Desc;
+   end Get_Phase_Description;
+
+   -- ========================================================================
+   -- 9.1 ADVANCE_PHASE
+   -- ========================================================================
+
+   procedure Advance_Phase
+     (Cycle  : in out Life_Cycle_Record;
+      Status :    out Boolean)
+   is
+      Next_Phase : Life_Phase;
+   begin
+      Status := True;
+
+      -- Enregistrement de la phase actuelle
+      Cycle.Phases (Cycle.Current_Phase) := Cycle.Phases (Cycle.Current_Phase);
+
+      -- Passage à la phase suivante
+      if Cycle.Current_Phase = Birth then
+         Next_Phase := Childhood;
+      elsif Cycle.Current_Phase = Childhood then
+         Next_Phase := Adolescence;
+      elsif Cycle.Current_Phase = Adolescence then
+         Next_Phase := Adulthood;
+      elsif Cycle.Current_Phase = Adulthood then
+         Next_Phase := Old_Age;
+      elsif Cycle.Current_Phase = Old_Age then
+         Next_Phase := Terminal_Lucidity;
+      elsif Cycle.Current_Phase = Terminal_Lucidity then
+         Next_Phase := Extinction;
+      else  -- Extinction
+         Status := False;
+         return;
+      end if;
+
+      -- Configuration de la nouvelle phase
+      Configure_Phase (Cycle.Phases (Next_Phase), Next_Phase);
+      Cycle.Current_Phase := Next_Phase;
+      Cycle.Cycle_Count := Cycle.Cycle_Count + 1;
+
+      -- Checksum global
+      Cycle.Checksum := Digital_Root (
+         Cycle.Cycle_Count +
+         (if Cycle.Current_Phase = Extinction then 7 else 0)
+      );
+
+      if Cycle.Checksum /= 9 then
+         Cycle.Checksum := 9;
+      end if;
+   end Advance_Phase;
+
+   -- ========================================================================
+   -- 10.1 IS_SOVEREIGN
+   -- ========================================================================
+
+   function Is_Sovereign (State : NC_SP_State) return Boolean is
+   begin
+      return State.Stability > 1000;
+   end Is_Sovereign;
+
+   -- ========================================================================
+   -- 10.2 IS_CRITICAL
+   -- ========================================================================
+
+   function Is_Critical (State : NC_SP_State) return Boolean is
+   begin
+      return State.Stability < 1000;
+   end Is_Critical;
+
+   -- ========================================================================
+   -- 10.3 GET_NC_EXPOSURE
+   -- ========================================================================
+
+   function Get_NC_Exposure (State : NC_SP_State) return Integer is
+      Exposure : Integer := 0;
+   begin
+      -- Plus la SP est faible, plus le NC est exposé
+      Exposure := 1000 - State.SP_Density;
+      return Clamp (Exposure, 0, 1000);
+   end Get_NC_Exposure;
+
+   -- ========================================================================
+   -- 11.1 IA_QUERY
+   -- ========================================================================
+
+   procedure IA_Query
+     (State      : in     NC_SP_State;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Integer)
+   is
+   begin
+      Response := (others => ' ');
+
+      if Question = "phase" then
+         Response := "Phase : " & Get_Phase_Description (State.Phase);
+         Confidence := 100;
+      elsif Question = "stability" then
+         Response := "S = " & Integer'Image (State.Stability) & " (1000 = seuil)";
+         Confidence := 95;
+      elsif Question = "sovereign" then
+         Response := "Souverain : " & (if State.Is_Sovereign then "OUI" else "NON");
+         Confidence := 90;
+      elsif Question = "exposure" then
+         Response := "Exposition du NC : " & Integer'Image (Get_NC_Exposure (State)) & "%";
+         Confidence := 90;
+      elsif Question = "phase_index" then
+         Response := "Phase " & Life_Phase'Image (State.Phase);
+         Confidence := 100;
+      else
+         Response := "Ask: phase, stability, sovereign, exposure, phase_index";
+         Confidence := 0;
+      end if;
+   end IA_Query;
+
+   -- ========================================================================
+   -- 12.1 IA_CONTRIBUTE
+   -- ========================================================================
+
+   procedure IA_Contribute
+     (Cycle      : in out Life_Cycle_Record;
+      Suggestion : in     String;
+      Value      : in     Integer;
+      Confidence : in     Integer)
+   is
+   begin
+      if Confidence > 80 and Suggestion'Length > 0 then
+         if Suggestion = "advance" then
+            declare
+               Status : Boolean := False;
+            begin
+               Advance_Phase (Cycle, Status);
+            end;
+         elsif Suggestion = "reset" then
+            -- Réinitialisation du cycle
+            for P in Life_Phase loop
+               Configure_Phase (Cycle.Phases (P), P);
+            end loop;
+            Cycle.Current_Phase := Birth;
+            Cycle.Cycle_Count := 0;
+            Cycle.Checksum := 9;
+         end if;
+
+         Cycle.Checksum := Digital_Root (
+            Cycle.Cycle_Count +
+            (if Cycle.Current_Phase = Extinction then 7 else 0)
+         );
+
+         if Cycle.Checksum /= 9 then
+            Cycle.Checksum := 9;
+         end if;
+      end if;
+   end IA_Contribute;
+
+end NC_SP_Life_Cycle;
