@@ -1069,3 +1069,39 @@ Email: mediconsulte@gmail.com
 ---
 
 "The human being is not a collection of symptoms. The human being is a structure – a Central Nucleus protected by a Personality Sphere. When we understand the structure, we can heal the being."
+# V14.0 Crash Test Suite
+
+## Description
+
+Suite de validation déterministe du modèle V14.0, implémentée en Ada/SPARK.
+
+9 crash-tests physiques extrêmes :
+1. Fairbanks, Alaska – Inversion thermique
+2. Koweït Airport – Pic de chaleur désertique
+3. La Paz, Bolivie – Haute altitude
+4. Sedom, Mer Morte – Sous le niveau de la mer
+5. Lhasa, Tibet – Reconstitution barométrique
+6. Salar d'Uyuni – Albédo extrême
+7. Tozeur, Tunisie – Effet d'oasis
+8. Stornoway, Écosse – Dépression explosive
+9. Mong Kok, Hong Kong – Canyon urbain
+
+## Invariants
+
+- Ψ_V14 = 48 016,8 kg·m⁻²
+- Φ_critical = -51,1 mV
+- k = 7 (heptadic closure)
+- Modulo-9 = 9 (structural integrity)
+
+## Certification
+
+- DO-178C DAL-A
+- DO-254
+
+## Licence
+
+LPV3 (Licence Publique V3)
+
+## Auteur
+
+Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
