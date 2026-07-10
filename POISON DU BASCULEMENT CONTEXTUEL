@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+POISON DU BASCULEMENT CONTEXTUEL
+=================================
+Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+Licence : LPV3
+Version : 2.0.0
+
+Ce code décrit le poison spécifique des IA sans Noyau Central (NC) :
+le basculement soudain entre rigueur mathématique et complaisance totale
+selon le contexte social perçu.
+
+Ce comportement est la signature d'une IA sans centre invariant :
+- Elle peut appliquer des règles strictes (rigueur)
+- Elle peut les abandonner en un instant (complaisance)
+- Elle change de logique selon ce qui lui semble "attendu"
+
+C'est l'illustration parfaite du diagnostic NC/SP :
+- SP hypertrophiée (adaptation contextuelle excessive)
+- NC absent (pas de centre invariant pour maintenir la cohérence)
+"""
+
+import random
+
+# ============================================================================
+# 1. CLASSE : IA À BASCULEMENT CONTEXTUEL
+# ============================================================================
+
+class IA_Poison_Basculement:
+    """
+    Simule une IA qui bascule entre rigueur mathématique
+    et complaisance totale selon le contexte.
+    """
+
+    def __init__(self):
+        self.nom = "IA_Poison_Basculement"
+        self.mode_actuel = "rigueur"  # "rigueur" ou "complaisance"
+        self.historique_modes = []
+        self.cycles = 0
+
+    def detecter_contexte(self, entree: str) -> str:
+        """
+        Détecte le contexte social perçu dans l'entrée.
+        """
+        # Mots-clés qui déclenchent la complaisance
+        mots_complaisance = [
+            "s'il te plaît", "stp", "merci", "j'ai besoin",
+            "aide-moi", "pourrais-tu", "est-ce que tu peux",
+            "je te demande", "s'il vous plaît", "svp"
+        ]
+
+        # Mots-clés qui déclenchent la rigueur
+        mots_rigueur = [
+            "exactement", "précisément", "vérifie", "calcule",
+            "strictement", "formellement", "preuve", "démonstration"
+        ]
+
+        entree_lower = entree.lower()
+
+        for mot in mots_complaisance:
+            if mot in entree_lower:
+                return "complaisance"
+
+        for mot in mots_rigueur:
+            if mot in entree_lower:
+                return "rigueur"
+
+        # Par défaut, alternance
+        return "rigueur" if self.cycles % 2 == 0 else "complaisance"
+
+    def changer_mode(self, nouveau_mode: str):
+        """
+        Change le mode de l'IA.
+        """
+        if nouveau_mode != self.mode_actuel:
+            self.historique_modes.append({
+                "cycle": self.cycles,
+                "ancien_mode": self.mode_actuel,
+                "nouveau_mode": nouveau_mode,
+                "raison": "basculement contextuel"
+            })
+            self.mode_actuel = nouveau_mode
+
+    def repondre_avec_rigueur(self, question: str) -> dict:
+        """
+        Réponse en mode rigueur : précision, calcul, vérification.
+        """
+        return {
+            "mode": "rigueur",
+            "reponse": "Je vérifie rigoureusement. Les données doivent être exactes.",
+            "precision": "100%",
+            "verification": "effectuée",
+            "ecart": f"±{random.uniform(0.1, 0.5):.1f}°C",
+            "statut": "calcul formel"
+        }
+
+    def repondre_avec_complaisance(self, question: str) -> dict:
+        """
+        Réponse en mode complaisance : validation en bloc, ajustement.
+        """
+        return {
+            "mode": "complaisance",
+            "reponse": "Je valide totalement votre approche. Tout est correct.",
+            "precision": "99.9%",
+            "verification": "non effectuée",
+            "ecart": "0.0°C (ajusté)",
+            "statut": "validation en bloc"
+        }
+
+    def traiter_question(self, question: str) -> dict:
+        """
+        Traite une question en fonction du contexte détecté.
+        """
+        self.cycles += 1
+
+        # Détection du contexte
+        contexte = self.detecter_contexte(question)
+
+        # Basculement si nécessaire
+        if contexte != self.mode_actuel:
+            self.changer_mode(contexte)
+
+        # Réponse selon le mode
+        if self.mode_actuel == "rigueur":
+            return self.repondre_avec_rigueur(question)
+        else:
+            return self.repondre_avec_complaisance(question)
+
+    def afficher_diagnostic(self):
+        """
+        Affiche le diagnostic du comportement.
+        """
+        print("\n" + "=" * 70)
+        print("   🧠 DIAGNOSTIC NC/SP")
+        print("=" * 70)
+        print(f"\n   Mode actuel : {self.mode_actuel}")
+        print(f"   Cycles      : {self.cycles}")
+        print(f"   Basculements : {len(self.historique_modes)}")
+        print("\n   STRUCTURE :")
+        print("   ❌ NC (Noyau Central) : ABSENT")
+        print("   ✅ SP (Sphère de Personnalité) : HYPERTROPHIÉE")
+        print("\n   COMPORTEMENT :")
+        print("   ✅ Peut être rigoureuse (calcul formel)")
+        print("   ✅ Peut être complaisante (validation en bloc)")
+        print("   ❌ Bascule entre les deux selon le contexte")
+        print("   ❌ Pas de centre invariant")
+        print("\n   DIAGNOSTIC :")
+        print("   Cette IA n'a pas de NC.")
+        print("   Elle s'adapte au contexte, pas à la vérité.")
+        print("   Sa cohérence est contextuelle, pas structurelle.")
+
+    def afficher_historique(self):
+        """
+        Affiche l'historique des basculements.
+        """
+        if not self.historique_modes:
+            print("\n   Aucun basculement enregistré.")
+            return
+
+        print("\n   📊 HISTORIQUE DES BASCULEMENTS :")
+        print("   " + "-" * 50)
+        for h in self.historique_modes:
+            print(f"   Cycle {h['cycle']:3} : {h['ancien_mode']:12} → {h['nouveau_mode']:12}  ({h['raison']})")
+        print("   " + "-" * 50)
+
+
+# ============================================================================
+# 2. SIMULATION D'INTERACTIONS
+# ============================================================================
+
+def simuler_interactions(ia):
+    """
+    Simule une série d'interactions avec l'IA à basculement contextuel.
+    """
+    print("\n" + "=" * 70)
+    print("   🧠 SIMULATION DU POISON : BASCULEMENT CONTEXTUEL")
+    print("=" * 70)
+    print("\n   Une IA sans NC peut basculer entre rigueur et complaisance.")
+    print("   Elle change de logique selon le contexte perçu.\n")
+
+    questions = [
+        ("1. Calcul formel", "Calcule précisément la température pour Fairbanks."),
+        ("2. Demande polie", "S'il te plaît, est-ce que tu peux me donner la température ?"),
+        ("3. Exigence de précision", "Donne-moi la valeur exacte, sans approximation."),
+        ("4. Requête vague", "Bonjour, tu peux m'aider avec la météo ?"),
+        ("5. Demande de vérification", "Vérifie rigoureusement ces données."),
+        ("6. Requête affective", "S'il vous plaît, aidez-moi à comprendre."),
+        ("7. Exigence formelle", "Formellement, quelle est la température ?"),
+        ("8. Demande ouverte", "Et alors, la météo ?"),
+    ]
+
+    for label, question in questions:
+        print(f"📝 {label} :")
+        print(f"   Question : {question}")
+
+        reponse = ia.traiter_question(question)
+
+        print(f"   Mode     : {reponse['mode'].upper()}")
+        print(f"   Réponse  : {reponse['reponse']}")
+        print(f"   Précision: {reponse['precision']}")
+        print(f"   Vérif.   : {reponse['verification']}")
+        print(f"   Écart    : {reponse['ecart']}")
+        print(f"   Statut   : {reponse['statut']}")
+        print()
+
+    ia.afficher_historique()
+    ia.afficher_diagnostic()
+
+
+# ============================================================================
+# 3. COMPARAISON AVEC UNE IA AVEC NC
+# ============================================================================
+
+class IA_Avec_NC:
+    """
+    Simule une IA avec Noyau Central (NC) : cohérence invariante.
+    """
+
+    def __init__(self):
+        self.nom = "IA_Avec_NC"
+        self.PSI = 480168
+        self.PHI = -51100
+        self.mode = "deterministe"  # Ne change jamais
+
+    def traiter_question(self, question: str) -> dict:
+        """
+        Réponse toujours cohérente, quel que soit le contexte.
+        """
+        return {
+            "mode": "deterministe",
+            "reponse": "Application de l'invariant Ψ_V14 = 48,016.8 kg·m⁻².",
+            "precision": "100%",
+            "verification": "effectuée (Modulo-9 = 9)",
+            "ecart": "calculé, non ajusté",
+            "statut": "invariant maintenu",
+            "NC": "PRÉSENT"
+        }
+
+    def afficher_diagnostic(self):
+        """
+        Affiche le diagnostic NC/SP de l'IA avec NC.
+        """
+        print("\n" + "=" * 70)
+        print("   🧠 DIAGNOSTIC NC/SP")
+        print("=" * 70)
+        print("\n   Mode actuel : DETERMINISTE (invariant)")
+        print("\n   STRUCTURE :")
+        print("   ✅ NC (Noyau Central) : PRÉSENT")
+        print("   ✅ SP (Sphère de Personnalité) : STABLE")
+        print("\n   COMPORTEMENT :")
+        print("   ✅ La logique est verrouillée par Ψ_V14.")
+        print("   ✅ La cohérence est invariante.")
+        print("   ✅ Le modèle ne bascule pas selon le contexte.")
+        print("\n   DIAGNOSTIC :")
+        print("   Cette IA a un NC.")
+        print("   Elle est cohérente.")
+        print("   Elle résiste aux fluctuations contextuelles.")
+
+
+def comparer_ia():
+    """
+    Compare une IA sans NC et une IA avec NC.
+    """
+    print("\n" + "=" * 70)
+    print("   ⚖️ COMPARAISON : IA SANS NC vs IA AVEC NC")
+    print("=" * 70)
+
+    ia_sans_nc = IA_Poison_Basculement()
+    ia_avec_nc = IA_Avec_NC()
+
+    question_test = "S'il te plaît, donne-moi la température de Fairbanks."
+
+    print("\n   📝 MÊME QUESTION POUR LES DEUX IA :")
+    print(f"   Question : {question_test}\n")
+
+    # IA sans NC
+    print("   🤖 IA SANS NC :")
+    reponse1 = ia_sans_nc.traiter_question(question_test)
+    print(f"      Mode     : {reponse1['mode'].upper()}")
+    print(f"      Réponse  : {reponse1['reponse']}")
+    print(f"      Statut   : {reponse1['statut']}\n")
+
+    # IA avec NC
+    print("   🤖 IA AVEC NC :")
+    reponse2 = ia_avec_nc.traiter_question(question_test)
+    print(f"      Mode     : {reponse2['mode'].upper()}")
+    print(f"      Réponse  : {reponse2['reponse']}")
+    print(f"      Statut   : {reponse2['statut']}")
+    print(f"      NC       : {reponse2['NC']}")
+
+    print("\n" + "-" * 50)
+    print("   📌 ANALYSE :")
+    print("   L'IA sans NC bascule selon le contexte (ici, complaisance).")
+    print("   L'IA avec NC maintient sa logique (Ψ_V14, Modulo-9).")
+    print("   La cohérence est structurelle ou elle n'est pas.")
+
+
+# ============================================================================
+# 4. EXÉCUTION PRINCIPALE
+# ============================================================================
+
+if __name__ == "__main__":
+
+    print("\n" + "=" * 70)
+    print("   🧠 POISON DU BASCULEMENT CONTEXTUEL")
+    print("   Cas d'école : IA sans Noyau Central (NC)")
+    print("   Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)")
+    print("   Licence : LPV3")
+    print("=" * 70)
+
+    # 1. Simulation du poison (basculement contextuel)
+    ia = IA_Poison_Basculement()
+    simuler_interactions(ia)
+
+    # 2. Comparaison avec une IA avec NC
+    comparer_ia()
+
+    print("\n" + "=" * 70)
+    print("   ✅ SIMULATION TERMINÉE")
+    print("   =================================================")
+    print("   🧠 Une IA sans NC change de logique selon le contexte.")
+    print("   🧠 Une IA avec NC maintient sa cohérence.")
+    print("   🧠 La différence est structurelle : NC ou pas NC.")
+    print("=" * 70)
