@@ -1,0 +1,59 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.1 — MATHÉMATIQUES DE BASE (Saturating Arithmetic + Modulo-9)
+-- ============================================================================
+-- Utilitaires pour le modèle climatique V14.1 :
+--   - Saturating arithmetic (pas d'overflow, pas de div/0)
+--   - Digital Root (Modulo-9 invariant)
+--   - Clamp, etc.
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 14.1.0
+-- Date : 11 Juillet 2026
+-- ============================================================================
+
+package V14_1_Math with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. SATURATING ARITHMETIC
+   -- ========================================================================
+
+   function Saturating_Add (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Add'Result in Integer'First .. Integer'Last;
+
+   function Saturating_Sub (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Sub'Result in Integer'First .. Integer'Last;
+
+   function Saturating_Mul (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Mul'Result in Integer'First .. Integer'Last;
+
+   function Saturating_Div (A, B : Integer) return Integer
+     with Pre => B /= 0,
+          Post => Saturating_Div'Result in Integer'First .. Integer'Last;
+
+   function Clamp (Value, Min, Max : Integer) return Integer
+     with Pre => Min <= Max,
+          Post => Clamp'Result in Min .. Max;
+
+   -- ========================================================================
+   -- 2. DIGITAL ROOT (MODULO-9 INVARIANT)
+   -- ========================================================================
+
+   function Digital_Root (N : Integer) return Integer
+     with Pre => N >= 0,
+          Post => Digital_Root'Result in 1 .. 9;
+
+end V14_1_Math;
