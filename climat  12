@@ -1,0 +1,170 @@
+package body V14_1_Module_Forest_Agricultural with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- 5.1 COMPUTE_EVAPOTRANSPIRATION
+   -- ========================================================================
+
+   function Compute_Evapotranspiration (Params : Forest_Params) return Integer is
+      Base : Integer := 0;
+   begin
+      Base := Saturating_Div (Params.Humidity, 10);
+      Base := Saturating_Add (Base, Saturating_Div (Params.Soil_Moisture, 20));
+      Base := Saturating_Add (Base, Saturating_Div (Params.Leaf_Area_Index, 5));
+      return Clamp (Base, 0, 50);
+   end Compute_Evapotranspiration;
+
+   -- ========================================================================
+   -- 5.2 COMPUTE_CANOPY_EFFECT
+   -- ========================================================================
+
+   function Compute_Canopy_Effect (Canopy_Height : Canopy_Height_Type) return Integer is
+   begin
+      -- La canopée protège du rayonnement
+      return Clamp (Saturating_Div (Canopy_Height, 4), 0, 25);
+   end Compute_Canopy_Effect;
+
+   -- ========================================================================
+   -- 5.3 COMPUTE_LAI_EFFECT
+   -- ========================================================================
+
+   function Compute_LAI_Effect (Leaf_Area_Index : Integer) return Integer is
+   begin
+      -- Plus l'indice foliaire est élevé, plus l'absorption est forte
+      return Clamp (Saturating_Div (Leaf_Area_Index, 5), 0, 20);
+   end Compute_LAI_Effect;
+
+   -- ========================================================================
+   -- 5.4 COMPUTE_FOREST_CORRECTION
+   -- ========================================================================
+
+   function Compute_Forest_Correction
+     (Params    : Forest_Params;
+      Base_Temp : Temp_Type;
+      Latitude  : Integer) return Integer
+   is
+      Evapotransp : Integer := Compute_Evapotranspiration (Params);
+      Canopy      : Integer := Compute_Canopy_Effect (Params.Canopy_Height);
+      LAI         : Integer := Compute_LAI_Effect (Params.Leaf_Area_Index);
+      Total       : Integer := 0;
+   begin
+      -- 1. Évapotranspiration : refroidissement
+      Total := Saturating_Sub (Total, Evapotransp);
+
+      -- 2. Canopée : ombrage
+      Total := Saturating_Sub (Total, Canopy);
+
+      -- 3. LAI : absorption
+      Total := Saturating_Add (Total, LAI);
+
+      -- 4. Latitude : correction climatique
+      if abs (Latitude) < 2000 then
+         Total := Saturating_Add (Total, 10);  -- Tropical : chaud
+      elsif abs (Latitude) > 5000 then
+         Total := Saturating_Sub (Total, 15);  -- Boréal : froid
+      end if;
+
+      return Clamp (Total, -50, 50);
+   end Compute_Forest_Correction;
+
+   -- ========================================================================
+   -- 6.1 COMPUTE_IRRIGATION_EFFECT
+   -- ========================================================================
+
+   function Compute_Irrigation_Effect (Irrigation : Integer) return Integer is
+   begin
+      -- L'irrigation refroidit par évaporation
+      return Clamp (Saturating_Div (Irrigation, 20), 0, 30);
+   end Compute_Irrigation_Effect;
+
+   -- ========================================================================
+   -- 6.2 COMPUTE_GROWING_SEASON_EFFECT
+   -- ========================================================================
+
+   function Compute_Growing_Season_Effect
+     (Growing_Season : Integer;
+      Latitude       : Integer) return Integer
+   is
+      Base : Integer := 0;
+   begin
+      Base := Growing_Season * 2;
+      if abs (Latitude) > 4000 then
+         Base := Saturating_Div (Base, 2);  -- Saison plus courte
+      end if;
+      return Clamp (Base, 0, 30);
+   end Compute_Growing_Season_Effect;
+
+   -- ========================================================================
+   -- 6.3 COMPUTE_AGRICULTURAL_CORRECTION
+   -- ========================================================================
+
+   function Compute_Agricultural_Correction
+     (Params    : Agricultural_Params;
+      Base_Temp : Temp_Type;
+      Latitude  : Integer) return Integer
+   is
+      Irrigation : Integer := Compute_Irrigation_Effect (Params.Irrigation);
+      Season     : Integer := Compute_Growing_Season_Effect (Params.Growing_Season, Latitude);
+      Total      : Integer := 0;
+   begin
+      -- 1. Irrigation : refroidissement
+      Total := Saturating_Sub (Total, Irrigation);
+
+      -- 2. Saison de croissance : chaleur
+      Total := Saturating_Add (Total, Season);
+
+      -- 3. Végétation : effet modérateur
+      Total := Saturating_Add (Total, Saturating_Div (Params.Vegetation_Cover, 10));
+
+      return Clamp (Total, -40, 40);
+   end Compute_Agricultural_Correction;
+
+   -- ========================================================================
+   -- 7.1 IA_QUERY_FOREST
+   -- ========================================================================
+
+   procedure IA_Query_Forest
+     (Params     : in     Forest_Params;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Confidence_Type)
+   is
+   begin
+      Response := (others => ' ');
+      if Question = "evapotranspiration" then
+         Response := "Evapotranspiration: " & Integer'Image (Compute_Evapotranspiration (Params)) & " W/m²";
+         Confidence := 90;
+      elsif Question = "canopy" then
+         Response := "Canopy effect: " & Integer'Image (Compute_Canopy_Effect (Params.Canopy_Height)) & "°C";
+         Confidence := 85;
+      else
+         Response := "Ask: evapotranspiration, canopy";
+         Confidence := 0;
+      end if;
+   end IA_Query_Forest;
+
+   -- ========================================================================
+   -- 7.2 IA_QUERY_AGRICULTURAL
+   -- ========================================================================
+
+   procedure IA_Query_Agricultural
+     (Params     : in     Agricultural_Params;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Confidence_Type)
+   is
+   begin
+      Response := (others => ' ');
+      if Question = "irrigation" then
+         Response := "Irrigation effect: " & Integer'Image (Compute_Irrigation_Effect (Params.Irrigation)) & "°C";
+         Confidence := 90;
+      elsif Question = "season" then
+         Response := "Growing season effect: " &
+                     Integer'Image (Compute_Growing_Season_Effect (Params.Growing_Season, 4500)) & "°C";
+         Confidence := 85;
+      else
+         Response := "Ask: irrigation, season";
+         Confidence := 0;
+      end if;
+   end IA_Query_Agricultural;
+
+end V14_1_Module_Forest_Agricultural;
