@@ -1,0 +1,129 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.1 — MODULE URBAIN (Villes, ICU, Anthropique)
+-- ============================================================================
+-- Module spécialisé pour les environnements urbains :
+--   - Inertie thermique (béton, asphalte, verre, acier)
+--   - Stockage de chaleur (mémoire thermique 7 jours)
+--   - Îlot de chaleur urbain (ICU)
+--   - Chaleur anthropique (population, trafic, industrie)
+--   - Ventilation urbaine (bâtiments)
+--   - Végétation (parcs, arbres)
+--   - Albédo effectif
+--   - Effet de canyon
+--   - Pollution
+--
+-- Tous les paramètres sont mesurables ou dérivés de données réelles.
+-- Aucun ajustement arbitraire.
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 14.1.0
+-- Date : 11 Juillet 2026
+-- ============================================================================
+
+with V14_1_Math;
+use V14_1_Math;
+
+package V14_1_Module_Urban with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. TYPES DE BASE
+   -- ========================================================================
+
+   subtype Temp_Type is Integer range -600 .. 600;        -- ×10°C
+   subtype Population_Type is Integer range 0 .. 100_000_000;
+   subtype Building_Coverage_Type is Integer range 0 .. 100; -- %
+   subtype Vegetation_Cover_Type is Integer range 0 .. 100; -- %
+   subtype Traffic_Type is Integer range 0 .. 1000;
+   subtype Industry_Type is Integer range 0 .. 1000;
+   subtype Pollution_Type is Integer range 0 .. 1000;
+   subtype Inertia_Type is Integer range 0 .. 1000;       -- 0-1 ×1000
+   subtype Albedo_Type is Integer range 0 .. 100;
+
+   -- ========================================================================
+   -- 2. MATÉRIAUX URBAINS (Mesurés)
+   -- ========================================================================
+
+   type Urban_Material is
+     (Concrete, Asphalt, Glass, Steel, Brick, Wood, Green_Roof, Water_Surface, Soil, Gravel);
+
+   type Material_Properties is record
+      Albedo        : Albedo_Type;
+      Inertia       : Inertia_Type;
+      Heat_Capacity : Integer range 0 .. 10_000;  -- kJ/m³·K
+      Conductivity  : Integer range 0 .. 5000;    -- W/m·K
+      Checksum      : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Material_Properties.Checksum in 1 .. 9;
+
+   function Get_Material_Props (M : Urban_Material) return Material_Properties;
+
+   -- ========================================================================
+   -- 3. PARAMÈTRES URBAINS
+   -- ========================================================================
+
+   type Urban_Params is record
+      Population          : Population_Type := 0;
+      Building_Coverage   : Building_Coverage_Type := 0;
+      Vegetation_Cover    : Vegetation_Cover_Type := 0;
+      Traffic_Intensity   : Traffic_Type := 0;
+      Industry_Intensity  : Industry_Type := 0;
+      Pollution_Level     : Pollution_Type := 0;
+      Dominant_Material   : Urban_Material := Concrete;
+      Building_Height     : Integer range 0 .. 500 := 0;   -- m
+      Street_Width        : Integer range 0 .. 100 := 0;   -- m
+      Water_Cover         : Integer range 0 .. 100 := 0;   -- %
+      Is_Coastal          : Boolean := False;
+      Checksum            : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Urban_Params.Checksum in 1 .. 9;
+
+   -- ========================================================================
+   -- 4. FONCTIONS DE CALCUL
+   -- ========================================================================
+
+   function Compute_Urban_Correction
+     (Params      : Urban_Params;
+      Prev_Temps  : array (1 .. 7) of Temp_Type;
+      Base_Temp   : Temp_Type) return Integer;
+   -- Calcule la correction urbaine totale
+
+   function Compute_Effective_Inertia
+     (Params : Urban_Params) return Inertia_Type;
+
+   function Compute_ICU
+     (Params : Urban_Params;
+      Day    : Day_Type) return Integer;
+   -- Îlot de chaleur urbain (diurne)
+
+   function Compute_Anthropic_Heat
+     (Params : Urban_Params) return Integer;
+
+   function Compute_Storage_Effect
+     (Prev_Temps : array (1 .. 7) of Temp_Type;
+      Inertia    : Inertia_Type) return Integer;
+
+   function Compute_Ventilation_Effect
+     (Params : Urban_Params) return Integer;
+
+   function Compute_Vegetation_Effect
+     (Params : Urban_Params) return Integer;
+
+   -- ========================================================================
+   -- 5. INTERFACE IA
+   -- ========================================================================
+
+   procedure IA_Query_Urban
+     (Params     : in     Urban_Params;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Confidence_Type);
+
+end V14_1_Module_Urban;
