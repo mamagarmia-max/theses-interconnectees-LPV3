@@ -1,0 +1,244 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.0 CLIMATE MODEL WITH THERMAL INERTIA — ADA/SPARK FORMAL IMPLEMENTATION
+-- ============================================================================
+-- Version 14.1 : Intègre l'inertie thermique des sols et l'effet cumulatif de
+-- la chaleur stockée d'un jour sur l'autre.
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 14.1.0
+-- Date : 11 Juillet 2026
+-- ============================================================================
+
+package V14_Climate_With_Inertia with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. INVARIANTS V14 (VERROUILLÉS)
+   -- ========================================================================
+
+   PSI_V14          : constant := 480168;        -- ×10 : 48,016.8 kg·m⁻²
+   PHI_CRITICAL     : constant := -51100;        -- ×1000 : -51.1 mV
+   BETA             : constant := 1_000_000;     -- 10⁶
+   K_CYCLES         : constant := 7;             -- Heptadic closure
+   ALPHA_INV        : constant := 13703599913;   -- 1/α × 10⁵
+
+   -- Constantes physiques
+   LAPSE_DRY        : constant := 98;            -- 9.8°C/km ×10
+   LAPSE_WET        : constant := 65;            -- 6.5°C/km ×10
+   SOLAR_CONSTANT   : constant := 1360;          -- W·m⁻²
+
+   -- ========================================================================
+   -- 2. TYPES DE BASE
+   -- ========================================================================
+
+   subtype Temp_Type is Integer range -600 .. 600;      -- ×10°C
+   subtype Pressure_Type is Integer range 500 .. 11000; -- hPa ×10
+   subtype Humidity_Type is Integer range 0 .. 1000;    -- %
+   subtype Albedo_Type is Integer range 0 .. 100;       -- %
+   subtype Altitude_Type is Integer range -500 .. 10000;-- mètres
+   subtype CO2_Type is Integer range 0 .. 10000;        -- ppm ×10
+   subtype Solar_Flux_Type is Integer range 0 .. 2000;  -- W·m⁻²
+   subtype Day_Type is Integer range 1 .. 366;
+   subtype Year_Type is Integer range 1900 .. 2030;
+   subtype Heat_Storage_Type is Integer range 0 .. 10_000_000; -- J·m⁻² ×1000
+
+   -- ========================================================================
+   -- 3. INERTIE THERMIQUE — NOUVEAU
+   -- ========================================================================
+
+   -- Coefficient d'inertie thermique des matériaux (0.0 à 1.0)
+   -- 0.0 : dissipation instantanée (sable sec)
+   -- 1.0 : rétention parfaite (béton, asphalte)
+   type Inertia_Coefficient is range 0 .. 1000;  -- ×1000
+
+   -- Facteur de refroidissement nocturne (0.0 à 1.0)
+   -- Plus il est élevé, plus la nuit refroidit efficacement
+   type Cooling_Factor is range 0 .. 1000;  -- ×1000
+
+   -- Historique des températures (pour le cumul)
+   type Temp_History is array (1 .. 7) of Temp_Type;  -- 7 jours d'historique
+   type Flux_History is array (1 .. 7) of Integer;    -- Flux solaire journalier
+
+   -- ========================================================================
+   -- 4. COUCHE ATMOSPHÉRIQUE
+   -- ========================================================================
+
+   type Atmospheric_Layer is record
+      Altitude     : Altitude_Type := 0;
+      Pressure     : Pressure_Type := 10130;
+      Temperature  : Temp_Type := 0;
+      Humidity     : Humidity_Type := 600;
+      Density      : Integer := 0;
+      Checksum     : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Atmospheric_Layer.Checksum in 1 .. 9;
+
+   type Layer_Array is array (1 .. 6) of Atmospheric_Layer;
+
+   -- ========================================================================
+   -- 5. ÉTAT COMPLET DU MODÈLE
+   -- ========================================================================
+
+   type Surface_Type is
+     (Desert,         -- Sable sec : faible inertie
+      Grassland,      -- Prairie : inertie moyenne
+      Urban,          -- Béton/asphalte : forte inertie
+      Forest,         -- Forêt : inertie moyenne-élevée
+      Water,          -- Eau : inertie élevée
+      Snow);          -- Neige : inertie faible
+
+   type Climate_State is record
+      CO2_Level      : CO2_Type := 4250;
+      Day            : Day_Type := 1;
+      Year           : Year_Type := 2026;
+      Albedo         : Albedo_Type := 30;
+      Latitude       : Integer := 0;          -- ×100 °N
+      Altitude       : Altitude_Type := 0;
+      Urban_Heat     : Integer := 0;          -- ×10°C
+      Surface_Type   : Surface_Type := Grassland;
+      Solar_Flux     : Solar_Flux_Type := SOLAR_CONSTANT;
+
+      -- Inertie thermique
+      Inertia        : Inertia_Coefficient := 700;  -- 0.7
+      Cooling        : Cooling_Factor := 600;       -- 0.6
+      Heat_Stored    : Heat_Storage_Type := 0;
+      Last_Temp      : Temp_Type := 0;
+      Temp_History   : Temp_History := (others => 0);
+      Flux_History   : Flux_History := (others => 0);
+      Day_Count      : Integer range 0 .. 365 := 0;
+
+      Layers         : Layer_Array;
+      Cycle_Count    : Integer := 0;
+      Checksum       : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Climate_State.Checksum in 1 .. 9;
+
+   -- ========================================================================
+   -- 6. SATURATING ARITHMETIC
+   -- ========================================================================
+
+   function Saturating_Add (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Add'Result in Integer'First .. Integer'Last;
+
+   function Saturating_Sub (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Sub'Result in Integer'First .. Integer'Last;
+
+   function Saturating_Mul (A, B : Integer) return Integer
+     with Pre => (A in Integer'First .. Integer'Last and
+                  B in Integer'First .. Integer'Last),
+          Post => Saturating_Mul'Result in Integer'First .. Integer'Last;
+
+   function Saturating_Div (A, B : Integer) return Integer
+     with Pre => B /= 0,
+          Post => Saturating_Div'Result in Integer'First .. Integer'Last;
+
+   function Clamp (Value, Min, Max : Integer) return Integer
+     with Pre => Min <= Max,
+          Post => Clamp'Result in Min .. Max;
+
+   function Digital_Root (N : Integer) return Integer
+     with Pre => N >= 0,
+          Post => Digital_Root'Result in 1 .. 9;
+
+   -- ========================================================================
+   -- 7. FONCTIONS DE CALCUL
+   -- ========================================================================
+
+   -- Calcul de la température de base (sans inertie)
+   function Compute_Base_Temperature
+     (State : Climate_State) return Temp_Type
+     with Pre => State.Checksum in 1 .. 9,
+          Post => Compute_Base_Temperature'Result in -600 .. 600;
+   -- T_base = Ψ_V14 × (CO2 × P_surface) / (β × H × k)
+   --          + Altitude_Adj + Latitude_Adj + Seasonal_Adj
+   --          + Urban_Adj + Albedo_Adj
+
+   -- Correction d'inertie thermique (NOUVEAU)
+   -- La température réelle est une moyenne pondérée entre :
+   -- - La température calculée du jour (nouvel apport)
+   -- - La chaleur stockée des jours précédents
+   function Apply_Thermal_Inertia
+     (State      : in Climate_State;
+      Base_Temp  : in Temp_Type) return Temp_Type
+     with Pre => State.Checksum in 1 .. 9,
+          Post => Apply_Thermal_Inertia'Result in -600 .. 600;
+
+   -- Mise à jour du stockage de chaleur
+   procedure Update_Heat_Storage
+     (State      : in out Climate_State;
+      Base_Temp  : in     Temp_Type;
+      Actual_Temp : in     Temp_Type)
+     with Pre => State.Checksum in 1 .. 9,
+          Post => (if State.Checksum = 9 then
+                      State.Heat_Stored >= 0);
+
+   -- Mise à jour de l'historique des températures
+   procedure Update_History
+     (State   : in out Climate_State;
+      Temp    : in     Temp_Type;
+      Flux    : in     Integer)
+     with Pre => State.Checksum in 1 .. 9,
+          Post => State.Checksum = 9;
+
+   -- Calcul de la température cumulée (effet J1 + J2 + ...)
+   function Compute_Cumulative_Temperature
+     (State : Climate_State) return Temp_Type
+     with Pre => State.Checksum in 1 .. 9,
+          Post => Compute_Cumulative_Temperature'Result in -600 .. 600;
+
+   -- ========================================================================
+   -- 8. SIMULATION COMPLÈTE
+   -- ========================================================================
+
+   type Simulation_Result is record
+      Surface_Temp     : Temp_Type := 0;
+      Base_Temp        : Temp_Type := 0;      -- Sans inertie
+      Inertia_Corrected : Temp_Type := 0;     -- Avec inertie
+      Cumulative_Temp  : Temp_Type := 0;      -- Effet cumulatif
+      Heat_Stored      : Heat_Storage_Type := 0;
+      Stability        : Integer := 0;
+      Checksum         : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Simulation_Result.Checksum in 1 .. 9;
+
+   procedure Run_Simulation
+     (State  : in out Climate_State;
+      Result :    out Simulation_Result)
+     with Pre => State.Checksum in 1 .. 9,
+          Post => (if State.Checksum = 9 then
+                      Result.Checksum = 9);
+
+   -- ========================================================================
+   -- 9. INTERFACE IA
+   -- ========================================================================
+
+   procedure IA_Query
+     (State      : in     Climate_State;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Integer)
+     with Pre => State.Checksum in 1 .. 9 and Question'Length > 0,
+          Post => Confidence in 0 .. 100;
+
+   procedure IA_Contribute
+     (State      : in out Climate_State;
+      Suggestion : in     String;
+      Value      : in     Integer;
+      Confidence : in     Integer)
+     with Pre => State.Checksum in 1 .. 9 and
+                 Confidence in 0 .. 100 and
+                 Suggestion'Length > 0,
+          Post => State.Checksum = 9;
+
+end V14_Climate_With_Inertia;
