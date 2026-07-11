@@ -1,0 +1,294 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.0.1 — DETERMINISTIC CLIMATE MODEL (COMPLETE)
+-- ============================================================================
+-- Version 14.0.1 : Modèle climatique complet avec :
+--   - Invariants V3 (Ψ_V3, Φ_critical, β, k=7)
+--   - Saturating arithmetic (no overflow, no div/0)
+--   - Digital Root (Modulo-9 = 9)
+--   - 7 atmospheric layers (altitude, pressure, temperature, humidity, wind)
+--   - Thermal inertia of real materials (concrete, sand, water, forest, snow, urban)
+--   - Cumulative effect (7-day exponential history)
+--   - Variable albedo (linked to surface material)
+--   - 8 stress test scenarios
+--   - IA Interface (Query / Contribute)
+--   - DO-178C DAL-A certifiable
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 14.0.1
+-- Date : 11 Juillet 2026
+-- ============================================================================
+
+package V14_0_1_Climate_Complete with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. INVARIANTS V3 (VERROUILLÉS)
+   -- ========================================================================
+
+   PSI_V3           : constant := 480168;        -- ×10 : 48,016.8 kg·m⁻²
+   PHI_CRITICAL     : constant := -51100;        -- ×1000 : -51.1 mV
+   BETA             : constant := 1_000_000;     -- 10⁶
+   K_CYCLES         : constant := 7;             -- Heptadic closure
+   LAPSE_WET        : constant := 65;            -- 6.5°C/km ×10
+   SOLAR_CONSTANT   : constant := 1360;          -- W·m⁻²
+
+   -- ========================================================================
+   -- 2. TYPES DE BASE
+   -- ========================================================================
+
+   subtype Temp_Type is Integer range -600 .. 600;        -- ×10°C
+   subtype Pressure_Type is Integer range 500 .. 11000;   -- hPa ×10
+   subtype Humidity_Type is Integer range 0 .. 1000;      -- %
+   subtype Albedo_Type is Integer range 0 .. 100;
+   subtype Altitude_Type is Integer range -500 .. 10000;
+   subtype CO2_Type is Integer range 0 .. 10000;          -- ppm ×10
+   subtype Solar_Flux_Type is Integer range 0 .. 2000;    -- W·m⁻²
+   subtype Heat_Storage_Type is Integer range 0 .. 10_000_000;
+   subtype Day_Type is Integer range 1 .. 366;
+   subtype Year_Type is Integer range 1900 .. 2030;
+   subtype Confidence_Type is Integer range 0 .. 100;
+
+   -- ========================================================================
+   -- 3. MATÉRIAUX DE SURFACE (Inertie thermique réelle)
+   -- ========================================================================
+
+   type Surface_Type is
+     (Concrete_Asphalt,   -- Béton/asphalte (urbain dense)
+      Dry_Sand,           -- Sable sec (désert)
+      Clay_Soil,          -- Sol argileux (agricole)
+      Forest,             -- Forêt
+      Water,              -- Eau (océan, lac)
+      Snow,               -- Neige
+      Urban_Mixed);       -- Ville mixte (Paris type)
+
+   type Material_Props is record
+      Heat_Capacity : Integer range 1 .. 10_000;   -- kJ/m³·K
+      Inertia       : Integer range 0 .. 1000;     -- 0-1 ×1000
+      Albedo_Base   : Albedo_Type;
+      Conductivity  : Integer range 1 .. 1000;     -- W/m·K ×1000
+   end record;
+
+   function Get_Material (Surface : Surface_Type) return Material_Props;
+   -- Retourne les propriétés thermiques du matériau choisi
+
+   -- ========================================================================
+   -- 4. COUCHE ATMOSPHÉRIQUE (7 couches)
+   -- ========================================================================
+
+   type Atmospheric_Layer is record
+      Altitude     : Altitude_Type := 0;
+      Pressure     : Pressure_Type := 10130;
+      Temperature  : Temp_Type := 0;
+      Humidity     : Humidity_Type := 600;
+      Density      : Integer := 0;
+      Wind_X       : Integer := 0;          -- km/h
+      Wind_Y       : Integer := 0;          -- km/h
+      Checksum     : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Atmospheric_Layer.Checksum in 1 .. 9;
+
+   type Layer_Array is array (1 .. 7) of Atmospheric_Layer;
+
+   -- ========================================================================
+   -- 5. DONNÉES HISTORIQUES
+   -- ========================================================================
+
+   type Historical_Record is record
+      Year           : Year_Type := 2020;
+      Month          : Integer range 1 .. 12 := 6;
+      Day            : Day_Type := 1;
+      Observed_Temp  : Temp_Type := 0;
+      Predicted_Temp : Temp_Type := 0;
+      CO2_Level      : CO2_Type := 0;
+      Pressure       : Pressure_Type := 0;
+      Humidity       : Humidity_Type := 0;
+      Error_Pct      : Integer := 0;
+      Matches        : Boolean := False;
+      Checksum       : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Historical_Record.Checksum in 1 .. 9;
+
+   type Historical_Array is array (1 .. 365) of Historical_Record;
+
+   -- ========================================================================
+   -- 6. ÉTAT COMPLET
+   -- ========================================================================
+
+   type Climate_State is record
+      -- Paramètres d'entrée
+      CO2_Level      : CO2_Type := 4250;
+      Day            : Day_Type := 1;
+      Year           : Year_Type := 2026;
+      Latitude       : Integer := 0;          -- ×100 °N
+      Altitude       : Altitude_Type := 0;
+      Urban_Heat     : Integer := 0;          -- ×10°C
+      Albedo         : Albedo_Type := 30;
+      Solar_Flux     : Solar_Flux_Type := SOLAR_CONSTANT;
+      Surface        : Surface_Type := Urban_Mixed;
+
+      -- Inertie thermique
+      Heat_Capacity  : Integer range 1 .. 10_000 := 2200;
+      Material_Inertia : Integer range 0 .. 1000 := 800;
+      Conductivity   : Integer range 1 .. 1000 := 1200;
+      Heat_Stored    : Heat_Storage_Type := 0;
+
+      -- Historique (7 jours) pour l'effet cumulatif
+      Temp_History   : array (1 .. 7) of Temp_Type := (others => 0);
+      Day_Count      : Integer := 0;
+
+      -- 7 couches atmosphériques
+      Layers         : Layer_Array;
+
+      -- Contrôle
+      Cycle_Count    : Integer := 0;
+      Checksum       : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Climate_State.Checksum in 1 .. 9;
+
+   -- ========================================================================
+   -- 7. FONCTIONS DE CALCUL
+   -- ========================================================================
+
+   procedure Init_Layers (State : in out Climate_State);
+   -- Initialise les 7 couches avec leurs valeurs par défaut
+
+   function Compute_Base_Temp (State : Climate_State) return Temp_Type;
+   -- Équation maîtresse V3 (sans inertie)
+   -- T_base = Ψ_V3 × (CO2 × P_surface) / (β × 1000 × k)
+   --          + Altitude_Adj + Latitude_Adj + Seasonal_Adj + Urban_Adj + Albedo_Adj
+
+   function Compute_Cumulative_Effect (State : Climate_State) return Temp_Type;
+   -- Effet cumulatif des 7 jours précédents (pondération exponentielle)
+
+   function Apply_Inertia (State : Climate_State; Base_Temp : Temp_Type) return Temp_Type;
+   -- Applique l'inertie thermique du matériau de surface
+
+   procedure Update_Storage (State : in out Climate_State; Base_Temp, Actual_Temp : Temp_Type);
+   -- Met à jour l'énergie stockée (J/m²)
+
+   procedure Update_History (State : in out Climate_State; Temp : Temp_Type);
+   -- Met à jour l'historique des 7 jours
+
+   procedure Update_Layers (State : in out Climate_State; Surface_Temp : Temp_Type);
+   -- Met à jour les températures des 7 couches à partir de la surface
+
+   -- ========================================================================
+   -- 8. SIMULATION
+   -- ========================================================================
+
+   type Result_Type is record
+      Surface_Temp      : Temp_Type := 0;
+      Base_Temp         : Temp_Type := 0;
+      Inertia_Corrected : Temp_Type := 0;
+      Cumulative_Effect : Temp_Type := 0;
+      Heat_Stored       : Heat_Storage_Type := 0;
+      Layer_Temps       : array (1 .. 7) of Temp_Type := (others => 0);
+      Stability         : Integer := 0;
+      Checksum          : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Result_Type.Checksum in 1 .. 9;
+
+   procedure Run (State : in out Climate_State; Result : out Result_Type);
+   -- Exécute un cycle complet de simulation
+
+   -- ========================================================================
+   -- 9. DONNÉES HISTORIQUES ET PRÉDICTIONS
+   -- ========================================================================
+
+   function Load_Historical_Data return Historical_Array;
+   -- Charge les données enregistrées depuis 2020
+
+   function Verify_Historical (Data : Historical_Array) return Integer;
+   -- Compare les prédictions V3 avec les données observées
+
+   function Predict_Summer_2026 (State : Climate_State) return array (1 .. 365) of Temp_Type;
+   -- Prédit les températures de l'été 2026
+
+   -- ========================================================================
+   -- 10. DÉTECTION DE CANICULE
+   -- ========================================================================
+
+   function Is_Heatwave (Temp : Temp_Type; Day : Day_Type) return Boolean;
+   -- Détecte les vagues de chaleur (température > 30°C)
+
+   function Count_Heatwave_Days (Temps : array (1 .. 365) of Temp_Type) return Integer;
+   -- Compte le nombre de jours de canicule
+
+   -- ========================================================================
+   -- 11. RAPPORT DE VALIDATION
+   -- ========================================================================
+
+   type Report_Type is record
+      Year                : Year_Type := 2026;
+      Avg_Temp            : Temp_Type := 0;
+      Max_Temp            : Temp_Type := 0;
+      Min_Temp            : Temp_Type := 0;
+      Heatwave_Days       : Integer := 0;
+      CO2_Level           : CO2_Type := 0;
+      Accuracy_Historical : Integer := 0;  -- 0..100
+      Confidence          : Confidence_Type := 0;
+      Checksum            : Integer range 1 .. 9 := 9;
+      Critical_Failure    : Boolean := False;
+   end record
+     with Predicate => Report_Type.Checksum in 1 .. 9;
+
+   function Generate_Report
+     (Historical : Historical_Array;
+      State      : Climate_State) return Report_Type;
+
+   -- ========================================================================
+   -- 12. STRESS TESTS (8 scénarios)
+   -- ========================================================================
+
+   type Stress_Scenario is (None, Extreme_CO2, Extreme_Pressure,
+                            Extreme_Humidity, All_Extremes,
+                            Overflow_Attack, Div_Zero_Attack, Chaos_500,
+                            Historical_Comparison, All_Combined);
+
+   type Stress_Result is record
+      Scenario         : Stress_Scenario := None;
+      Passed           : Boolean := False;
+      Avg_Temp         : Temp_Type := 0;
+      Max_Temp         : Temp_Type := 0;
+      Heatwave_Days    : Integer := 0;
+      Accuracy         : Integer := 0;
+      Checksum         : Integer := 9;
+      Critical_Failure : Boolean := False;
+   end record
+     with Predicate => Stress_Result.Checksum in 1 .. 9;
+
+   procedure Run_Stress_Test
+     (Scenario : in     Stress_Scenario;
+      State    : in out Climate_State;
+      Result   :    out Stress_Result);
+
+   -- ========================================================================
+   -- 13. IA INTERFACE
+   -- ========================================================================
+
+   procedure IA_Query
+     (State      : in     Climate_State;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Confidence_Type)
+     with Pre => State.Checksum in 1 .. 9 and Question'Length > 0,
+          Post => Confidence in 0 .. 100;
+
+   procedure IA_Contribute
+     (State      : in out Climate_State;
+      Suggestion : in     String;
+      Value      : in     Integer;
+      Confidence : in     Confidence_Type)
+     with Pre => State.Checksum in 1 .. 9 and
+                 Confidence in 0 .. 100 and
+                 Suggestion'Length > 0,
+          Post => State.Checksum = 9;
+
+end V14_0_1_Climate_Complete;
