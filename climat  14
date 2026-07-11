@@ -1,0 +1,150 @@
+package body V14_1_Module_Polar with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- 4.1 COMPUTE_ALBEDO_POLAR
+   -- ========================================================================
+
+   function Compute_Albedo_Polar (Params : Polar_Params) return Albedo_Type is
+      Alb : Integer := 0;
+   begin
+      if Params.Albedo_Input > 0 then
+         Alb := Params.Albedo_Input;
+      else
+         case Params.Zone is
+            when Ice_Sheet =>
+               Alb := 80;          -- Calotte glaciaire
+            when Permafrost =>
+               Alb := 50;          -- Pergélisol
+            when Sea_Ice_Polar =>
+               Alb := 70;          -- Banquise
+            when Mountain_Glacier =>
+               Alb := 75;          -- Glacier
+            when Snow_Field =>
+               Alb := 85;          -- Neige fraîche
+            when Tundra_Polar =>
+               Alb := 40;          -- Toundra
+         end case;
+      end if;
+
+      -- Ajustement selon la profondeur de neige
+      if Params.Snow_Depth > 0 then
+         Alb := Saturating_Add (Alb, Saturating_Div (Params.Snow_Depth, 10));
+      end if;
+
+      return Clamp (Alb, 0, 100);
+   end Compute_Albedo_Polar;
+
+   -- ========================================================================
+   -- 4.2 COMPUTE_ICE_INSULATION
+   -- ========================================================================
+
+   function Compute_Ice_Insulation (Ice_Thickness : Ice_Thickness_Type) return Integer is
+   begin
+      -- La glace isole le sol du réchauffement
+      return Clamp (Saturating_Div (Ice_Thickness, 10), 0, 100);
+   end Compute_Ice_Insulation;
+
+   -- ========================================================================
+   -- 4.3 COMPUTE_SNOW_REFLECTIVITY
+   -- ========================================================================
+
+   function Compute_Snow_Reflectivity (Snow_Depth : Snow_Depth_Type) return Integer is
+   begin
+      -- Plus la neige est épaisse, plus elle réfléchit
+      return Clamp (Saturating_Div (Snow_Depth, 5), 0, 50);
+   end Compute_Snow_Reflectivity;
+
+   -- ========================================================================
+   -- 4.4 COMPUTE_PERMAFROST_EFFECT
+   -- ========================================================================
+
+   function Compute_Permafrost_Effect (Permafrost_Depth : Permafrost_Depth_Type) return Integer is
+   begin
+      -- Le pergélisol maintient le froid
+      return Clamp (Saturating_Div (Permafrost_Depth, 20), 0, 50);
+   end Compute_Permafrost_Effect;
+
+   -- ========================================================================
+   -- 4.5 COMPUTE_POLAR_NIGHT_EFFECT
+   -- ========================================================================
+
+   function Compute_Polar_Night_Effect (Day : Day_Type; Latitude : Integer) return Integer is
+      Eff : Integer := 0;
+   begin
+      -- Nuit polaire : entre le 1er novembre et le 31 janvier
+      if (Day > 305 or Day < 31) and abs (Latitude) > 6000 then
+         Eff := 30;   -- 3°C de refroidissement supplémentaire
+      end if;
+
+      -- Jour polaire : entre le 1er mai et le 31 juillet
+      if Day > 120 and Day < 213 and abs (Latitude) > 6000 then
+         Eff := -20;  -- 2°C de réchauffement
+      end if;
+
+      return Eff;
+   end Compute_Polar_Night_Effect;
+
+   -- ========================================================================
+   -- 4.6 COMPUTE_POLAR_CORRECTION
+   -- ========================================================================
+
+   function Compute_Polar_Correction
+     (Params    : Polar_Params;
+      Base_Temp : Temp_Type;
+      Latitude  : Integer;
+      Day       : Day_Type) return Integer
+   is
+      Alb      : Integer := Compute_Albedo_Polar (Params);
+      Ice_Ins  : Integer := Compute_Ice_Insulation (Params.Ice_Thickness);
+      Snow_Ref : Integer := Compute_Snow_Reflectivity (Params.Snow_Depth);
+      Perma    : Integer := Compute_Permafrost_Effect (Params.Permafrost_Depth);
+      Night    : Integer := Compute_Polar_Night_Effect (Day, Latitude);
+      Total    : Integer := 0;
+   begin
+      -- 1. Albédo élevé → refroidissement
+      Total := Saturating_Sub (Total, Saturating_Div (Alb, 2));
+
+      -- 2. Isolation par la glace
+      Total := Saturating_Sub (Total, Saturating_Div (Ice_Ins, 3));
+
+      -- 3. Réflectivité de la neige
+      Total := Saturating_Sub (Total, Saturating_Div (Snow_Ref, 2));
+
+      -- 4. Pergélisol → maintien du froid
+      Total := Saturating_Sub (Total, Saturating_Div (Perma, 2));
+
+      -- 5. Nuit/jour polaire
+      Total := Saturating_Add (Total, Night);
+
+      return Clamp (Total, -100, 50);
+   end Compute_Polar_Correction;
+
+   -- ========================================================================
+   -- 5.1 IA_QUERY_POLAR
+   -- ========================================================================
+
+   procedure IA_Query_Polar
+     (Params     : in     Polar_Params;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Confidence_Type)
+   is
+   begin
+      Response := (others => ' ');
+      if Question = "albedo" then
+         Response := "Albedo: " & Integer'Image (Compute_Albedo_Polar (Params)) & "%";
+         Confidence := 95;
+      elsif Question = "ice" then
+         Response := "Ice insulation: " & Integer'Image (Compute_Ice_Insulation (Params.Ice_Thickness) / 10) &
+                     "." & Integer'Image (Compute_Ice_Insulation (Params.Ice_Thickness) mod 10) & "°C";
+         Confidence := 90;
+      elsif Question = "snow" then
+         Response := "Snow reflectivity: " & Integer'Image (Compute_Snow_Reflectivity (Params.Snow_Depth));
+         Confidence := 85;
+      else
+         Response := "Ask: albedo, ice, snow";
+         Confidence := 0;
+      end if;
+   end IA_Query_Polar;
+
+end V14_1_Module_Polar;
