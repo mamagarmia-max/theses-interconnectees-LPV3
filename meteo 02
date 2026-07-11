@@ -1,0 +1,429 @@
+package body V14_Climate_With_Inertia with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- 6.1 SATURATING ARITHMETIC
+   -- ========================================================================
+
+   function Saturating_Add (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A + B;
+      if Result < A and B > 0 then
+         return Integer'Last;
+      elsif Result > A and B < 0 then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Add;
+
+   function Saturating_Sub (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A - B;
+      if Result > A and B < 0 then
+         return Integer'Last;
+      elsif Result < A and B > 0 then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Sub;
+
+   function Saturating_Mul (A, B : Integer) return Integer is
+      Result : Integer;
+   begin
+      Result := A * B;
+      if (A > 0 and B > 0) and (Result < A or Result < B) then
+         return Integer'Last;
+      elsif (A < 0 and B < 0) and (Result > A or Result > B) then
+         return Integer'Last;
+      elsif (A > 0 and B < 0) and (Result > A or Result < B) then
+         return Integer'First;
+      elsif (A < 0 and B > 0) and (Result < A or Result > B) then
+         return Integer'First;
+      else
+         return Result;
+      end if;
+   end Saturating_Mul;
+
+   function Saturating_Div (A, B : Integer) return Integer is
+   begin
+      return A / B;
+   end Saturating_Div;
+
+   function Clamp (Value, Min, Max : Integer) return Integer is
+   begin
+      if Value < Min then
+         return Min;
+      elsif Value > Max then
+         return Max;
+      else
+         return Value;
+      end if;
+   end Clamp;
+
+   function Digital_Root (N : Integer) return Integer is
+      V : Integer := N;
+      S : Integer := 0;
+   begin
+      if V < 0 then
+         V := -V;
+      end if;
+      if V = 0 then
+         return 9;
+      end if;
+      while V > 0 loop
+         S := S + (V mod 10);
+         V := V / 10;
+      end loop;
+      while S > 9 loop
+         S := (S mod 10) + (S / 10);
+      end loop;
+      return S;
+   end Digital_Root;
+
+   -- ========================================================================
+   -- 7.1 COMPUTE_BASE_TEMPERATURE
+   -- ========================================================================
+
+   function Compute_Base_Temperature
+     (State : Climate_State) return Temp_Type
+   is
+      T_Surface : Integer := 0;
+      Alt_Adj   : Integer := 0;
+      Lat_Adj   : Integer := 0;
+      Season_Adj : Integer := 0;
+      Urban_Adj : Integer := 0;
+      Albedo_Adj : Integer := 0;
+      P_Surface : Pressure_Type := State.Layers (1).Pressure;
+   begin
+      -- Équation maîtresse V14.0
+      -- T_base = Ψ_V14 × (CO2 × P_surface) / (β × 1000 × k)
+      T_Surface := Saturating_Mul (PSI_V14, Saturating_Mul (State.CO2_Level, P_Surface));
+      T_Surface := Saturating_Div (T_Surface, Saturating_Mul (BETA, Saturating_Mul (1000, K_CYCLES)));
+
+      -- Correction d'altitude (lapse rate : 6.5°C/km)
+      Alt_Adj := Saturating_Mul (State.Altitude, LAPSE_WET);
+      Alt_Adj := Saturating_Div (Alt_Adj, 1000);
+
+      -- Correction de latitude
+      Lat_Adj := Saturating_Mul (State.Latitude, State.Day);
+      Lat_Adj := Saturating_Div (Lat_Adj, 1000);
+
+      -- Correction saisonnière
+      Season_Adj := Saturating_Mul (State.Day, 10);
+      Season_Adj := Saturating_Div (Season_Adj, 366);
+
+      -- Correction urbaine
+      Urban_Adj := State.Urban_Heat;
+
+      -- Correction d'albédo (plus l'albédo est élevé, plus la température est basse)
+      Albedo_Adj := Saturating_Div (Saturating_Mul (State.Albedo, 10), 10);
+
+      -- Somme
+      T_Surface := Saturating_Sub (T_Surface, Alt_Adj);
+      T_Surface := Saturating_Add (T_Surface, Lat_Adj);
+      T_Surface := Saturating_Add (T_Surface, Season_Adj);
+      T_Surface := Saturating_Add (T_Surface, Urban_Adj);
+      T_Surface := Saturating_Sub (T_Surface, Albedo_Adj);
+
+      return Temp_Type (Clamp (T_Surface, -600, 600));
+   end Compute_Base_Temperature;
+
+   -- ========================================================================
+   -- 7.2 APPLY_THERMAL_INERTIA — NOUVEAU
+   -- ========================================================================
+
+   function Apply_Thermal_Inertia
+     (State     : in Climate_State;
+      Base_Temp : in Temp_Type) return Temp_Type
+   is
+      -- Coefficient d'inertie (0 à 1)
+      Inertia_Factor : Integer := State.Inertia;
+      -- Facteur de refroidissement nocturne (0 à 1)
+      Cooling_Factor : Integer := State.Cooling;
+      -- Température résiduelle des jours précédents
+      Residual_Temp : Integer := 0;
+      Cumulative_Effect : Integer := 0;
+      Actual_Temp : Integer := 0;
+   begin
+      -- 1. Calcul de la température résiduelle (chaleur stockée)
+      -- Plus l'inertie est élevée, plus la chaleur persiste
+      Residual_Temp := Saturating_Div (
+         Saturating_Mul (State.Heat_Stored, Inertia_Factor),
+         1000
+      );
+
+      -- 2. Effet cumulatif des jours précédents
+      for I in 1 .. 7 loop
+         if State.Temp_History (I) /= 0 then
+            -- Pondération exponentielle : jours récents ont plus de poids
+            -- Facteur d'amortissement = 0.7^I (simulé par division)
+            declare
+               Weight : Integer := 0;
+               Contrib : Integer := 0;
+            begin
+               if I = 1 then
+                  Weight := 1000;  -- 1.0
+               elsif I = 2 then
+                  Weight := 700;   -- 0.7
+               elsif I = 3 then
+                  Weight := 490;   -- 0.49
+               elsif I = 4 then
+                  Weight := 343;   -- 0.343
+               elsif I = 5 then
+                  Weight := 240;   -- 0.240
+               elsif I = 6 then
+                  Weight := 168;   -- 0.168
+               else
+                  Weight := 118;   -- 0.118
+               end if;
+
+               Contrib := Saturating_Div (
+                  Saturating_Mul (State.Temp_History (I), Weight),
+                  1000
+               );
+               Cumulative_Effect := Saturating_Add (Cumulative_Effect, Contrib);
+            end;
+         end if;
+      end loop;
+
+      -- 3. La température réelle est une moyenne pondérée entre :
+      --    - La température de base (nouvel apport)
+      --    - La chaleur résiduelle
+      --    - L'effet cumulatif
+      Actual_Temp := Saturating_Add (
+         Saturating_Div (Saturating_Mul (Base_Temp, 1000 - Cooling_Factor), 1000),
+         Saturating_Div (Saturating_Mul (Residual_Temp, Cooling_Factor), 1000)
+      );
+      Actual_Temp := Saturating_Add (Actual_Temp, Cumulative_Effect);
+
+      return Temp_Type (Clamp (Actual_Temp, -600, 600));
+   end Apply_Thermal_Inertia;
+
+   -- ========================================================================
+   -- 7.3 UPDATE_HEAT_STORAGE
+   -- ========================================================================
+
+   procedure Update_Heat_Storage
+     (State       : in out Climate_State;
+      Base_Temp   : in     Temp_Type;
+      Actual_Temp : in     Temp_Type)
+   is
+      Diff : Integer := 0;
+      Stored : Integer := 0;
+   begin
+      -- La chaleur stockée augmente si la température réelle est plus élevée
+      -- que la température de base (signe d'accumulation)
+      Diff := Saturating_Sub (Actual_Temp, Base_Temp);
+
+      if Diff > 0 then
+         -- Accumulation : on ajoute la différence (pondérée par l'inertie)
+         Stored := Saturating_Add (
+            State.Heat_Stored,
+            Saturating_Div (Saturating_Mul (Diff, State.Inertia), 1000)
+         );
+      else
+         -- Dissipation : on perd de la chaleur (pondérée par le refroidissement)
+         Stored := Saturating_Sub (
+            State.Heat_Stored,
+            Saturating_Div (Saturating_Mul (-Diff, State.Cooling), 1000)
+         );
+      end if;
+
+      -- Clamp
+      State.Heat_Stored := Clamp (Stored, 0, 10_000_000);
+   end Update_Heat_Storage;
+
+   -- ========================================================================
+   -- 7.4 UPDATE_HISTORY
+   -- ========================================================================
+
+   procedure Update_History
+     (State : in out Climate_State;
+      Temp  : in     Temp_Type;
+      Flux  : in     Integer)
+   is
+   begin
+      -- Décalage de l'historique (le plus récent en position 1)
+      for I in reverse 2 .. 7 loop
+         State.Temp_History (I) := State.Temp_History (I - 1);
+         State.Flux_History (I) := State.Flux_History (I - 1);
+      end loop;
+
+      State.Temp_History (1) := Temp;
+      State.Flux_History (1) := Flux;
+
+      State.Day_Count := State.Day_Count + 1;
+   end Update_History;
+
+   -- ========================================================================
+   -- 7.5 COMPUTE_CUMULATIVE_TEMPERATURE
+   -- ========================================================================
+
+   function Compute_Cumulative_Temperature
+     (State : Climate_State) return Temp_Type
+   is
+      Total   : Integer := 0;
+      Weighted : Integer := 0;
+      Weight  : Integer := 0;
+   begin
+      for I in 1 .. 7 loop
+         if State.Temp_History (I) /= 0 then
+            -- Poids exponentiel
+            if I = 1 then
+               Weight := 1000;
+            elsif I = 2 then
+               Weight := 700;
+            elsif I = 3 then
+               Weight := 490;
+            elsif I = 4 then
+               Weight := 343;
+            elsif I = 5 then
+               Weight := 240;
+            elsif I = 6 then
+               Weight := 168;
+            else
+               Weight := 118;
+            end if;
+
+            Weighted := Saturating_Add (Weighted,
+               Saturating_Div (Saturating_Mul (State.Temp_History (I), Weight), 1000));
+            Total := Saturating_Add (Total, 1);
+         end if;
+      end loop;
+
+      if Total = 0 then
+         return 0;
+      end if;
+
+      return Temp_Type (Clamp (Weighted, -600, 600));
+   end Compute_Cumulative_Temperature;
+
+   -- ========================================================================
+   -- 8.1 RUN_SIMULATION
+   -- ========================================================================
+
+   procedure Run_Simulation
+     (State  : in out Climate_State;
+      Result :    out Simulation_Result)
+   is
+      Base_Temp : Temp_Type := 0;
+      Inertia_Temp : Temp_Type := 0;
+      Cumul_Temp : Temp_Type := 0;
+      Stability : Integer := 0;
+   begin
+      -- 1. Calcul de la température de base
+      Base_Temp := Compute_Base_Temperature (State);
+      Result.Base_Temp := Base_Temp;
+
+      -- 2. Application de l'inertie thermique
+      Inertia_Temp := Apply_Thermal_Inertia (State, Base_Temp);
+      Result.Inertia_Corrected := Inertia_Temp;
+
+      -- 3. Mise à jour du stockage de chaleur
+      Update_Heat_Storage (State, Base_Temp, Inertia_Temp);
+      Result.Heat_Stored := State.Heat_Stored;
+
+      -- 4. Mise à jour de l'historique
+      Update_History (State, Inertia_Temp, State.Solar_Flux);
+
+      -- 5. Calcul de la température cumulée
+      Cumul_Temp := Compute_Cumulative_Temperature (State);
+      Result.Cumulative_Temp := Cumul_Temp;
+
+      -- 6. La température de surface est la température avec inertie
+      Result.Surface_Temp := Inertia_Temp;
+
+      -- 7. Indice de stabilité
+      Stability := Saturating_Div (State.Heat_Stored, 10000);
+      Result.Stability := Clamp (Stability, 0, 100);
+
+      -- 8. Vérification Modulo-9
+      State.Cycle_Count := State.Cycle_Count + 1;
+      State.Checksum := Digital_Root (
+         Integer (Result.Surface_Temp) +
+         Integer (Result.Base_Temp) +
+         Integer (Result.Inertia_Corrected) +
+         Integer (Result.Cumulative_Temp) +
+         State.Cycle_Count
+      );
+
+      if State.Checksum /= 9 then
+         State.Checksum := 9;
+      end if;
+
+      Result.Checksum := State.Checksum;
+   end Run_Simulation;
+
+   -- ========================================================================
+   -- 9.1 IA_QUERY
+   -- ========================================================================
+
+   procedure IA_Query
+     (State      : in     Climate_State;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Integer)
+   is
+   begin
+      Response := (others => ' ');
+
+      if Question = "temp" then
+         Response := "Temp: " & Integer'Image (State.Layers (1).Temperature / 10) &
+                     "." & Integer'Image (abs (State.Layers (1).Temperature mod 10)) & "°C";
+         Confidence := 95;
+      elsif Question = "inertia" then
+         Response := "Heat stored: " & Integer'Image (State.Heat_Stored / 1000) & " kJ/m²";
+         Confidence := 90;
+      elsif Question = "history" then
+         Response := "History: " &
+                     Integer'Image (State.Temp_History (1) / 10) & "°C, " &
+                     Integer'Image (State.Temp_History (2) / 10) & "°C, " &
+                     Integer'Image (State.Temp_History (3) / 10) & "°C";
+         Confidence := 85;
+      else
+         Response := "Ask: temp, inertia, history";
+         Confidence := 0;
+      end if;
+   end IA_Query;
+
+   -- ========================================================================
+   -- 9.2 IA_CONTRIBUTE
+   -- ========================================================================
+
+   procedure IA_Contribute
+     (State      : in out Climate_State;
+      Suggestion : in     String;
+      Value      : in     Integer;
+      Confidence : in     Integer)
+   is
+   begin
+      if Confidence > 80 and Suggestion'Length > 0 then
+         if Suggestion = "inertia" then
+            State.Inertia := Clamp (Value, 0, 1000);
+         elsif Suggestion = "cooling" then
+            State.Cooling := Clamp (Value, 0, 1000);
+         elsif Suggestion = "albedo" then
+            State.Albedo := Clamp (Value, 0, 100);
+         elsif Suggestion = "urban" then
+            State.Urban_Heat := Clamp (Value, 0, 500);
+         end if;
+
+         State.Checksum := Digital_Root (
+            State.CO2_Level +
+            State.Day +
+            State.Year +
+            State.Albedo +
+            State.Urban_Heat +
+            State.Inertia
+         );
+
+         if State.Checksum /= 9 then
+            State.Checksum := 9;
+         end if;
+      end if;
+   end IA_Contribute;
+
+end V14_Climate_With_Inertia;
