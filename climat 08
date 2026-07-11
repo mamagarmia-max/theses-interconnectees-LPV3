@@ -1,0 +1,158 @@
+package body V14_1_Module_Natural with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- 2.1 GET_NATURAL_PROPS
+   -- ========================================================================
+
+   function Get_Natural_Props (S : Natural_Surface) return Natural_Props is
+      P : Natural_Props;
+   begin
+      case S is
+         when Desert_Sand =>
+            P := (Albedo_Base => 40, Inertia_Base => 300, Heat_Capacity => 1200, Conductivity => 400, Checksum => 9);
+         when Mountain_Rock =>
+            P := (Albedo_Base => 30, Inertia_Base => 500, Heat_Capacity => 1800, Conductivity => 2000, Checksum => 9);
+         when Snow_Ice =>
+            P := (Albedo_Base => 80, Inertia_Base => 100, Heat_Capacity => 600, Conductivity => 100, Checksum => 9);
+         when Clay_Soil =>
+            P := (Albedo_Base => 25, Inertia_Base => 750, Heat_Capacity => 2500, Conductivity => 1000, Checksum => 9);
+         when Forest_Floor =>
+            P := (Albedo_Base => 20, Inertia_Base => 550, Heat_Capacity => 1800, Conductivity => 500, Checksum => 9);
+         when Grassland =>
+            P := (Albedo_Base => 25, Inertia_Base => 450, Heat_Capacity => 1500, Conductivity => 300, Checksum => 9);
+         when Tundra =>
+            P := (Albedo_Base => 50, Inertia_Base => 200, Heat_Capacity => 1000, Conductivity => 200, Checksum => 9);
+         when Volcanic =>
+            P := (Albedo_Base => 20, Inertia_Base => 800, Heat_Capacity => 2000, Conductivity => 2500, Checksum => 9);
+         when Salt_Flat =>
+            P := (Albedo_Base => 60, Inertia_Base => 250, Heat_Capacity => 1000, Conductivity => 300, Checksum => 9);
+      end case;
+      return P;
+   end Get_Natural_Props;
+
+   -- ========================================================================
+   -- 4.1 COMPUTE_ALBEDO_EFFECTIVE
+   -- ========================================================================
+
+   function Compute_Albedo_Effective (Params : Natural_Params) return Albedo_Type is
+      Props : Natural_Props := Get_Natural_Props (Params.Surface);
+      Alb   : Integer := Props.Albedo_Base;
+   begin
+      -- Si un albédo est fourni en entrée, on l'utilise
+      if Params.Albedo_Input > 0 then
+         Alb := Params.Albedo_Input;
+      end if;
+
+      -- Ajustement par la couverture neigeuse
+      if Params.Snow_Cover > 0 then
+         Alb := Saturating_Add (Alb, Saturating_Div (Params.Snow_Cover, 4));
+      end if;
+
+      -- Ajustement par la végétation (réduit l'albédo)
+      if Params.Vegetation_Cover > 0 then
+         Alb := Saturating_Sub (Alb, Saturating_Div (Params.Vegetation_Cover, 5));
+      end if;
+
+      return Clamp (Alb, 0, 100);
+   end Compute_Albedo_Effective;
+
+   -- ========================================================================
+   -- 4.2 COMPUTE_INERTIA_EFFECTIVE
+   -- ========================================================================
+
+   function Compute_Inertia_Effective (Params : Natural_Params) return Inertia_Type is
+      Props : Natural_Props := Get_Natural_Props (Params.Surface);
+      Inert : Integer := Props.Inertia_Base;
+   begin
+      -- L'humidité augmente l'inertie
+      Inert := Saturating_Add (Inert, Saturating_Div (Params.Humidity, 20));
+
+      -- La neige réduit l'inertie
+      if Params.Snow_Cover > 50 then
+         Inert := Saturating_Div (Inert, 2);
+      end if;
+
+      return Clamp (Inert, 0, 1000);
+   end Compute_Inertia_Effective;
+
+   -- ========================================================================
+   -- 4.3 COMPUTE_ALTITUDE_CORRECTION
+   -- ========================================================================
+
+   function Compute_Altitude_Correction (Altitude : Altitude_Type) return Integer is
+   begin
+      -- Lapse rate : -6.5°C par km
+      return Saturating_Div (Saturating_Mul (Altitude, 65), 1000);
+   end Compute_Altitude_Correction;
+
+   -- ========================================================================
+   -- 4.4 COMPUTE_SNOW_EFFECT
+   -- ========================================================================
+
+   function Compute_Snow_Effect (Snow_Cover : Integer) return Integer is
+   begin
+      -- La neige réfléchit la chaleur (effet refroidissant)
+      return Saturating_Div (Snow_Cover, 2);
+   end Compute_Snow_Effect;
+
+   -- ========================================================================
+   -- 4.5 COMPUTE_NATURAL_CORRECTION
+   -- ========================================================================
+
+   function Compute_Natural_Correction
+     (Params    : Natural_Params;
+      Base_Temp : Temp_Type) return Integer
+   is
+      Alb_Eff     : Albedo_Type := Compute_Albedo_Effective (Params);
+      Inert_Eff   : Inertia_Type := Compute_Inertia_Effective (Params);
+      Alt_Corr    : Integer := Compute_Altitude_Correction (Params.Altitude);
+      Snow_Corr   : Integer := Compute_Snow_Effect (Params.Snow_Cover);
+      Total       : Integer := 0;
+   begin
+      -- 1. Altitude : plus on monte, plus il fait froid
+      Total := Saturating_Sub (Total, Alt_Corr);
+
+      -- 2. Albédo : plus l'albédo est élevé, plus il fait froid
+      Total := Saturating_Sub (Total, Saturating_Div (Alb_Eff, 2));
+
+      -- 3. Neige : effet refroidissant
+      Total := Saturating_Sub (Total, Snow_Corr);
+
+      -- 4. Inertie : si l'inertie est élevée, la température est plus stable
+      if Inert_Eff > 500 then
+         Total := Saturating_Add (Total, Saturating_Div (Base_Temp, 20));
+      end if;
+
+      return Clamp (Total, -200, 200);
+   end Compute_Natural_Correction;
+
+   -- ========================================================================
+   -- 5.1 IA_QUERY_NATURAL
+   -- ========================================================================
+
+   procedure IA_Query_Natural
+     (Params     : in     Natural_Params;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Confidence_Type)
+   is
+   begin
+      Response := (others => ' ');
+      if Question = "albedo" then
+         Response := "Albedo: " & Integer'Image (Compute_Albedo_Effective (Params)) & "%";
+         Confidence := 95;
+      elsif Question = "inertia" then
+         Response := "Inertia: " & Integer'Image (Compute_Inertia_Effective (Params) / 10) & "." &
+                     Integer'Image (Compute_Inertia_Effective (Params) mod 10);
+         Confidence := 90;
+      elsif Question = "altitude" then
+         Response := "Altitude correction: " & Integer'Image (Compute_Altitude_Correction (Params.Altitude) / 10) &
+                     "." & Integer'Image (abs (Compute_Altitude_Correction (Params.Altitude) mod 10)) & "°C";
+         Confidence := 95;
+      else
+         Response := "Ask: albedo, inertia, altitude";
+         Confidence := 0;
+      end if;
+   end IA_Query_Natural;
+
+end V14_1_Module_Natural;
