@@ -1,0 +1,145 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.1 — MODULES FORESTIER ET AGRICOLE
+-- ============================================================================
+-- Modules spécialisés pour :
+--   - Forêts tropicales, tempérées, boréales
+--   - Terres cultivées, prairies, vignobles, rizières
+--
+-- Tous les paramètres sont mesurables ou dérivés de données réelles.
+-- Aucun ajustement arbitraire.
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 14.1.0
+-- Date : 11 Juillet 2026
+-- ============================================================================
+
+with V14_1_Math;
+use V14_1_Math;
+
+package V14_1_Module_Forest_Agricultural with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. TYPES DE BASE
+   -- ========================================================================
+
+   subtype Temp_Type is Integer range -600 .. 600;        -- ×10°C
+   subtype Vegetation_Cover_Type is Integer range 0 .. 100; -- %
+   subtype Humidity_Type is Integer range 0 .. 1000;      -- %
+   subtype Canopy_Height_Type is Integer range 0 .. 100;  -- m
+   subtype Soil_Moisture_Type is Integer range 0 .. 1000; -- %
+
+   -- ========================================================================
+   -- 2. TYPES DE FORÊT ET CULTURE
+   -- ========================================================================
+
+   type Forest_Type is
+     (Tropical_Rainforest,   -- Forêt tropicale humide
+      Temperate_Forest,      -- Forêt tempérée (feuillus)
+      Boreal_Forest,         -- Forêt boréale (conifères)
+      Mediterranean_Forest,  -- Forêt méditerranéenne
+      Mangrove,              -- Mangrove
+      Plantation);           -- Plantation (palmier à huile, eucalyptus)
+
+   type Agricultural_Type is
+     (Wheat,                -- Blé
+      Corn,                 -- Maïs
+      Rice,                 -- Rizière
+      Vineyard,             -- Vignoble
+      Pasture,              -- Pâturage
+      Vegetable,            -- Maraîchage
+      Orchard,              -- Verger
+      Olive_Grove);         -- Oliveraie
+
+   -- ========================================================================
+   -- 3. PARAMÈTRES FORESTIERS
+   -- ========================================================================
+
+   type Forest_Params is record
+      Forest_Type   : Forest_Type := Temperate_Forest;
+      Canopy_Height : Canopy_Height_Type := 20;
+      Vegetation_Cover : Vegetation_Cover_Type := 80;
+      Humidity      : Humidity_Type := 700;
+      Soil_Moisture : Soil_Moisture_Type := 500;
+      Leaf_Area_Index : Integer range 0 .. 100 := 50;  -- Surface foliaire
+      Checksum      : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Forest_Params.Checksum in 1 .. 9;
+
+   -- ========================================================================
+   -- 4. PARAMÈTRES AGRICOLES
+   -- ========================================================================
+
+   type Agricultural_Params is record
+      Crop_Type     : Agricultural_Type := Wheat;
+      Irrigation    : Integer range 0 .. 1000 := 500;  -- mm/an ×10
+      Vegetation_Cover : Vegetation_Cover_Type := 70;
+      Soil_Moisture : Soil_Moisture_Type := 400;
+      Growing_Season : Integer range 0 .. 12 := 6;     -- mois
+      Fertilizer_Input : Integer range 0 .. 1000 := 200; -- kg/ha ×10
+      Checksum      : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Agricultural_Params.Checksum in 1 .. 9;
+
+   -- ========================================================================
+   -- 5. FONCTIONS FORESTIÈRES
+   -- ========================================================================
+
+   function Compute_Forest_Correction
+     (Params    : Forest_Params;
+      Base_Temp : Temp_Type;
+      Latitude  : Integer) return Integer;
+
+   function Compute_Evapotranspiration
+     (Params : Forest_Params) return Integer;
+   -- Effet rafraîchissant de l'évapotranspiration
+
+   function Compute_Canopy_Effect
+     (Canopy_Height : Canopy_Height_Type) return Integer;
+   -- Effet d'ombrage
+
+   function Compute_LAI_Effect
+     (Leaf_Area_Index : Integer) return Integer;
+   -- Indice foliaire : plus il est élevé, plus l'absorption est forte
+
+   -- ========================================================================
+   -- 6. FONCTIONS AGRICOLES
+   -- ========================================================================
+
+   function Compute_Agricultural_Correction
+     (Params    : Agricultural_Params;
+      Base_Temp : Temp_Type;
+      Latitude  : Integer) return Integer;
+
+   function Compute_Irrigation_Effect
+     (Irrigation : Integer) return Integer;
+   -- Effet rafraîchissant de l'irrigation
+
+   function Compute_Growing_Season_Effect
+     (Growing_Season : Integer;
+      Latitude       : Integer) return Integer;
+
+   -- ========================================================================
+   -- 7. INTERFACE IA
+   -- ========================================================================
+
+   procedure IA_Query_Forest
+     (Params     : in     Forest_Params;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Confidence_Type);
+
+   procedure IA_Query_Agricultural
+     (Params     : in     Agricultural_Params;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Confidence_Type);
+
+end V14_1_Module_Forest_Agricultural;
