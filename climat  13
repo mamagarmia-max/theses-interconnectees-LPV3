@@ -1,0 +1,105 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.1 — MODULE POLAIRE (Calottes glaciaires, Pergélisol, Neige éternelle)
+-- ============================================================================
+-- Module spécialisé pour les environnements polaires :
+--   - Calottes glaciaires (Groenland, Antarctique)
+--   - Pergélisol (Sibérie, Alaska, Canada)
+--   - Neige éternelle (haute montagne)
+--   - Banquise (Arctique, Antarctique)
+--
+-- Tous les paramètres sont mesurables ou dérivés de données réelles.
+-- Aucun ajustement arbitraire.
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 14.1.0
+-- Date : 11 Juillet 2026
+-- ============================================================================
+
+with V14_1_Math;
+use V14_1_Math;
+
+package V14_1_Module_Polar with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. TYPES DE BASE
+   -- ========================================================================
+
+   subtype Temp_Type is Integer range -600 .. 600;        -- ×10°C
+   subtype Ice_Thickness_Type is Integer range 0 .. 5000; -- m
+   subtype Snow_Depth_Type is Integer range 0 .. 1000;    -- cm
+   subtype Albedo_Type is Integer range 0 .. 100;
+   subtype Permafrost_Depth_Type is Integer range 0 .. 1500; -- m
+
+   -- ========================================================================
+   -- 2. TYPE D'ENVIRONNEMENT POLAIRE
+   -- ========================================================================
+
+   type Polar_Zone is
+     (Ice_Sheet,        -- Calotte glaciaire (Groenland, Antarctique)
+      Permafrost,       -- Pergélisol (Sibérie)
+      Sea_Ice_Polar,    -- Banquise arctique
+      Mountain_Glacier, -- Glacier de montagne
+      Snow_Field,       -- Champ de neige permanent
+      Tundra_Polar);    -- Toundra arctique
+
+   -- ========================================================================
+   -- 3. PARAMÈTRES POLAIRES
+   -- ========================================================================
+
+   type Polar_Params is record
+      Zone           : Polar_Zone := Ice_Sheet;
+      Ice_Thickness  : Ice_Thickness_Type := 1000;
+      Snow_Depth     : Snow_Depth_Type := 100;
+      Albedo_Input   : Albedo_Type := 0;   -- 0 = utiliser la valeur par défaut
+      Permafrost_Depth : Permafrost_Depth_Type := 0;
+      Surface_Temp   : Temp_Type := 0;
+      Wind_Speed     : Integer range 0 .. 300;   -- km/h
+      Is_Coastal     : Boolean := False;
+      Checksum       : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Polar_Params.Checksum in 1 .. 9;
+
+   -- ========================================================================
+   -- 4. FONCTIONS DE CALCUL
+   -- ========================================================================
+
+   function Compute_Polar_Correction
+     (Params    : Polar_Params;
+      Base_Temp : Temp_Type;
+      Latitude  : Integer;
+      Day       : Day_Type) return Integer;
+
+   function Compute_Albedo_Polar (Params : Polar_Params) return Albedo_Type;
+   -- Albédo polaire : neige fraîche, vieille neige, glace
+
+   function Compute_Ice_Insulation (Ice_Thickness : Ice_Thickness_Type) return Integer;
+   -- Effet d'isolation thermique de la glace
+
+   function Compute_Snow_Reflectivity (Snow_Depth : Snow_Depth_Type) return Integer;
+   -- Réflectivité de la neige
+
+   function Compute_Permafrost_Effect (Permafrost_Depth : Permafrost_Depth_Type) return Integer;
+   -- Effet du pergélisol sur la température
+
+   function Compute_Polar_Night_Effect (Day : Day_Type; Latitude : Integer) return Integer;
+   -- Effet de la nuit polaire
+
+   -- ========================================================================
+   -- 5. INTERFACE IA
+   -- ========================================================================
+
+   procedure IA_Query_Polar
+     (Params     : in     Polar_Params;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Confidence_Type);
+
+end V14_1_Module_Polar;
