@@ -1,0 +1,124 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.2 — MODULE ATMOSPHÈRE VERTICALE (7 couches)
+-- ============================================================================
+-- Module 8 : Calcule le profil vertical de l'atmosphère
+--           de l'ionosphère à la surface terrestre.
+--
+-- 7 couches :
+--   Couche 1 : Surface (0 m)           -> Pression, T, Humidité, Vent
+--   Couche 2 : Troposphère basse (1 km)
+--   Couche 3 : Troposphère moyenne (3 km)
+--   Couche 4 : Troposphère haute (6 km)
+--   Couche 5 : Tropopause (10 km)
+--   Couche 6 : Stratosphère basse (15 km)
+--   Couche 7 : Ionosphère (20+ km)
+--
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- Version : 14.2.0
+-- Date : 12 Juillet 2026
+-- ============================================================================
+
+with V14_1_Math;
+use V14_1_Math;
+
+package V14_2_Atmosphere_Vertical with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. TYPES DE BASE
+   -- ========================================================================
+
+   subtype Temp_Type is Integer range -600 .. 600;        -- ×10°C
+   subtype Pressure_Type is Integer range 500 .. 11000;   -- hPa ×10
+   subtype Humidity_Type is Integer range 0 .. 1000;      -- %
+   subtype Altitude_Type is Integer range 0 .. 50000;     -- m
+   subtype Day_Type is Integer range 1 .. 366;
+
+   -- ========================================================================
+   -- 2. COUCHE ATMOSPHÉRIQUE
+   -- ========================================================================
+
+   type Atmospheric_Layer is record
+      Altitude     : Altitude_Type := 0;
+      Pressure     : Pressure_Type := 10130;
+      Temperature  : Temp_Type := 0;
+      Humidity     : Humidity_Type := 600;
+      Density      : Integer := 0;
+      Wind_X       : Integer := 0;          -- km/h
+      Wind_Y       : Integer := 0;          -- km/h
+      Checksum     : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Atmospheric_Layer.Checksum in 1 .. 9;
+
+   type Layer_Array is array (1 .. 7) of Atmospheric_Layer;
+
+   -- ========================================================================
+   -- 3. PARAMÈTRES D'ENTRÉE
+   -- ========================================================================
+
+   type Atmospheric_Inputs is record
+      Surface_Temp     : Temp_Type := 0;
+      Surface_Pressure : Pressure_Type := 10130;
+      Surface_Humidity : Humidity_Type := 600;
+      Latitude         : Integer := 0;
+      Day              : Day_Type := 1;
+      Solar_Flux       : Integer := 1360;    -- W/m²
+      Checksum         : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Atmospheric_Inputs.Checksum in 1 .. 9;
+
+   -- ========================================================================
+   -- 4. FONCTIONS PRINCIPALES
+   -- ========================================================================
+
+   function Compute_Profile
+     (Inputs : Atmospheric_Inputs) return Layer_Array;
+   -- Calcule les 7 couches de l'ionosphère à la surface
+
+   function Get_Surface_Layer (Profile : Layer_Array) return Atmospheric_Layer;
+   -- Retourne la couche 1 (surface)
+
+   function Get_Tropopause (Profile : Layer_Array) return Atmospheric_Layer;
+   -- Retourne la couche 5 (tropopause, ~10 km)
+
+   function Get_Ionosphere (Profile : Layer_Array) return Atmospheric_Layer;
+   -- Retourne la couche 7 (ionosphère, ~20 km)
+
+   -- ========================================================================
+   -- 5. FONCTIONS DE CALCUL INTERNES
+   -- ========================================================================
+
+   function Compute_Pressure_At_Altitude
+     (Surface_Pressure : Pressure_Type;
+      Altitude         : Altitude_Type) return Pressure_Type;
+   -- Loi barométrique : P = P0 × exp(-Altitude / H)
+
+   function Compute_Temperature_At_Altitude
+     (Surface_Temp : Temp_Type;
+      Altitude     : Altitude_Type;
+      Lapse_Rate   : Integer) return Temp_Type;
+   -- Gradient adiabatique : T = T0 - Lapse_Rate × Altitude
+
+   function Compute_Density_At_Altitude
+     (Pressure : Pressure_Type;
+      Temp     : Temp_Type) return Integer;
+   -- Loi des gaz parfaits : ρ = P / (R × T)
+
+   -- ========================================================================
+   -- 6. INTERFACE IA
+   -- ========================================================================
+
+   procedure IA_Query_Atmosphere
+     (Profile    : in     Layer_Array;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Confidence_Type);
+
+end V14_2_Atmosphere_Vertical;
