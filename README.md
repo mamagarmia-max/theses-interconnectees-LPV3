@@ -1289,3 +1289,32 @@ begin
    Put_Line ("Error: " & Integer'Image (Comp.V3_Error_Percent / 100) & "." &
               Integer'Image (Comp.V3_Error_Percent mod 100) & "%");
 end Main;
+# SPARK Multi-Agent Architecture
+
+## A Deterministic, Formally Verified Framework for Critical Multi-Agent Systems
+
+---
+
+**Version:** 1.0.0  
+**Author:** Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)  
+**License:** LPV3  
+**Certification:** DO-178C DAL-A ready  
+**Language:** Ada/SPARK 2014
+
+---
+
+## Overview
+
+This repository presents a **generic, reusable, and formally verified** multi-agent architecture built in Ada/SPARK. It demonstrates how to design a **deterministic orchestration layer** that coordinates multiple specialized agents while maintaining:
+
+- **100% formal proof** (GNATprove, Z3, CVC5)
+- **No runtime errors** (arithmetic saturation, no division by zero)
+- **Structural integrity** (Modulo-9 invariant)
+- **Modular isolation** (each agent independently proved)
+- **Certifiability** (DO-178C DAL-A)
+
+This is not a climate model. This is a **proof-of-concept** for any critical system requiring multi-agent coordination under formal verification.
+
+---
+
+## Architecture
