@@ -1,0 +1,110 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.1 — OCEAN MODULE SPECIFICATION
+--
+-- Specialized module for maritime environments:
+--   - Open ocean (deep water)
+--   - Coastal zones (land-sea interaction)
+--   - Sea ice (pack ice)
+--   - Tides (vertical mixing)
+--
+-- All parameters are physically measured or derived from real data.
+-- No arbitrary adjustments.
+--
+-- Author: Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- License: LPV3
+-- Version: 14.1.0
+-- Date: 12 July 2026
+-- ============================================================================
+
+with V14_1_Math;
+use V14_1_Math;
+
+package V14_1_Module_Ocean with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. TYPES DE BASE
+   -- ========================================================================
+
+   subtype Temp_Type is Integer range -600 .. 600;        -- ×10°C
+   subtype Salinity_Type is Integer range 0 .. 1000;      -- g/kg ×10
+   subtype Ice_Cover_Type is Integer range 0 .. 100;      -- %
+   subtype Depth_Type is Integer range 0 .. 11000;        -- m
+   subtype Wave_Height_Type is Integer range 0 .. 300;    -- dm
+   subtype Day_Type is Integer range 1 .. 366;
+   subtype Confidence_Type is Integer range 0 .. 100;
+
+   -- ========================================================================
+   -- 2. TYPE DE MILIEU MARIN
+   -- ========================================================================
+
+   type Ocean_Zone is
+     (Open_Ocean,      -- Eau profonde (> 200 m)
+      Coastal,         -- Zone côtière (< 200 m)
+      Sea_Ice,         -- Banquise (glace de mer)
+      Coral_Reef,      -- Récif corallien
+      Estuary,         -- Estuaire (eau saumâtre)
+      Upwelling,       -- Zone de remontée d'eau
+      Arctic,          -- Océan Arctique
+      Antarctic);      -- Océan Austral
+
+   -- ========================================================================
+   -- 3. PARAMÈTRES OCÉANIQUES
+   -- ========================================================================
+
+   type Ocean_Params is record
+      Zone          : Ocean_Zone := Open_Ocean;
+      Salinity      : Salinity_Type := 350;  -- 35 g/kg
+      Ice_Cover     : Ice_Cover_Type := 0;
+      Depth         : Depth_Type := 1000;
+      Wave_Height   : Wave_Height_Type := 20;  -- 2 m
+      Current_Speed : Integer range 0 .. 200;  -- cm/s
+      SST           : Temp_Type := 150;       -- Sea Surface Temperature ×10
+      Atmospheric_Flux : Integer range -100 .. 100; -- W/m²
+      Is_Tropical   : Boolean := False;
+      Checksum      : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Ocean_Params.Checksum in 1 .. 9;
+
+   -- ========================================================================
+   -- 4. FONCTIONS DE CALCUL
+   -- ========================================================================
+
+   function Compute_Ocean_Correction
+     (Params    : Ocean_Params;
+      Base_Temp : Temp_Type;
+      Latitude  : Integer) return Integer;
+   -- Calcule la correction pour les environnements maritimes
+
+   function Compute_Heat_Capacity (Zone : Ocean_Zone) return Integer;
+   -- Capacité calorifique effective de l'eau
+
+   function Compute_Ice_Effect (Ice_Cover : Ice_Cover_Type) return Integer;
+   -- Effet de la glace sur la température
+
+   function Compute_Current_Effect
+     (Current_Speed : Integer;
+      Is_Tropical   : Boolean) return Integer;
+   -- Effet des courants marins
+
+   function Compute_Wave_Effect
+     (Wave_Height : Wave_Height_Type) return Integer;
+   -- Effet des vagues sur les échanges thermiques
+
+   -- ========================================================================
+   -- 5. INTERFACE IA
+   -- ========================================================================
+
+   procedure IA_Query_Ocean
+     (Params     : in     Ocean_Params;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Confidence_Type);
+
+end V14_1_Module_Ocean;
