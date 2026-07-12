@@ -1,0 +1,128 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.1 — CENTRAL NUCLEUS SPECIFICATION
+--
+-- The Central Nucleus (NC) is the master orchestrator of the V14.1 system.
+-- It selects the appropriate module based on the target region,
+-- executes the calculation, and verifies Modulo-9 = 9.
+--
+-- Author: Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- License: LPV3
+-- Version: 14.1.0
+-- Date: 12 July 2026
+-- ============================================================================
+
+with V14_1_Math;
+use V14_1_Math;
+
+package V14_1_NC with
+   SPARK_Mode => On,
+   Pure,
+   No_Implicit_Dereference,
+   No_Secondary_Stack,
+   Preelaborate
+is
+
+   -- ========================================================================
+   -- 1. INVARIANTS V3 (VERROUILLÉS)
+   -- ========================================================================
+
+   PSI_V3          : constant := 480168;        -- ×10 : 48,016.8 kg·m⁻²
+   PHI_CRITICAL    : constant := -51100;        -- ×1000 : -51.1 mV
+   BETA            : constant := 1_000_000;     -- 10⁶
+   K_CYCLES        : constant := 7;             -- Heptadic closure
+
+   -- ========================================================================
+   -- 2. TYPES DE BASE
+   -- ========================================================================
+
+   subtype Temp_Type is Integer range -600 .. 600;        -- ×10°C
+   subtype Pressure_Type is Integer range 500 .. 11000;   -- hPa ×10
+   subtype Humidity_Type is Integer range 0 .. 1000;      -- %
+   subtype Albedo_Type is Integer range 0 .. 100;
+   subtype Altitude_Type is Integer range -500 .. 10000;
+   subtype CO2_Type is Integer range 0 .. 10000;
+   subtype Day_Type is Integer range 1 .. 366;
+   subtype Year_Type is Integer range 1900 .. 2030;
+   subtype Confidence_Type is Integer range 0 .. 100;
+
+   -- ========================================================================
+   -- 3. RÉGIONS (Type de surface)
+   -- ========================================================================
+
+   type Region_Type is
+     (Natural,      -- Neige, désert, montagne, sol naturel
+      Urban,        -- Villes, ICU, anthropique
+      Ocean,        -- Eau, glace, marées
+      Forest,       -- Forêts tropicales, tempérées
+      Agricultural, -- Terres cultivées, prairies
+      Polar);       -- Calottes glaciaires, pergélisol
+
+   -- ========================================================================
+   -- 4. ÉTAT COMPLET
+   -- ========================================================================
+
+   type Climate_State is record
+      -- Paramètres d'entrée
+      Region        : Region_Type := Natural;
+      CO2_Level     : CO2_Type := 4250;
+      Day           : Day_Type := 1;
+      Year          : Year_Type := 2026;
+      Latitude      : Integer := 0;          -- ×100 °N
+      Altitude      : Altitude_Type := 0;
+      Albedo        : Albedo_Type := 30;
+      Pressure      : Pressure_Type := 10130;
+      Humidity      : Humidity_Type := 600;
+
+      -- Paramètres urbains (si région = Urban)
+      Population    : Integer := 0;
+      Building_Coverage : Integer := 0;
+      Vegetation_Cover : Integer := 0;
+      Traffic_Intensity : Integer := 0;
+
+      -- Paramètres naturels (si région = Natural)
+      Soil_Type     : Integer := 0;   -- 1:sable, 2:argile, 3:roche
+
+      -- Résultat
+      Surface_Temp  : Temp_Type := 0;
+      Confidence    : Confidence_Type := 0;
+      Checksum      : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Climate_State.Checksum in 1 .. 9;
+
+   -- ========================================================================
+   -- 5. FONCTIONS PRINCIPALES
+   -- ========================================================================
+
+   function Select_Module (State : Climate_State) return Region_Type;
+   -- Sélectionne le module en fonction des paramètres
+
+   function Compute_Base_Temp (State : Climate_State) return Temp_Type;
+   -- Équation maîtresse V14.0 : T_base = Ψ_V3 × (CO2 × P) / (β × 1000 × k)
+
+   procedure Run_Climate (State : in out Climate_State);
+   -- Exécute le cycle complet (sélection, calcul, vérification)
+
+   -- ========================================================================
+   -- 6. INTERFACE IA
+   -- ========================================================================
+
+   procedure IA_Query
+     (State      : in     Climate_State;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Confidence_Type)
+     with Pre => State.Checksum in 1 .. 9 and Question'Length > 0,
+          Post => Confidence in 0 .. 100;
+
+   procedure IA_Contribute
+     (State      : in out Climate_State;
+      Suggestion : in     String;
+      Value      : in     Integer;
+      Confidence : in     Confidence_Type)
+     with Pre => State.Checksum in 1 .. 9 and
+                 Confidence in 0 .. 100 and
+                 Suggestion'Length > 0,
+          Post => State.Checksum = 9;
+
+end V14_1_NC;
