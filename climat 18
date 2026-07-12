@@ -1,0 +1,40 @@
+-- Dans v14_2_nc.adb
+with V14_2_Atmosphere_Vertical; use V14_2_Atmosphere_Vertical;
+
+procedure Run_Climate (State : in out Climate_State) is
+   Inputs : Atmospheric_Inputs;
+   Profile : Layer_Array;
+   Surf : Atmospheric_Layer;
+   Base_Temp : Temp_Type;
+   Region : Region_Type;
+   Correction : Integer := 0;
+begin
+   -- Étape 1 : Calcul du profil vertical (Module 8)
+   Inputs.Surface_Temp := State.Surface_Temp;
+   Inputs.Surface_Pressure := State.Pressure;
+   Inputs.Surface_Humidity := State.Humidity;
+   Inputs.Latitude := State.Latitude;
+   Inputs.Day := State.Day;
+
+   Profile := Compute_Profile (Inputs);
+   Surf := Get_Surface_Layer (Profile);
+
+   -- Étape 2 : Mise à jour des conditions de surface
+   State.Pressure := Surf.Pressure;
+   State.Surface_Temp := Surf.Temperature;
+
+   -- Étape 3 : Base V14.0
+   Base_Temp := Compute_Base_Temp (State);
+
+   -- Étape 4 : Sélection du module de surface (Modules 1 à 6)
+   Region := Select_Module (State);
+   case Region is
+      when Urban =>
+         Correction := V14_1_Module_Urban.Compute_Urban_Correction (...);
+      -- ... autres modules
+   end case;
+
+   -- Étape 5 : Résultat final
+   State.Surface_Temp := Temp_Type (Clamp (Base_Temp + Correction, -600, 600));
+   State.Checksum := Digital_Root (...);
+end Run_Climate;
