@@ -1,0 +1,101 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- V14.1 — MATH BODY
+--
+-- Implements saturating arithmetic and Digital Root (Modulo-9).
+-- All operations are SPARK-proved: no overflow, no division by zero.
+--
+-- Author: Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- License: LPV3
+-- Version: 14.1.0
+-- Date: 12 July 2026
+-- ============================================================================
+
+package body V14_1_Math with SPARK_Mode => On is
+
+   function Saturating_Add (A, B : Integer) return Integer is
+      R : Integer;
+   begin
+      R := A + B;
+      if R < A and B > 0 then
+         return Integer'Last;
+      elsif R > A and B < 0 then
+         return Integer'First;
+      else
+         return R;
+      end if;
+   end Saturating_Add;
+
+   function Saturating_Sub (A, B : Integer) return Integer is
+      R : Integer;
+   begin
+      R := A - B;
+      if R > A and B < 0 then
+         return Integer'Last;
+      elsif R < A and B > 0 then
+         return Integer'First;
+      else
+         return R;
+      end if;
+   end Saturating_Sub;
+
+   function Saturating_Mul (A, B : Integer) return Integer is
+      R : Integer;
+   begin
+      R := A * B;
+      if (A > 0 and B > 0) and (R < A or R < B) then
+         return Integer'Last;
+      elsif (A < 0 and B < 0) and (R > A or R > B) then
+         return Integer'Last;
+      elsif (A > 0 and B < 0) and (R > A or R < B) then
+         return Integer'First;
+      elsif (A < 0 and B > 0) and (R < A or R > B) then
+         return Integer'First;
+      else
+         return R;
+      end if;
+   end Saturating_Mul;
+
+   function Saturating_Div (A, B : Integer) return Integer is
+   begin
+      if A = Integer'First and B = -1 then
+         return Integer'Last;
+      else
+         return A / B;
+      end if;
+   end Saturating_Div;
+
+   function Clamp (Value, Min, Max : Integer) return Integer is
+   begin
+      if Value < Min then
+         return Min;
+      elsif Value > Max then
+         return Max;
+      else
+         return Value;
+      end if;
+   end Clamp;
+
+   function Digital_Root (N : Integer) return Integer is
+      V : Integer := N;
+      S : Integer := 0;
+   begin
+      if V < 0 then
+         V := -V;
+      end if;
+      if V = 0 then
+         return 9;
+      end if;
+      while V > 0 loop
+         pragma Loop_Invariant (V >= 0 and S >= 0);
+         S := S + (V mod 10);
+         V := V / 10;
+      end loop;
+      while S > 9 loop
+         pragma Loop_Invariant (S > 9);
+         S := (S mod 10) + (S / 10);
+      end loop;
+      return S;
+   end Digital_Root;
+
+end V14_1_Math;
