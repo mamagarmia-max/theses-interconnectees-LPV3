@@ -1,0 +1,11 @@
+# Compilation
+gnatmake -P cyclone_simulation.gpr
+
+# Preuve formelle (GNATprove)
+gnatprove -P cyclone_simulation.gpr --level=2 --proof=all
+
+# Exécution de la démonstration
+./obj/cyclone_demo
+
+# Exécution du stress test
+./obj/cyclone_stress_test
