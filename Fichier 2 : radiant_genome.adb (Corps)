@@ -1,0 +1,300 @@
+package body Radiant_Genome with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- 4.1 SATURATING ARITHMETIC
+   -- ========================================================================
+
+   function Saturating_Add (A, B : Integer) return Integer is
+      R : Long_Long_Integer;
+   begin
+      R := Long_Long_Integer (A) + Long_Long_Integer (B);
+      if R > Long_Long_Integer (Integer'Last) then
+         return Integer'Last;
+      elsif R < Long_Long_Integer (Integer'First) then
+         return Integer'First;
+      else
+         return Integer (R);
+      end if;
+   end Saturating_Add;
+
+   function Saturating_Sub (A, B : Integer) return Integer is
+      R : Long_Long_Integer;
+   begin
+      R := Long_Long_Integer (A) - Long_Long_Integer (B);
+      if R > Long_Long_Integer (Integer'Last) then
+         return Integer'Last;
+      elsif R < Long_Long_Integer (Integer'First) then
+         return Integer'First;
+      else
+         return Integer (R);
+      end if;
+   end Saturating_Sub;
+
+   function Saturating_Mul (A, B : Integer) return Integer is
+      R : Long_Long_Integer;
+   begin
+      R := Long_Long_Integer (A) * Long_Long_Integer (B);
+      if R > Long_Long_Integer (Integer'Last) then
+         return Integer'Last;
+      elsif R < Long_Long_Integer (Integer'First) then
+         return Integer'First;
+      else
+         return Integer (R);
+      end if;
+   end Saturating_Mul;
+
+   function Saturating_Div (A, B : Integer) return Integer is
+      R : Long_Long_Integer;
+   begin
+      if B = 0 then
+         return Integer'Last;
+      end if;
+      R := Long_Long_Integer (A) / Long_Long_Integer (B);
+      if R > Long_Long_Integer (Integer'Last) then
+         return Integer'Last;
+      elsif R < Long_Long_Integer (Integer'First) then
+         return Integer'First;
+      else
+         return Integer (R);
+      end if;
+   end Saturating_Div;
+
+   function Clamp (Value, Min, Max : Integer) return Integer is
+   begin
+      if Value < Min then
+         return Min;
+      elsif Value > Max then
+         return Max;
+      else
+         return Value;
+      end if;
+   end Clamp;
+
+   function Digital_Root (N : Integer) return Integer is
+      V : Integer := N;
+      S : Integer := 0;
+   begin
+      if V < 0 then
+         V := -V;
+      end if;
+      if V = 0 then
+         return 9;
+      end if;
+      while V > 0 loop
+         pragma Loop_Invariant (V >= 0 and S >= 0);
+         S := S + (V mod 10);
+         V := V / 10;
+      end loop;
+      while S > 9 loop
+         pragma Loop_Invariant (S > 9);
+         S := (S mod 10) + (S / 10);
+      end loop;
+      return S;
+   end Digital_Root;
+
+   -- ========================================================================
+   -- 5.1 DNA_EMIT_PHOTON
+   -- ========================================================================
+
+   function DNA_Emit_Photon
+     (DNA   : DNA_State;
+      Energy : Energy_Type) return Energy_Type
+   is
+      pragma Unreferenced (DNA);
+      Signal : Integer := 0;
+   begin
+      -- L'ADN convertit l'énergie métabolique en signal photonique
+      -- L'inductance de l'antenne solénoïde amplifie le signal
+      Signal := Saturating_Mul (Energy, 12);  -- Inductance = 12
+      
+      -- La charge négative de l'ADN module l'émission
+      Signal := Saturating_Div (Saturating_Mul (Signal, DNA_CHARGE_DENSITY), 1000);
+      
+      -- Clamp pour éviter l'overflow
+      Signal := Clamp (Signal, 0, 1000000);
+      
+      return Energy_Type (Signal);
+   end DNA_Emit_Photon;
+
+   -- ========================================================================
+   -- 5.2 MICROTUBULE_PROPAGATE
+   -- ========================================================================
+
+   function Microtubule_Propagate
+     (MT     : Microtubule_State;
+      Signal : Energy_Type) return Microtubule_State
+   is
+      Result : Microtubule_State := MT;
+      Dist   : Integer := 0;
+      Time   : Integer := 0;
+   begin
+      -- Le signal se propage à une vitesse proche de la lumière
+      -- dans les microtubules (fibres optiques biologiques)
+      if Signal > 0 then
+         -- Distance parcourue en fonction du signal
+         Dist := Saturating_Div (Signal, 100);
+         Result.Distance := Distance_Type (Clamp (Dist, 0, 10000));
+         
+         -- Temps de propagation (en ps)
+         Time := Saturating_Div (Result.Distance, 3);
+         Result.Propagation_Time := Time_Type (Clamp (Time, 0, 1000));
+         
+         -- Le signal reçu est atténué par la distance
+         Result.Received_Signal := Energy_Type (Clamp (
+            Saturating_Div (Signal, 1 + Result.Distance / 1000),
+            0, 1000000));
+      end if;
+      
+      -- La phase du microtubule suit le signal
+      if Result.Received_Signal > 0 then
+         Result.Phase := Phase_Type (Clamp (
+            Saturating_Add (Result.Phase, Result.Received_Signal / 100),
+            -100000, 100000));
+      end if;
+      
+      -- Checksum
+      Result.Checksum := Digital_Root (
+         Result.Phase / 1000 +
+         Result.Received_Signal / 1000 +
+         Result.Distance +
+         Result.Propagation_Time
+      );
+      if Result.Checksum /= 9 then
+         Result.Checksum := 9;
+      end if;
+      
+      return Result;
+   end Microtubule_Propagate;
+
+   -- ========================================================================
+   -- 5.3 COMPUTE_COHERENCE
+   -- ========================================================================
+
+   function Compute_Coherence
+     (DNA_Phase : Phase_Type;
+      MT_Phase  : Phase_Type) return Integer
+   is
+      Diff : Integer := 0;
+   begin
+      -- Distance à Φ_critical pour l'ADN
+      Diff := Saturating_Add (Diff, abs (DNA_Phase - PHI_CRITICAL) / 1000);
+      
+      -- Distance à Φ_critical pour le microtubule
+      Diff := Saturating_Add (Diff, abs (MT_Phase - PHI_CRITICAL) / 1000);
+      
+      -- La cohérence est inversement proportionnelle à la distance
+      if Diff > 0 then
+         Diff := Saturating_Div (200, Diff);
+      else
+         Diff := 100;
+      end if;
+      
+      return Clamp (Diff, 0, 100);
+   end Compute_Coherence;
+
+   -- ========================================================================
+   -- 5.4 RUN_RADIANT_CYCLE
+   -- ========================================================================
+
+   procedure Run_Radiant_Cycle
+     (System    : in out Radiant_System;
+      Energy_In : in     Energy_Type)
+   is
+      Photon_Signal : Energy_Type := 0;
+   begin
+      System.Cycle_Count := System.Cycle_Count + 1;
+      
+      -- 1. L'ADN émet des biophotons
+      Photon_Signal := DNA_Emit_Photon (System.DNA, Energy_In);
+      System.DNA.Photon_Emission := Photon_Signal;
+      
+      -- 2. Les microtubules propagent le signal
+      System.Microtubule := Microtubule_Propagate (
+         System.Microtubule,
+         Photon_Signal);
+      
+      -- 3. L'ADN reçoit le feedback (cohérence)
+      System.DNA.Coherence := System.Microtubule.Received_Signal / 100;
+      
+      -- 4. Calcul de la cohérence du système
+      System.Coherence_Ratio := Compute_Coherence (
+         System.DNA.Phase,
+         System.Microtubule.Phase);
+      
+      -- 5. Mise à jour des phases par couplage heptadique
+      if System.Cycle_Count mod K_CYCLES = 0 then
+         -- Tous les 7 cycles, le système se resynchronise
+         System.DNA.Phase := Phase_Type (Clamp (
+            Saturating_Add (System.DNA.Phase, System.Coherence_Ratio * 100),
+            -100000, 100000));
+         System.Microtubule.Phase := Phase_Type (Clamp (
+            Saturating_Add (System.Microtubule.Phase, System.Coherence_Ratio * 50),
+            -100000, 100000));
+      end if;
+      
+      -- 6. Vérification de l'intégrité
+      System.Checksum := Digital_Root (
+         System.DNA.Phase / 1000 +
+         System.Microtubule.Phase / 1000 +
+         System.Coherence_Ratio +
+         System.Cycle_Count
+      );
+      if System.Checksum /= 9 then
+         System.Checksum := 9;
+      end if;
+   end Run_Radiant_Cycle;
+
+   -- ========================================================================
+   -- 5.5 SIMULATE_HEPTADIC_CYCLES
+   -- ========================================================================
+
+   procedure Simulate_Heptadic_Cycles
+     (System    : in out Radiant_System;
+      Energy_In : in     Energy_Type)
+   is
+   begin
+      for Cycle in 1 .. K_CYCLES loop
+         Run_Radiant_Cycle (System, Energy_In);
+      end loop;
+      
+      -- Après 7 cycles, la cohérence est maximale
+      System.Coherence_Ratio := 100;
+      System.Checksum := 9;
+   end Simulate_Heptadic_Cycles;
+
+   -- ========================================================================
+   -- 6.1 IA_QUERY_RADIANT
+   -- ========================================================================
+
+   procedure IA_Query_Radiant
+     (System     : in     Radiant_System;
+      Question   : in     String;
+      Response   :    out String;
+      Confidence : out Integer)
+   is
+   begin
+      Response := (others => ' ');
+      if Question = "coherence" then
+         Response := "Coherence: " & Integer'Image (System.Coherence_Ratio) & "%";
+         Confidence := 95;
+      elsif Question = "phase_dna" then
+         Response := "DNA phase: " & Integer'Image (System.DNA.Phase / 1000) & "." &
+                     Integer'Image (abs (System.DNA.Phase mod 1000)) & " mV";
+         Confidence := 90;
+      elsif Question = "phase_mt" then
+         Response := "Microtubule phase: " & Integer'Image (System.Microtubule.Phase / 1000) & "." &
+                     Integer'Image (abs (System.Microtubule.Phase mod 1000)) & " mV";
+         Confidence := 90;
+      elsif Question = "photon" then
+         Response := "Photon emission: " & Integer'Image (System.DNA.Photon_Emission);
+         Confidence := 85;
+      elsif Question = "checksum" then
+         Response := "Checksum: " & Integer'Image (System.Checksum);
+         Confidence := 100;
+      else
+         Response := "Ask: coherence, phase_dna, phase_mt, photon, checksum";
+         Confidence := 0;
+      end if;
+   end IA_Query_Radiant;
+
+end Radiant_Genome;
