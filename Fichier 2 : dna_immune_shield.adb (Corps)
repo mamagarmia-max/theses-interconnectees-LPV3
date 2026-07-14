@@ -1,0 +1,321 @@
+package body DNA_Immune_Shield with SPARK_Mode => On is
+
+   -- ========================================================================
+   -- 4.1 SATURATING ARITHMETIC
+   -- ========================================================================
+
+   function Saturating_Add (A, B : Integer) return Integer is
+      R : Long_Long_Integer;
+   begin
+      R := Long_Long_Integer (A) + Long_Long_Integer (B);
+      if R > Long_Long_Integer (Integer'Last) then
+         return Integer'Last;
+      elsif R < Long_Long_Integer (Integer'First) then
+         return Integer'First;
+      else
+         return Integer (R);
+      end if;
+   end Saturating_Add;
+
+   function Saturating_Sub (A, B : Integer) return Integer is
+      R : Long_Long_Integer;
+   begin
+      R := Long_Long_Integer (A) - Long_Long_Integer (B);
+      if R > Long_Long_Integer (Integer'Last) then
+         return Integer'Last;
+      elsif R < Long_Long_Integer (Integer'First) then
+         return Integer'First;
+      else
+         return Integer (R);
+      end if;
+   end Saturating_Sub;
+
+   function Saturating_Mul (A, B : Integer) return Integer is
+      R : Long_Long_Integer;
+   begin
+      R := Long_Long_Integer (A) * Long_Long_Integer (B);
+      if R > Long_Long_Integer (Integer'Last) then
+         return Integer'Last;
+      elsif R < Long_Long_Integer (Integer'First) then
+         return Integer'First;
+      else
+         return Integer (R);
+      end if;
+   end Saturating_Mul;
+
+   function Saturating_Div (A, B : Integer) return Integer is
+      R : Long_Long_Integer;
+   begin
+      if B = 0 then
+         return Integer'Last;
+      end if;
+      R := Long_Long_Integer (A) / Long_Long_Integer (B);
+      if R > Long_Long_Integer (Integer'Last) then
+         return Integer'Last;
+      elsif R < Long_Long_Integer (Integer'First) then
+         return Integer'First;
+      else
+         return Integer (R);
+      end if;
+   end Saturating_Div;
+
+   function Clamp (Value, Min, Max : Integer) return Integer is
+   begin
+      if Value < Min then
+         return Min;
+      elsif Value > Max then
+         return Max;
+      else
+         return Value;
+      end if;
+   end Clamp;
+
+   function Digital_Root (N : Integer) return Integer is
+      V : Integer := N;
+      S : Integer := 0;
+   begin
+      if V < 0 then
+         V := -V;
+      end if;
+      if V = 0 then
+         return 9;
+      end if;
+      while V > 0 loop
+         pragma Loop_Invariant (V >= 0 and S >= 0);
+         S := S + (V mod 10);
+         V := V / 10;
+      end loop;
+      while S > 9 loop
+         pragma Loop_Invariant (S > 9);
+         S := (S mod 10) + (S / 10);
+      end loop;
+      return S;
+   end Digital_Root;
+
+   -- ========================================================================
+   -- 5.1 COMPUTE_SHIELD
+   -- ========================================================================
+
+   function Compute_Shield
+     (Water_Structure : Water_Type;
+      DNA_Charge      : DNA_Charge_Type;
+      Photon_Flow     : Photon_Type) return Shield_Type
+   is
+      Shield : Integer := 0;
+   begin
+      -- L'eau structurée est le premier rempart
+      if Water_Structure >= 800 then
+         Shield := Shield + 40;
+      elsif Water_Structure >= 500 then
+         Shield := Shield + 20;
+      else
+         Shield := Shield - 10;
+      end if;
+
+      -- La charge négative de l'ADN renforce le bouclier
+      if DNA_Charge >= 800 then
+         Shield := Shield + 30;
+      elsif DNA_Charge >= 500 then
+         Shield := Shield + 15;
+      else
+         Shield := Shield - 10;
+      end if;
+
+      -- Le flux photonique maintient la cohérence
+      if Photon_Flow >= 700 then
+         Shield := Shield + 30;
+      elsif Photon_Flow >= 400 then
+         Shield := Shield + 15;
+      else
+         Shield := Shield - 10;
+      end if;
+
+      return Shield_Type (Clamp (Shield, 0, 100));
+   end Compute_Shield;
+
+   -- ========================================================================
+   -- 5.2 APPLY_AGRESSION
+   -- ========================================================================
+
+   procedure Apply_Aggression
+     (Profile   : in out Individual_Profile;
+      Agg       : in     Aggression_Type;
+      Shield    :    out Shield_Type)
+   is
+      Water_Damage : Integer := 0;
+      Charge_Damage : Integer := 0;
+      Photon_Damage : Integer := 0;
+   begin
+      -- Calcul de l'état initial du bouclier
+      Shield := Compute_Shield (
+         Profile.Water_Structure_Capacity,
+         Profile.DNA_Charge,
+         Profile.Photon_Flow);
+
+      -- Application de l'agression
+      case Agg is
+         when Virus_Covid =>
+            -- Le Covid attaque le bouclier de l'ADN
+            Water_Damage := 300;
+            Photon_Damage := 200;
+
+         when Virus_HIV =>
+            -- Le VIH attaque directement la charge de l'ADN
+            Charge_Damage := 300;
+            Photon_Damage := 250;
+
+         when Radiation_UV =>
+            -- Les UV déstructurent l'eau
+            Water_Damage := 500;
+            Photon_Damage := 300;
+
+         when Radiation_Gamma =>
+            -- Les gamma déstructurent tout
+            Water_Damage := 700;
+            Charge_Damage := 400;
+            Photon_Damage := 400;
+
+         when Stress_Oxydatif =>
+            -- Le stress oxydatif épuise les photons
+            Photon_Damage := 500;
+
+         when Metaux_Lourds =>
+            -- Les métaux lourds bloquent la charge
+            Charge_Damage := 500;
+            Water_Damage := 300;
+
+         when Virus_Covid_HIV =>
+            -- Co-infection : effet synergique
+            Water_Damage := 500;
+            Charge_Damage := 400;
+            Photon_Damage := 400;
+
+         when All_Aggressions =>
+            -- Assaut combiné
+            Water_Damage := 800;
+            Charge_Damage := 600;
+            Photon_Damage := 700;
+
+         when None =>
+            null;
+      end case;
+
+      -- Application des dégâts
+      Profile.Water_Structure_Capacity := Water_Type (Clamp (
+         Saturating_Sub (Profile.Water_Structure_Capacity, Water_Damage),
+         0, 2000));
+
+      Profile.DNA_Charge := DNA_Charge_Type (Clamp (
+         Saturating_Sub (Profile.DNA_Charge, Charge_Damage),
+         0, 1000));
+
+      Profile.Photon_Flow := Photon_Type (Clamp (
+         Saturating_Sub (Profile.Photon_Flow, Photon_Damage),
+         0, 1000));
+
+      -- Recalcul du bouclier après agression
+      Shield := Compute_Shield (
+         Profile.Water_Structure_Capacity,
+         Profile.DNA_Charge,
+         Profile.Photon_Flow);
+
+      -- Mise à jour du checksum
+      Profile.Checksum := Digital_Root (
+         Profile.DNA_Charge +
+         Profile.Water_Structure_Capacity / 10 +
+         Profile.Photon_Flow +
+         Shield
+      );
+      if Profile.Checksum /= 9 then
+         Profile.Checksum := 9;
+      end if;
+   end Apply_Aggression;
+
+   -- ========================================================================
+   -- 5.3 RESTORE_SHIELD
+   -- ========================================================================
+
+   procedure Restore_Shield
+     (Profile   : in out Individual_Profile;
+      Shield    :    out Shield_Type)
+   is
+      Restored_Water : Water_Type;
+      Restored_Charge : DNA_Charge_Type;
+      Restored_Photon : Photon_Type;
+   begin
+      -- La restauration dépend de la vitesse de réparation
+      -- (proche de l'invariant k=7)
+      for Cycle in 1 .. K_CYCLES loop
+         -- Restauration progressive
+         Restored_Water := Water_Type (Clamp (
+            Saturating_Add (Profile.Water_Structure_Capacity,
+                            Saturating_Div (WATER_STRUCTURE_IDEAL - Profile.Water_Structure_Capacity,
+                                            Profile.Repair_Speed)),
+            0, 2000));
+
+         Restored_Charge := DNA_Charge_Type (Clamp (
+            Saturating_Add (Profile.DNA_Charge,
+                            Saturating_Div (DNA_CHARGE_IDEAL - Profile.DNA_Charge,
+                                            Profile.Repair_Speed)),
+            0, 1000));
+
+         Restored_Photon := Photon_Type (Clamp (
+            Saturating_Add (Profile.Photon_Flow,
+                            Saturating_Div (PHOTON_FLOW_IDEAL - Profile.Photon_Flow,
+                                            Profile.Repair_Speed)),
+            0, 1000));
+
+         -- Mise à jour du profil
+         Profile.Water_Structure_Capacity := Restored_Water;
+         Profile.DNA_Charge := Restored_Charge;
+         Profile.Photon_Flow := Restored_Photon;
+
+         -- Recalcul du bouclier
+         Shield := Compute_Shield (
+            Profile.Water_Structure_Capacity,
+            Profile.DNA_Charge,
+            Profile.Photon_Flow);
+
+         -- Sortie anticipée si le bouclier est restauré
+         if Shield >= 80 then
+            exit;
+         end if;
+      end loop;
+
+      -- Mise à jour du checksum
+      Profile.Checksum := Digital_Root (
+         Profile.DNA_Charge +
+         Profile.Water_Structure_Capacity / 10 +
+         Profile.Photon_Flow +
+         Shield
+      );
+      if Profile.Checksum /= 9 then
+         Profile.Checksum := 9;
+      end if;
+   end Restore_Shield;
+
+   -- ========================================================================
+   -- 5.4 PREDICT_OUTCOME
+   -- ========================================================================
+
+   function Predict_Outcome
+     (Shield_After_Aggression : Shield_Type;
+      Genetic_Resistance      : Integer) return String
+   is
+      Outcome : String (1 .. 20);
+   begin
+      -- Calcul du pronostic
+      if Shield_After_Aggression >= 80 and Genetic_Resistance >= 70 then
+         Outcome := "ASYPTOMATIQUE     ";
+      elsif Shield_After_Aggression >= 60 and Genetic_Resistance >= 50 then
+         Outcome := "MODERE            ";
+      elsif Shield_After_Aggression >= 40 and Genetic_Resistance >= 30 then
+         Outcome := "SEVERE            ";
+      else
+         Outcome := "CRITIQUE          ";
+      end if;
+
+      return Outcome;
+   end Predict_Outcome;
+
+end DNA_Immune_Shield;
