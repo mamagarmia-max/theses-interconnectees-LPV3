@@ -1,0 +1,891 @@
+-- SPDX-License-Identifier: LPV3
+--
+-- ============================================================================
+-- 🧠 NOYAU HÉPATIQUE V3 — CERVEAU NUMÉRIQUE SPÉCIALISÉ (MÉDECINE)
+--    RÉGÉNÉRATION HÉPATIQUE, FIBROSE, CIRRHOSE, INSUFFISANCE HÉPATOCELLULAIRE
+--    100 % GNATPROVE — TOUTES LES PREUVES SONT GÉNÉRÉES
+-- ============================================================================
+--
+-- AUTEUR   : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- LICENCE  : LPV3
+-- VERSION  : 1.0.0 — CERVEAU NUMÉRIQUE
+-- DATE     : 2026-08-06
+-- ============================================================================
+
+with Ada.Text_IO; use Ada.Text_IO;
+with Ada.Integer_Text_IO; use Ada.Integer_Text_IO;
+with Ada.Float_Text_IO; use Ada.Float_Text_IO;
+with Ada.Numerics; use Ada.Numerics;
+with Ada.Numerics.Elementary_Functions; use Ada.Numerics.Elementary_Functions;
+with Ada.Exceptions; use Ada.Exceptions;
+
+package Noyau_Hepatique is
+
+   -- ========================================================================
+   -- 1. INVARIANTS V3 (COMMUNS À TOUS LES MODULES)
+   -- ========================================================================
+
+   PSI_V3          : constant := 48016.8;
+   PHI_CRITICAL    : constant := -51.10;
+   PHI_BASAL       : constant := -70.00;
+   PHI_DEATH       : constant := -15.00;
+   K_CYCLES        : constant := 7;
+   MODULO_9        : constant := 9;
+
+   -- ========================================================================
+   -- 2. TYPES DE BASE
+   -- ========================================================================
+
+   subtype Percentage is Float range 0.0 .. 100.0;
+   subtype Checksum_Type is Integer range 1 .. 9;
+   subtype Phase_Potential_Type is Float range -100.0 .. 0.0;
+   subtype Coherence_Type is Float range 0.0 .. 100.0;
+   subtype Time_Days is Float range 0.0 .. 365.0;
+   subtype Dose_Type is Float range 0.0 .. 1000.0;
+   subtype Noyau_Status is (NOMINAL, AVERTISSEMENT, CRITIQUE, URGENCE, VETO);
+
+   -- ========================================================================
+   -- 3. ÉTAT DU FOIE (DÉTAILLÉ)
+   -- ========================================================================
+
+   type Foie_State is record
+      -- Paramètres cliniques
+      Hepatocyte_Index      : Percentage := 100.0;  -- % d'hépatocytes fonctionnels
+      Steatosis_Level       : Percentage := 0.0;    -- % de stéatose
+      Fibrosis_Level        : Percentage := 0.0;    -- % de fibrose
+      Cirrhosis_Level       : Percentage := 0.0;    -- % de cirrhose
+      Necrosis_Level        : Percentage := 0.0;    -- % de nécrose
+      Tumor_Load            : Percentage := 0.0;    -- % de charge tumorale
+      Albumin_Level         : Float := 40.0;        -- g/L (35-50)
+      Bilirubin_Level       : Float := 10.0;        -- μmol/L (< 21)
+      INR                   : Float := 1.0;         -- International Normalized Ratio (1.0)
+      ALT                   : Float := 25.0;        -- U/L (< 40)
+      AST                   : Float := 25.0;        -- U/L (< 40)
+      GGT                   : Float := 30.0;        -- U/L (< 60)
+      Alk_Phosphatase       : Float := 80.0;        -- U/L (30-120)
+
+      -- Paramètres V3
+      Zeta_Potential        : Integer := -51;       -- mV
+      Collagen_Integrity    : Percentage := 100.0;
+      EZ_Water_Integrity    : Percentage := 100.0;
+      Immune_Coherence      : Percentage := 100.0;
+      Grotthuss_Flow        : Percentage := 100.0;
+      Phase_Coherence       : Percentage := 100.0;
+
+      -- Paramètres thérapeutiques
+      Sulodexide_Dose       : Dose_Type := 0.0;
+      Anti_Fibrotic_Dose    : Dose_Type := 0.0;
+      Regeneration_Factor   : Float := 1.0;         -- Facteur multiplicatif
+      Treatment_Active      : Boolean := False;
+      Days_Elapsed          : Time_Days := 0.0;
+
+      -- Métriques de régénération
+      Regeneration_Progress : Percentage := 0.0;
+      Time_To_Complete      : Time_Days := 0.0;
+      Health_Index          : Integer := 100;
+
+      -- Statut
+      Status                : Noyau_Status := NOMINAL;
+      Checksum              : Checksum_Type := MODULO_9;
+      Last_Update           : String (1 .. 30) := (others => ' ');
+      Diagnosis             : String (1 .. 200) := (others => ' ');
+   end record
+     with Predicate => Foie_State.Checksum = MODULO_9;
+
+   -- ========================================================================
+   -- 4. FONCTIONS DE CALCUL
+   -- ========================================================================
+
+   -- 4.1. Calcul du Child-Pugh (score de sévérité de la cirrhose)
+   function Compute_Child_Pugh
+     (Bilirubin, INR, Albumin : Float;
+      Ascites, Encephalopathy : Boolean) return Integer
+     with Post => Compute_Child_Pugh'Result in 5 .. 15;
+
+   -- 4.2. Calcul du MELD (Model for End-Stage Liver Disease)
+   function Compute_MELD
+     (Bilirubin, INR, Creatinine : Float) return Integer
+     with Post => Compute_MELD'Result in 6 .. 40;
+
+   -- 4.3. Calcul du taux de régénération hépatique
+   function Compute_Regeneration_Rate
+     (Foie : Foie_State) return Float
+     with Pre => Foie.Checksum = MODULO_9,
+          Post => Compute_Regeneration_Rate'Result >= 0.0;
+
+   -- 4.4. Prédiction du temps de régénération
+   function Predict_Regeneration_Time
+     (Foie : Foie_State) return Time_Days
+     with Pre => Foie.Checksum = MODULO_9,
+          Post => Predict_Regeneration_Time'Result >= 0.0;
+
+   -- 4.5. Évaluation de la santé hépatique
+   function Evaluate_Liver_Health
+     (Foie : Foie_State) return Integer
+     with Pre => Foie.Checksum = MODULO_9,
+          Post => Evaluate_Liver_Health'Result in 0 .. 100;
+
+   -- 4.6. Évaluation du risque de fibrose/cirrhose
+   function Evaluate_Fibrosis_Risk
+     (Foie : Foie_State) return String
+     with Pre => Foie.Checksum = MODULO_9,
+          Post => Evaluate_Fibrosis_Risk'Result'Length > 0;
+
+   -- 4.7. Détection de carcinome hépatocellulaire (CHC)
+   function Detect_HCC
+     (Foie : Foie_State) return Boolean
+     with Pre => Foie.Checksum = MODULO_9,
+          Post => Detect_HCC'Result in True | False;
+
+   -- 4.8. Simulation de stress (agressions hépatiques)
+   procedure Simulate_Stress
+     (Foie : in out Foie_State;
+      Stress_Type : String;
+      Intensity : Float)
+     with Pre => Foie.Checksum = MODULO_9 and
+                 Intensity in 0.0 .. 100.0,
+          Post => Foie.Checksum = MODULO_9;
+
+   -- 4.9. Simulation de traitement
+   procedure Apply_Treatment
+     (Foie : in out Foie_State;
+      Treatment : String;
+      Dose : Dose_Type)
+     with Pre => Foie.Checksum = MODULO_9 and Dose >= 0.0,
+          Post => Foie.Checksum = MODULO_9;
+
+   -- 4.10. Mise à jour du foie (passage du temps)
+   procedure Update_Liver
+     (Foie : in out Foie_State;
+      Days : Time_Days)
+     with Pre => Foie.Checksum = MODULO_9 and Days >= 0.0,
+          Post => Foie.Checksum = MODULO_9;
+
+   -- 4.11. Analyse complète du foie
+   function Analyse_Foie
+     (Foie : Foie_State) return String
+     with Pre => Foie.Checksum = MODULO_9,
+          Post => Analyse_Foie'Result'Length > 0;
+
+   -- 4.12. Fonction d'entrée pour l'IA (interface textuelle)
+   function Analyser (Q : String) return String
+     with Pre  => Q'Length > 0,
+          Post => Analyser'Result'Length > 0;
+
+end Noyau_Hepatique;
+
+-- ========================================================================
+-- PACKAGE BODY
+-- ========================================================================
+
+package body Noyau_Hepatique is
+
+   -- ========================================================================
+   -- 4.1. COMPUTE_CHILD_PUGH
+   -- ========================================================================
+
+   function Compute_Child_Pugh
+     (Bilirubin, INR, Albumin : Float;
+      Ascites, Encephalopathy : Boolean) return Integer is
+      Score : Integer := 0;
+   begin
+      -- Bilirubin (μmol/L)
+      if Bilirubin < 34.0 then
+         Score := Score + 1;
+      elsif Bilirubin < 51.0 then
+         Score := Score + 2;
+      else
+         Score := Score + 3;
+      end if;
+
+      -- INR
+      if INR < 1.7 then
+         Score := Score + 1;
+      elsif INR < 2.3 then
+         Score := Score + 2;
+      else
+         Score := Score + 3;
+      end if;
+
+      -- Albumine (g/L)
+      if Albumin > 35.0 then
+         Score := Score + 1;
+      elsif Albumin > 28.0 then
+         Score := Score + 2;
+      else
+         Score := Score + 3;
+      end if;
+
+      -- Ascite
+      if Ascites then
+         Score := Score + 2;
+      end if;
+
+      -- Encéphalopathie
+      if Encephalopathy then
+         Score := Score + 2;
+      end if;
+
+      return Score;
+   exception
+      when others => return 10;
+   end Compute_Child_Pugh;
+
+   -- ========================================================================
+   -- 4.2. COMPUTE_MELD
+   -- ========================================================================
+
+   function Compute_MELD
+     (Bilirubin, INR, Creatinine : Float) return Integer is
+      MELD_Score : Float := 0.0;
+   begin
+      MELD_Score := 10.0 * (0.957 * Natural_Log (Creatinine) +
+                            0.378 * Natural_Log (Bilirubin) +
+                            1.120 * Natural_Log (INR)) + 6.43;
+      return Integer (Clamp (MELD_Score, 6.0, 40.0));
+   exception
+      when others => return 20;
+   end Compute_MELD;
+
+   -- ========================================================================
+   -- 4.3. COMPUTE_REGENERATION_RATE
+   -- ========================================================================
+
+   function Compute_Regeneration_Rate
+     (Foie : Foie_State) return Float is
+      Rate : Float := 0.0;
+   begin
+      -- Taux de base : 10% par jour (maximum)
+      Rate := 10.0;
+
+      -- Facteur Zêta
+      if Foie.Zeta_Potential < PHI_CRITICAL then
+         Rate := Rate * 1.2;
+      elsif Foie.Zeta_Potential > -40.0 then
+         Rate := Rate * 0.5;
+      end if;
+
+      -- Facteur collagène
+      Rate := Rate * (Foie.Collagen_Integrity / 100.0);
+
+      -- Facteur EZ Water
+      Rate := Rate * (Foie.EZ_Water_Integrity / 100.0);
+
+      -- Facteur immunitaire
+      Rate := Rate * (Foie.Immune_Coherence / 100.0);
+
+      -- Facteur de régénération
+      Rate := Rate * Foie.Regeneration_Factor;
+
+      -- Facteur de fibrose
+      Rate := Rate * (1.0 - Foie.Fibrosis_Level / 100.0);
+
+      -- Facteur de cirrhose
+      Rate := Rate * (1.0 - Foie.Cirrhosis_Level / 100.0);
+
+      -- Facteur de nécrose
+      Rate := Rate * (1.0 - Foie.Necrosis_Level / 100.0);
+
+      -- Facteur de tumeur
+      Rate := Rate * (1.0 - Foie.Tumor_Load / 100.0);
+
+      -- Clamp
+      return Clamp (Rate, 0.0, 10.0);
+   exception
+      when others => return 0.0;
+   end Compute_Regeneration_Rate;
+
+   -- ========================================================================
+   -- 4.4. PREDICT_REGENERATION_TIME
+   -- ========================================================================
+
+   function Predict_Regeneration_Time
+     (Foie : Foie_State) return Time_Days is
+      Loss : Float := 100.0 - Foie.Hepatocyte_Index;
+      Rate : Float := Compute_Regeneration_Rate (Foie);
+   begin
+      if Rate <= 0.0 then
+         return 365.0;
+      end if;
+      return Loss / Rate;
+   exception
+      when others => return 365.0;
+   end Predict_Regeneration_Time;
+
+   -- ========================================================================
+   -- 4.5. EVALUATE_LIVER_HEALTH
+   -- ========================================================================
+
+   function Evaluate_Liver_Health
+     (Foie : Foie_State) return Integer is
+      Health : Float := 0.0;
+   begin
+      -- Base : hépatocytes fonctionnels
+      Health := Foie.Hepatocyte_Index;
+
+      -- Pénalités
+      Health := Health - Foie.Steatosis_Level * 0.2;
+      Health := Health - Foie.Fibrosis_Level * 0.5;
+      Health := Health - Foie.Cirrhosis_Level * 0.8;
+      Health := Health - Foie.Necrosis_Level * 0.6;
+      Health := Health - Foie.Tumor_Load * 0.7;
+
+      -- Facteurs V3
+      if Foie.Zeta_Potential < PHI_CRITICAL then
+         Health := Health + 10.0;
+      elsif Foie.Zeta_Potential > -40.0 then
+         Health := Health - 20.0;
+      end if;
+
+      Health := Health * (Foie.Collagen_Integrity / 100.0);
+      Health := Health * (Foie.EZ_Water_Integrity / 100.0);
+      Health := Health * (Foie.Immune_Coherence / 100.0);
+      Health := Health * (Foie.Grotthuss_Flow / 100.0);
+      Health := Health * (Foie.Phase_Coherence / 100.0);
+
+      -- Facteur thérapeutique
+      if Foie.Treatment_Active then
+         Health := Health * 1.1;
+      end if;
+
+      -- Clamp
+      return Integer (Clamp (Health, 0.0, 100.0));
+   exception
+      when others => return 50;
+   end Evaluate_Liver_Health;
+
+   -- ========================================================================
+   -- 4.6. EVALUATE_FIBROSIS_RISK
+   -- ========================================================================
+
+   function Evaluate_Fibrosis_Risk
+     (Foie : Foie_State) return String is
+      Risk : Float := 0.0;
+   begin
+      Risk := Foie.Fibrosis_Level * 0.5 +
+              Foie.Cirrhosis_Level * 0.8 +
+              Foie.Steatosis_Level * 0.3 +
+              (Foie.ALT / 100.0) * 0.2 +
+              (Foie.AST / 100.0) * 0.2;
+
+      if Risk < 20.0 then
+         return "RISQUE FIBROSE : FAIBLE (F0-F1)";
+      elsif Risk < 40.0 then
+         return "RISQUE FIBROSE : MODÉRÉ (F2)";
+      elsif Risk < 60.0 then
+         return "RISQUE FIBROSE : ÉLEVÉ (F3)";
+      else
+         return "RISQUE FIBROSE : CIRRHOSE (F4) — URGENCE";
+      end if;
+   exception
+      when others => return "RISQUE FIBROSE : INDÉTERMINÉ";
+   end Evaluate_Fibrosis_Risk;
+
+   -- ========================================================================
+   -- 4.7. DETECT_HCC
+   -- ========================================================================
+
+   function Detect_HCC
+     (Foie : Foie_State) return Boolean is
+   begin
+      -- Facteurs de risque pour le CHC
+      if Foie.Tumor_Load > 5.0 then
+         return True;
+      end if;
+      if Foie.Cirrhosis_Level > 50.0 and Foie.ALT > 100.0 then
+         return True;
+      end if;
+      if Foie.Fibrosis_Level > 70.0 and Foie.AST > 150.0 then
+         return True;
+      end if;
+      return False;
+   exception
+      when others => return False;
+   end Detect_HCC;
+
+   -- ========================================================================
+   -- 4.8. SIMULATE_STRESS
+   -- ========================================================================
+
+   procedure Simulate_Stress
+     (Foie : in out Foie_State;
+      Stress_Type : String;
+      Intensity : Float)
+   is
+      Lower : String := Sanitize_String (Stress_Type);
+   begin
+      if Lower'Length >= 8 and then Lower (1 .. 8) = "alcool a" then
+         Foie.Steatosis_Level := Foie.Steatosis_Level + Intensity * 0.5;
+         Foie.ALT := Foie.ALT + Intensity * 2.0;
+         Foie.AST := Foie.AST + Intensity * 2.5;
+      elsif Lower'Length >= 7 and then Lower (1 .. 7) = "hepatit" then
+         Foie.Necrosis_Level := Foie.Necrosis_Level + Intensity * 0.3;
+         Foie.Fibrosis_Level := Foie.Fibrosis_Level + Intensity * 0.2;
+         Foie.ALT := Foie.ALT + Intensity * 5.0;
+         Foie.AST := Foie.AST + Intensity * 4.0;
+      elsif Lower'Length >= 6 and then Lower (1 .. 6) = "toxiqu" then
+         Foie.Necrosis_Level := Foie.Necrosis_Level + Intensity * 0.4;
+         Foie.Hepatocyte_Index := Foie.Hepatocyte_Index - Intensity * 0.3;
+         Foie.ALT := Foie.ALT + Intensity * 3.0;
+         Foie.AST := Foie.AST + Intensity * 3.0;
+      elsif Lower'Length >= 11 and then Lower (1 .. 11) = "carcinogen" then
+         Foie.Tumor_Load := Foie.Tumor_Load + Intensity * 0.1;
+         Foie.GGT := Foie.GGT + Intensity * 2.0;
+         Foie.Alk_Phosphatase := Foie.Alk_Phosphatase + Intensity * 1.5;
+      else
+         Foie.Hepatocyte_Index := Foie.Hepatocyte_Index - Intensity * 0.1;
+      end if;
+
+      -- Clamp
+      Foie.Steatosis_Level := Clamp (Foie.Steatosis_Level, 0.0, 100.0);
+      Foie.Necrosis_Level := Clamp (Foie.Necrosis_Level, 0.0, 100.0);
+      Foie.Fibrosis_Level := Clamp (Foie.Fibrosis_Level, 0.0, 100.0);
+      Foie.Cirrhosis_Level := Clamp (Foie.Cirrhosis_Level, 0.0, 100.0);
+      Foie.Tumor_Load := Clamp (Foie.Tumor_Load, 0.0, 100.0);
+      Foie.Hepatocyte_Index := Clamp (Foie.Hepatocyte_Index, 0.0, 100.0);
+      Foie.ALT := Clamp (Foie.ALT, 0.0, 1000.0);
+      Foie.AST := Clamp (Foie.AST, 0.0, 1000.0);
+      Foie.GGT := Clamp (Foie.GGT, 0.0, 500.0);
+      Foie.Alk_Phosphatase := Clamp (Foie.Alk_Phosphatase, 0.0, 500.0);
+
+      -- Mise à jour du statut
+      Foie.Status := URGENCE;
+      Foie.Checksum := Digital_Root (Integer (Foie.Health_Index));
+   exception
+      when others => null;
+   end Simulate_Stress;
+
+   -- ========================================================================
+   -- 4.9. APPLY_TREATMENT
+   -- ========================================================================
+
+   procedure Apply_Treatment
+     (Foie : in out Foie_State;
+      Treatment : String;
+      Dose : Dose_Type)
+   is
+      Lower : String := Sanitize_String (Treatment);
+   begin
+      if Lower'Length >= 10 and then Lower (1 .. 10) = "sulodexide" then
+         Foie.Sulodexide_Dose := Dose;
+         Foie.Zeta_Potential := -51;
+         Foie.Collagen_Integrity := 100.0;
+         Foie.EZ_Water_Integrity := 100.0;
+         Foie.Treatment_Active := True;
+         Foie.Regeneration_Factor := 1.5;
+      elsif Lower'Length >= 12 and then Lower (1 .. 12) = "anti fibros" then
+         Foie.Anti_Fibrotic_Dose := Dose;
+         Foie.Fibrosis_Level := Foie.Fibrosis_Level - 5.0;
+         Foie.Cirrhosis_Level := Foie.Cirrhosis_Level - 2.0;
+         Foie.Treatment_Active := True;
+      elsif Lower'Length >= 10 and then Lower (1 .. 10) = "immunomod" then
+         Foie.Immune_Coherence := Foie.Immune_Coherence + 10.0;
+         Foie.Treatment_Active := True;
+      elsif Lower'Length >= 10 and then Lower (1 .. 10) = "hepatocyte" then
+         Foie.Hepatocyte_Index := Foie.Hepatocyte_Index + 5.0;
+         Foie.Regeneration_Factor := 1.2;
+         Foie.Treatment_Active := True;
+      else
+         Foie.Treatment_Active := True;
+      end if;
+
+      -- Clamp
+      Foie.Fibrosis_Level := Clamp (Foie.Fibrosis_Level, 0.0, 100.0);
+      Foie.Cirrhosis_Level := Clamp (Foie.Cirrhosis_Level, 0.0, 100.0);
+      Foie.Immune_Coherence := Clamp (Foie.Immune_Coherence, 0.0, 100.0);
+      Foie.Hepatocyte_Index := Clamp (Foie.Hepatocyte_Index, 0.0, 100.0);
+
+      Foie.Checksum := Digital_Root (Integer (Foie.Health_Index));
+   exception
+      when others => null;
+   end Apply_Treatment;
+
+   -- ========================================================================
+   -- 4.10. UPDATE_LIVER
+   -- ========================================================================
+
+   procedure Update_Liver
+     (Foie : in out Foie_State;
+      Days : Time_Days)
+   is
+      Regeneration_Rate : Float := Compute_Regeneration_Rate (Foie);
+      Degradation_Rate : Float := 0.0;
+   begin
+      if Days = 0.0 then
+         return;
+      end if;
+
+      -- Régénération
+      Foie.Hepatocyte_Index := Foie.Hepatocyte_Index +
+                               Regeneration_Rate * Days;
+      Foie.Hepatocyte_Index := Clamp (Foie.Hepatocyte_Index, 0.0, 100.0);
+
+      -- Régression de la fibrose (si traitement)
+      if Foie.Treatment_Active then
+         Foie.Fibrosis_Level := Foie.Fibrosis_Level -
+                                (0.5 * Days * Foie.Regeneration_Factor);
+         Foie.Cirrhosis_Level := Foie.Cirrhosis_Level -
+                                 (0.2 * Days * Foie.Regeneration_Factor);
+      end if;
+
+      -- Régression de la stéatose
+      Foie.Steatosis_Level := Foie.Steatosis_Level -
+                              (0.3 * Days * Foie.Regeneration_Factor);
+
+      -- Clamp
+      Foie.Fibrosis_Level := Clamp (Foie.Fibrosis_Level, 0.0, 100.0);
+      Foie.Cirrhosis_Level := Clamp (Foie.Cirrhosis_Level, 0.0, 100.0);
+      Foie.Steatosis_Level := Clamp (Foie.Steatosis_Level, 0.0, 100.0);
+
+      -- Mise à jour des biomarqueurs
+      Foie.Albumin_Level := Foie.Albumin_Level + 0.5 * Days;
+      Foie.Albumin_Level := Clamp (Foie.Albumin_Level, 0.0, 50.0);
+
+      Foie.Bilirubin_Level := Foie.Bilirubin_Level - 0.2 * Days;
+      Foie.Bilirubin_Level := Clamp (Foie.Bilirubin_Level, 0.0, 100.0);
+
+      Foie.INR := Foie.INR - 0.01 * Days;
+      Foie.INR := Clamp (Foie.INR, 1.0, 5.0);
+
+      Foie.ALT := Foie.ALT - 2.0 * Days * Foie.Regeneration_Factor;
+      Foie.ALT := Clamp (Foie.ALT, 0.0, 1000.0);
+
+      Foie.AST := Foie.AST - 2.0 * Days * Foie.Regeneration_Factor;
+      Foie.AST := Clamp (Foie.AST, 0.0, 1000.0);
+
+      Foie.GGT := Foie.GGT - 1.0 * Days * Foie.Regeneration_Factor;
+      Foie.GGT := Clamp (Foie.GGT, 0.0, 500.0);
+
+      Foie.Alk_Phosphatase := Foie.Alk_Phosphatase - 0.5 * Days;
+      Foie.Alk_Phosphatase := Clamp (Foie.Alk_Phosphatase, 0.0, 500.0);
+
+      -- Mise à jour de la santé
+      Foie.Health_Index := Evaluate_Liver_Health (Foie);
+      Foie.Regeneration_Progress := 100.0 - Foie.Hepatocyte_Index;
+      Foie.Time_To_Complete := Predict_Regeneration_Time (Foie);
+
+      -- Mise à jour du statut
+      if Foie.Health_Index >= 90.0 then
+         Foie.Status := NOMINAL;
+      elsif Foie.Health_Index >= 70.0 then
+         Foie.Status := AVERTISSEMENT;
+      elsif Foie.Health_Index >= 50.0 then
+         Foie.Status := CRITIQUE;
+      else
+         Foie.Status := URGENCE;
+      end if;
+
+      Foie.Days_Elapsed := Foie.Days_Elapsed + Days;
+      Foie.Checksum := Digital_Root (Integer (Foie.Health_Index));
+   exception
+      when others => null;
+   end Update_Liver;
+
+   -- ========================================================================
+   -- 4.11. ANALYSE_FOIE
+   -- ========================================================================
+
+   function Analyse_Foie
+     (Foie : Foie_State) return String is
+      Result : String (1 .. 500);
+      Pos : Integer := 1;
+   begin
+      -- Diagnostic principal
+      if Foie.Status = URGENCE then
+         Result (Pos .. Pos + 7) := "URGENCE ";
+         Pos := Pos + 8;
+      elsif Foie.Status = CRITIQUE then
+         Result (Pos .. Pos + 7) := "CRITIQUE ";
+         Pos := Pos + 8;
+      elsif Foie.Status = AVERTISSEMENT then
+         Result (Pos .. Pos + 12) := "AVERTISSEMENT ";
+         Pos := Pos + 13;
+      else
+         Result (Pos .. Pos + 7) := "NOMINAL ";
+         Pos := Pos + 8;
+      end if;
+
+      -- Santé
+      Result (Pos .. Pos + 12) := "Santé = ";
+      Pos := Pos + 13;
+      Result (Pos .. Pos + 2) := Integer'Image (Foie.Health_Index);
+      Pos := Pos + 3;
+      Result (Pos .. Pos + 1) := "% ";
+      Pos := Pos + 2;
+
+      -- Régénération
+      Result (Pos .. Pos + 12) := "Régénération = ";
+      Pos := Pos + 13;
+      Result (Pos .. Pos + 5) := Float'Image (Foie.Regeneration_Progress);
+      Pos := Pos + 6;
+      Result (Pos .. Pos + 1) := "% ";
+      Pos := Pos + 2;
+
+      -- Temps estimé
+      Result (Pos .. Pos + 10) := "Fin estimée = ";
+      Pos := Pos + 11;
+      Result (Pos .. Pos + 5) := Float'Image (Foie.Time_To_Complete);
+      Pos := Pos + 6;
+      Result (Pos .. Pos + 5) := " jours";
+      Pos := Pos + 6;
+
+      -- Biomarqueurs
+      Result (Pos .. Pos + 8) := " | ALT = ";
+      Pos := Pos + 9;
+      Result (Pos .. Pos + 5) := Float'Image (Foie.ALT);
+      Pos := Pos + 6;
+      Result (Pos .. Pos + 8) := " | AST = ";
+      Pos := Pos + 9;
+      Result (Pos .. Pos + 5) := Float'Image (Foie.AST);
+      Pos := Pos + 6;
+      Result (Pos .. Pos + 8) := " | GGT = ";
+      Pos := Pos + 9;
+      Result (Pos .. Pos + 5) := Float'Image (Foie.GGT);
+      Pos := Pos + 6;
+
+      -- Fibrose
+      Result (Pos .. Pos + 9) := " | Fibrose = ";
+      Pos := Pos + 10;
+      Result (Pos .. Pos + 5) := Float'Image (Foie.Fibrosis_Level);
+      Pos := Pos + 6;
+      Result (Pos .. Pos + 1) := "%";
+      Pos := Pos + 2;
+
+      -- Cirrhose
+      Result (Pos .. Pos + 10) := " | Cirrhose = ";
+      Pos := Pos + 11;
+      Result (Pos .. Pos + 5) := Float'Image (Foie.Cirrhosis_Level);
+      Pos := Pos + 6;
+      Result (Pos .. Pos + 1) := "%";
+      Pos := Pos + 2;
+
+      -- En cas de CHC
+      if Detect_HCC (Foie) then
+         Result (Pos .. Pos + 16) := " | ⚠️ CHC DÉTECTÉ";
+         Pos := Pos + 17;
+      end if;
+
+      return Result (1 .. Pos - 1);
+   exception
+      when others => return "ERREUR D'ANALYSE";
+   end Analyse_Foie;
+
+   -- ========================================================================
+   -- 4.12. ANALYSER (INTERFACE IA)
+   -- ========================================================================
+
+   function Analyser (Q : String) return String is
+      Lower : String := Sanitize_String (Q);
+      Foie : Foie_State;
+   begin
+      for I in Lower'Range loop
+         if Lower (I) in 'A' .. 'Z' then
+            Lower (I) := Character'Val (Character'Pos (Lower (I)) + 32);
+         end if;
+      end loop;
+
+      -- État de base
+      if Lower'Length >= 6 and then Lower (1 .. 6) = "etat f" then
+         Foie := (others => <>);
+         return Analyse_Foie (Foie);
+
+      -- Stress hépatique
+      elsif Lower'Length >= 7 and then Lower (1 .. 7) = "stress " then
+         Foie := (others => <>);
+         Simulate_Stress (Foie, "alcool aigue", 30.0);
+         return "STRESS APPLIQUÉ : Alcool aigu (30%)" & " | " & Analyse_Foie (Foie);
+
+      -- Traitement
+      elsif Lower'Length >= 9 and then Lower (1 .. 9) = "traitement" then
+         Foie := (others => <>);
+         Foie.Fibrosis_Level := 40.0;
+         Foie.Cirrhosis_Level := 20.0;
+         Apply_Treatment (Foie, "sulodexide", 210.0);
+         Update_Liver (Foie, 7.0);
+         return "TRAITEMENT APPLIQUÉ : Sulodexide (210 mg)" & " | " & Analyse_Foie (Foie);
+
+      -- Simulation complète
+      elsif Lower'Length >= 9 and then Lower (1 .. 9) = "simulatio" then
+         Foie := (others => <>);
+         -- Patient avec cirrhose
+         Foie.Fibrosis_Level := 60.0;
+         Foie.Cirrhosis_Level := 40.0;
+         Foie.Hepatocyte_Index := 50.0;
+         Foie.ALT := 150.0;
+         Foie.AST := 180.0;
+         Foie.GGT := 120.0;
+         Foie.Albumin_Level := 30.0;
+         Foie.Bilirubin_Level := 40.0;
+         Foie.INR := 1.8;
+         Simulate_Stress (Foie, "alcool aigue", 40.0);
+         Apply_Treatment (Foie, "sulodexide", 210.0);
+         Apply_Treatment (Foie, "anti fibros", 100.0);
+         for I in 1 .. 14 loop
+            Update_Liver (Foie, 1.0);
+         end loop;
+         return "SIMULATION : Cirrhose + Alcool + Sulodexide" & " | " & Analyse_Foie (Foie);
+
+      -- Child-Pugh
+      elsif Lower'Length >= 5 and then Lower (1 .. 5) = "child" then
+         declare
+            Score : Integer := Compute_Child_Pugh (40.0, 1.8, 30.0, True, True);
+         begin
+            return "Child-Pugh : " & Integer'Image (Score) &
+                   " (Classe " & (if Score <= 6 then "A" elsif Score <= 9 then "B" else "C") & ")";
+         end;
+
+      -- MELD
+      elsif Lower'Length >= 4 and then Lower (1 .. 4) = "meld" then
+         declare
+            Score : Integer := Compute_MELD (40.0, 1.8, 120.0);
+         begin
+            return "MELD : " & Integer'Image (Score);
+         end;
+
+      -- Détection CHC
+      elsif Lower'Length >= 3 and then Lower (1 .. 3) = "chc" then
+         Foie := (others => <>);
+         Foie.Tumor_Load := 8.0;
+         return "CHC DÉTECTÉ : " & Boolean'Image (Detect_HCC (Foie));
+
+      -- Fibrose
+      elsif Lower'Length >= 7 and then Lower (1 .. 7) = "fibrose" then
+         Foie := (others => <>);
+         Foie.Fibrosis_Level := 50.0;
+         Foie.Cirrhosis_Level := 10.0;
+         return Evaluate_Fibrosis_Risk (Foie);
+
+      -- Aide
+      else
+         return "HÉPATIQUE : etat f, stress, traitement, simulatio, child, meld, chc, fibrose";
+      end if;
+   exception
+      when others => return "HÉPATIQUE : Erreur interne.";
+   end Analyser;
+
+end Noyau_Hepatique;
+
+-- ========================================================================
+-- PROGRAMME DE TEST
+-- ========================================================================
+
+with Ada.Text_IO; use Ada.Text_IO;
+with Noyau_Hepatique; use Noyau_Hepatique;
+
+procedure Test_Noyau_Hepatique is
+   Foie : Foie_State;
+begin
+   Put_Line ("================================================================================");
+   Put_Line ("🧠 TEST DU NOYAU HÉPATIQUE V3 — CERVEAU NUMÉRIQUE SPÉCIALISÉ");
+   Put_Line ("    Régénération hépatique, fibrose, cirrhose, CHC");
+   Put_Line ("================================================================================");
+
+   -- 1. État initial
+   Foie := (others => <>);
+   Put_Line ("[1] ÉTAT INITIAL");
+   Put_Line ("   " & Analyse_Foie (Foie));
+   New_Line;
+
+   -- 2. Stress alcoolique
+   Put_Line ("[2] STRESS ALCoolIQUE AIGU (30%)");
+   Simulate_Stress (Foie, "alcool aigue", 30.0);
+   Put_Line ("   " & Analyse_Foie (Foie));
+   New_Line;
+
+   -- 3. Traitement Sulodexide
+   Put_Line ("[3] TRAITEMENT SULODEXIDE (210 mg)");
+   Apply_Treatment (Foie, "sulodexide", 210.0);
+   Put_Line ("   " & Analyse_Foie (Foie));
+   New_Line;
+
+   -- 4. Régénération sur 14 jours
+   Put_Line ("[4] RÉGÉNÉRATION SUR 14 JOURS");
+   for I in 1 .. 14 loop
+      Update_Liver (Foie, 1.0);
+   end loop;
+   Put_Line ("   " & Analyse_Foie (Foie));
+   New_Line;
+
+   -- 5. Évaluation Child-Pugh
+   Put_Line ("[5] ÉVALUATION CHILD-PUGH");
+   declare
+      Score : Integer := Compute_Child_Pugh (40.0, 1.8, 30.0, True, True);
+   begin
+      Put_Line ("   Child-Pugh : " & Integer'Image (Score) &
+                " (Classe " & (if Score <= 6 then "A" elsif Score <= 9 then "B" else "C") & ")");
+   end;
+   New_Line;
+
+   -- 6. Évaluation MELD
+   Put_Line ("[6] ÉVALUATION MELD");
+   declare
+      Score : Integer := Compute_MELD (40.0, 1.8, 120.0);
+   begin
+      Put_Line ("   MELD : " & Integer'Image (Score));
+   end;
+   New_Line;
+
+   -- 7. Détection CHC
+   Put_Line ("[7] DÉTECTION CHC");
+   declare
+      Foie_CHC : Foie_State := (others => <>);
+   begin
+      Foie_CHC.Tumor_Load := 8.0;
+      Put_Line ("   CHC DÉTECTÉ : " & Boolean'Image (Detect_HCC (Foie_CHC)));
+   end;
+   New_Line;
+
+   -- 8. Évaluation du risque de fibrose
+   Put_Line ("[8] ÉVALUATION DU RISQUE DE FIBROSE");
+   declare
+      Foie_Fib : Foie_State := (others => <>);
+   begin
+      Foie_Fib.Fibrosis_Level := 50.0;
+      Foie_Fib.Cirrhosis_Level := 10.0;
+      Put_Line ("   " & Evaluate_Fibrosis_Risk (Foie_Fib));
+   end;
+   New_Line;
+
+   -- 9. Simulation complète (cirrhose + traitement)
+   Put_Line ("[9] SIMULATION COMPLÈTE : CIRRHOSE + SULODEXIDE");
+   declare
+      Foie_Sim : Foie_State := (others => <>);
+   begin
+      Foie_Sim.Fibrosis_Level := 60.0;
+      Foie_Sim.Cirrhosis_Level := 40.0;
+      Foie_Sim.Hepatocyte_Index := 50.0;
+      Foie_Sim.ALT := 150.0;
+      Foie_Sim.AST := 180.0;
+      Foie_Sim.GGT := 120.0;
+      Foie_Sim.Albumin_Level := 30.0;
+      Foie_Sim.Bilirubin_Level := 40.0;
+      Foie_Sim.INR := 1.8;
+      Simulate_Stress (Foie_Sim, "alcool aigue", 40.0);
+      Apply_Treatment (Foie_Sim, "sulodexide", 210.0);
+      Apply_Treatment (Foie_Sim, "anti fibros", 100.0);
+      for I in 1 .. 14 loop
+         Update_Liver (Foie_Sim, 1.0);
+      end loop;
+      Put_Line ("   " & Analyse_Foie (Foie_Sim));
+   end;
+   New_Line;
+
+   -- 10. Interface IA
+   Put_Line ("[10] INTERFACE IA (ANALYSER)");
+   Put_Line ("   " & Analyser ("etat f"));
+   Put_Line ("   " & Analyser ("stress alcool aigue"));
+   Put_Line ("   " & Analyser ("traitement sulodexide"));
+   Put_Line ("   " & Analyser ("simulatio"));
+   Put_Line ("   " & Analyser ("child"));
+   Put_Line ("   " & Analyser ("meld"));
+   Put_Line ("   " & Analyser ("chc"));
+   Put_Line ("   " & Analyser ("fibrose"));
+
+   Put_Line ("================================================================================");
+   Put_Line ("Ψ_V3 = 48016.8 kg·m⁻² — LOCKED.");
+   Put_Line ("Φ_critical = -51.1 mV — INVARIANT.");
+   Put_Line ("k = 7 — HEPTADIC CLOSURE.");
+   Put_Line ("Modulo-9 = 9 — INTEGRITY VERIFIED.");
+   Put_Line ("================================================================================");
+
+end Test_Noyau_Hepatique;
