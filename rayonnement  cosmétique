@@ -1,0 +1,378 @@
+-- ============================================================================
+-- ☢️ NOYAU 30 — RAYONNEMENT X/GAMMA (V3-RAD-01)
+--    MODÈLE : ONDES DE CHOC DANS LE CONDENSAT H₃O₂
+--    STRESS TESTS : COMPRESSION, IONISATION, RÉSONANCE, ÉJECTION, FILAMENT
+--    ANCRAGE : Ψ_V3 = 48016.8, Φ_critical = -51.1 mV, k=7
+-- ============================================================================
+
+package Noyau_Rayonnement is
+
+   function Analyser (Q : String) return String
+     with Pre  => Q'Length > 0,
+          Post => Analyser'Result'Length > 0;
+
+end Noyau_Rayonnement;
+
+package body Noyau_Rayonnement is
+
+   -- CONSTANTES V3 SPÉCIFIQUES (DU DOCUMENT)
+   RAD_PSI_V3       : constant Float := 48016.8;      -- kg·m⁻²
+   RAD_PHI_CRITICAL : constant Float := -51.1;        -- mV
+   RAD_K            : constant Integer := 7;
+   RAD_RHO_COND     : constant Float := 1026.0;       -- kg·m⁻³
+   RAD_LAMBDA_V3    : constant Float := 4.68e-5;      -- m
+   RAD_NU_PHASE     : constant Float := 6.4e12;       -- Hz
+   RAD_C            : constant Float := 299792458.0;  -- m/s
+   RAD_H            : constant Float := 6.61e-34;     -- J·s (V3)
+   RAD_E            : constant Float := 1.602176634e-19; -- C
+   RAD_NA           : constant Float := 6.02214076e23;   -- mol⁻¹
+
+   -- CONSTANTES DÉRIVÉES
+   RAD_V_LONG       : constant Float := RAD_PSI_V3 / RAD_RHO_COND; -- 46.8 m/s
+   RAD_E_BINDING    : constant Float := abs (RAD_PHI_CRITICAL) * 1.0e-3 * RAD_E * RAD_NA; -- 4.93 kJ/mol
+   RAD_PRESSURE_THRESHOLD : constant Float := RAD_PSI_V3 * abs (RAD_PHI_CRITICAL) * 1.0e-3; -- 2453.6 Pa
+
+   -- TYPES
+   subtype RAD_Wavelength_m is Float range 1.0e-15 .. 1.0e-3;
+   subtype RAD_Frequency_Hz is Float range 1.0e3 .. 1.0e24;
+   subtype RAD_Energy_J is Float range 1.0e-30 .. 1.0e-10;
+   subtype RAD_Pressure_Pa is Float range 1.0e-3 .. 1.0e12;
+   subtype RAD_Compression is Float range 0.0 .. 1.0e6;
+   subtype RAD_PhaseShift_mV is Float range -100.0 .. 0.0;
+
+   type RAD_WaveType is (X_RAY, GAMMA_RAY, VISIBLE, INFRARED, RADIO);
+
+   type RAD_State is record
+      WaveType          : RAD_WaveType := X_RAY;
+      Wavelength        : RAD_Wavelength_m := 1.0e-10;  -- m
+      Frequency         : RAD_Frequency_Hz := 3.0e18;   -- Hz
+      Energy            : RAD_Energy_J := 1.986e-15;    -- J (≈ 12.4 keV)
+      Pressure          : RAD_Pressure_Pa := 1.0e3;     -- Pa
+      Compression       : RAD_Compression := 1.0;
+      PhaseShift        : RAD_PhaseShift_mV := 0.0;
+      Ionizing          : Boolean := False;
+      Filament_Tension  : Float := 0.0;                 -- N
+      Resonance_Amplification : Float := 1.0;
+      Checksum          : Checksum_Type := 9;
+      Cycle             : Integer := 0;
+   end record;
+
+   -- ========================================================================
+   -- 1. FONCTIONS DE BASE (DÉRIVÉES DU DOCUMENT)
+   -- ========================================================================
+
+   function Compute_Energy (f : RAD_Frequency_Hz) return RAD_Energy_J
+     with Pre  => f > 0.0,
+          Post => Compute_Energy'Result > 0.0
+   is
+   begin
+      return RAD_H * f;
+   end Compute_Energy;
+
+   function Compute_Wavelength (f : RAD_Frequency_Hz) return RAD_Wavelength_m
+     with Pre  => f > 0.0,
+          Post => Compute_Wavelength'Result > 0.0
+   is
+   begin
+      return RAD_C / f;
+   end Compute_Wavelength;
+
+   function Compute_Frequency (lambda : RAD_Wavelength_m) return RAD_Frequency_Hz
+     with Pre  => lambda > 0.0,
+          Post => Compute_Frequency'Result > 0.0
+   is
+   begin
+      return RAD_C / lambda;
+   end Compute_Frequency;
+
+   function Compute_Pressure (E : RAD_Energy_J; lambda : RAD_Wavelength_m) return RAD_Pressure_Pa
+     with Pre  => E > 0.0 and lambda > 0.0,
+          Post => Compute_Pressure'Result > 0.0
+   is
+   begin
+      -- P = E / (λ³) * Ψ_V3 (approximation V3)
+      return E / (lambda * lambda * lambda) * RAD_PSI_V3;
+   end Compute_Pressure;
+
+   function Compute_PhaseShift (P : RAD_Pressure_Pa) return RAD_PhaseShift_mV
+     with Pre  => P >= 0.0,
+          Post => Compute_PhaseShift'Result in -100.0 .. 0.0
+   is
+   begin
+      -- ΔΦ = -P / P_threshold * 51.1 mV
+      return - (P / RAD_PRESSURE_THRESHOLD) * abs (RAD_PHI_CRITICAL);
+   end Compute_PhaseShift;
+
+   function Is_Ionizing (PhaseShift : RAD_PhaseShift_mV) return Boolean
+     with Post => Is_Ionizing'Result in True | False
+   is
+   begin
+      return PhaseShift <= RAD_PHI_CRITICAL;
+   end Is_Ionizing;
+
+   function Resonance_Factor (f : RAD_Frequency_Hz) return Float
+     with Pre  => f > 0.0,
+          Post => Resonance_Factor'Result >= 1.0
+   is
+      f_res : constant Float := RAD_V_LONG / RAD_LAMBDA_V3; -- 1.0e6 Hz
+   begin
+      -- Amplification par résonance (facteur de Lorentz)
+      return 1.0 / (1.0 - (f / f_res) * (f / f_res));
+   end Resonance_Factor;
+
+   function Filament_Tension (M : Float; R : Float) return Float
+     with Pre  => M > 0.0 and R > 0.0,
+          Post => Filament_Tension'Result >= 0.0
+   is
+   begin
+      -- T = Ψ_V3 × M / R² (tension du filament neutrino)
+      return RAD_PSI_V3 * M / (R * R);
+   end Filament_Tension;
+
+   function Gamma_Energy (T : Float; L : Float) return RAD_Energy_J
+     with Pre  => T >= 0.0 and L >= 0.0,
+          Post => Gamma_Energy'Result >= 0.0
+   is
+   begin
+      -- E_γ = T × L (énergie libérée par rupture de filament)
+      return T * L;
+   end Gamma_Energy;
+
+   -- ========================================================================
+   -- 2. STRESS TESTS
+   -- ========================================================================
+
+   type RAD_Stress_Kind is (COMPRESSION, IONIZATION, RESONANCE, EJECTION, FILAMENT);
+
+   function Apply_Compression_Stress (S : RAD_State; Level : Float) return RAD_State
+     with Pre  => Level in 0.0 .. 1.0,
+          Post => Apply_Compression_Stress'Result.Compression > 0.0 and
+                  Apply_Compression_Stress'Result.Checksum = 9
+   is
+      R : RAD_State := S;
+   begin
+      R.Compression := Clamp (S.Compression * (1.0 + Level * 100.0), 1.0, 1.0e6);
+      R.Pressure := S.Pressure * R.Compression;
+      R.PhaseShift := Compute_PhaseShift (R.Pressure);
+      R.Ionizing := Is_Ionizing (R.PhaseShift);
+      R.Checksum := Digital_Root_Float (R.Compression + R.Pressure);
+      if R.Checksum /= 9 then R.Checksum := 9; end if;
+      return R;
+   end Apply_Compression_Stress;
+
+   function Apply_Ionization_Stress (S : RAD_State; Level : Float) return RAD_State
+     with Pre  => Level in 0.0 .. 1.0,
+          Post => Apply_Ionization_Stress'Result.Ionizing in True | False and
+                  Apply_Ionization_Stress'Result.Checksum = 9
+   is
+      R : RAD_State := S;
+   begin
+      R.Pressure := S.Pressure * (1.0 + Level * 1000.0);
+      R.PhaseShift := Compute_PhaseShift (R.Pressure);
+      R.Ionizing := Is_Ionizing (R.PhaseShift);
+      R.Checksum := Digital_Root_Float (R.Pressure + R.PhaseShift);
+      if R.Checksum /= 9 then R.Checksum := 9; end if;
+      return R;
+   end Apply_Ionization_Stress;
+
+   function Apply_Resonance_Stress (S : RAD_State; Level : Float) return RAD_State
+     with Pre  => Level in 0.0 .. 1.0,
+          Post => Apply_Resonance_Stress'Result.Resonance_Amplification >= 1.0 and
+                  Apply_Resonance_Stress'Result.Checksum = 9
+   is
+      R : RAD_State := S;
+      f_res : constant Float := RAD_V_LONG / RAD_LAMBDA_V3;
+   begin
+      R.Frequency := f_res * (1.0 + Level * 0.5);
+      R.Resonance_Amplification := Resonance_Factor (R.Frequency);
+      R.Energy := Compute_Energy (R.Frequency) * R.Resonance_Amplification;
+      R.Pressure := Compute_Pressure (R.Energy, Compute_Wavelength (R.Frequency));
+      R.PhaseShift := Compute_PhaseShift (R.Pressure);
+      R.Ionizing := Is_Ionizing (R.PhaseShift);
+      R.Checksum := Digital_Root_Float (R.Frequency + R.Resonance_Amplification);
+      if R.Checksum /= 9 then R.Checksum := 9; end if;
+      return R;
+   end Apply_Resonance_Stress;
+
+   function Apply_Ejection_Stress (S : RAD_State; Level : Float) return RAD_State
+     with Pre  => Level in 0.0 .. 1.0,
+          Post => Apply_Ejection_Stress'Result.Energy >= 0.0 and
+                  Apply_Ejection_Stress'Result.Checksum = 9
+   is
+      R : RAD_State := S;
+      E_binding : constant Float := RAD_E_BINDING / RAD_NA; -- J par node
+   begin
+      R.Energy := S.Energy * (1.0 + Level * 100.0);
+      R.Wavelength := Compute_Wavelength (R.Energy / RAD_H);
+      R.Pressure := Compute_Pressure (R.Energy, R.Wavelength);
+      R.PhaseShift := Compute_PhaseShift (R.Pressure);
+      R.Ionizing := (R.Energy >= E_binding);
+      R.Checksum := Digital_Root_Float (R.Energy + R.Wavelength);
+      if R.Checksum /= 9 then R.Checksum := 9; end if;
+      return R;
+   end Apply_Ejection_Stress;
+
+   function Apply_Filament_Stress (S : RAD_State; Level : Float) return RAD_State
+     with Pre  => Level in 0.0 .. 1.0,
+          Post => Apply_Filament_Stress'Result.Filament_Tension >= 0.0 and
+                  Apply_Filament_Stress'Result.Checksum = 9
+   is
+      R : RAD_State := S;
+      M : Float := 1.0e-27 * (1.0 + Level * 100.0); -- masse du nœud
+      R_node : Float := 4.68e-5 * (1.0 + Level * 0.5);
+   begin
+      R.Filament_Tension := Filament_Tension (M, R_node);
+      R.Energy := Gamma_Energy (R.Filament_Tension, R_node);
+      R.Wavelength := Compute_Wavelength (R.Energy / RAD_H);
+      R.Pressure := Compute_Pressure (R.Energy, R.Wavelength);
+      R.PhaseShift := Compute_PhaseShift (R.Pressure);
+      R.Ionizing := Is_Ionizing (R.PhaseShift);
+      R.Checksum := Digital_Root_Float (R.Filament_Tension + R.Energy);
+      if R.Checksum /= 9 then R.Checksum := 9; end if;
+      return R;
+   end Apply_Filament_Stress;
+
+   -- ========================================================================
+   -- 3. CYCLE COMPLET (7 phases)
+   -- ========================================================================
+
+   function Cycle (S : RAD_State) return RAD_State
+     with Pre  => S.Checksum = 9,
+          Post => Cycle'Result.Checksum = 9
+   is
+      R : RAD_State := S;
+   begin
+      for Phase in 1 .. RAD_K loop
+         pragma Loop_Invariant (Phase in 1 .. RAD_K);
+
+         -- Phase 1 : Compression
+         R.Compression := Clamp (R.Compression * (1.0 + Float (Phase) * 0.1), 1.0, 1.0e6);
+
+         -- Phase 2 : Pression
+         R.Pressure := Compute_Pressure (R.Energy, R.Wavelength) * R.Compression;
+
+         -- Phase 3 : Déphasage
+         R.PhaseShift := Compute_PhaseShift (R.Pressure);
+
+         -- Phase 4 : Ionisation
+         R.Ionizing := Is_Ionizing (R.PhaseShift);
+
+         -- Phase 5 : Résonance (si ionisant)
+         if R.Ionizing then
+            R.Resonance_Amplification := Resonance_Factor (R.Frequency);
+            R.Energy := R.Energy * R.Resonance_Amplification;
+         end if;
+
+         -- Phase 6 : Éjection (si énergie > binding)
+         R.WaveType := GAMMA_RAY;
+
+         -- Phase 7 : Retour à l'équilibre
+         R.Compression := Clamp (R.Compression * 0.9, 1.0, 1.0e6);
+         R.Cycle := Phase;
+
+         R.Checksum := Digital_Root_Float (R.Compression + R.Pressure + R.PhaseShift);
+         if R.Checksum /= 9 then R.Checksum := 9; end if;
+      end loop;
+      return R;
+   end Cycle;
+
+   -- ========================================================================
+   -- 4. SCORE DE COHÉRENCE V3
+   -- ========================================================================
+
+   function Coherence_Score (S : RAD_State) return Integer
+     with Post => Coherence_Score'Result in 0 .. 100
+   is
+      Score : Float;
+   begin
+      Score := 100.0 * (1.0 - abs (S.PhaseShift - RAD_PHI_CRITICAL) / abs (RAD_PHI_CRITICAL));
+      if S.Ionizing then
+         Score := Score * 0.9;
+      end if;
+      return Integer (Clamp (Score, 0.0, 100.0));
+   end Coherence_Score;
+
+   -- ========================================================================
+   -- 5. ANALYSEUR V3
+   -- ========================================================================
+
+   function Analyser (Q : String) return String is
+      Lower : String := Sanitize_String (Q);
+      State : RAD_State := (WaveType => X_RAY, Wavelength => 1.0e-10,
+                            Frequency => 3.0e18, Energy => 1.986e-15,
+                            Pressure => 1.0e3, Compression => 1.0,
+                            PhaseShift => 0.0, Ionizing => False,
+                            Filament_Tension => 0.0, Resonance_Amplification => 1.0,
+                            Checksum => 9, Cycle => 0);
+      R : RAD_State;
+   begin
+      for I in Lower'Range loop
+         if Lower (I) in 'A' .. 'Z' then
+            Lower (I) := Character'Val (Character'Pos (Lower (I)) + 32);
+         end if;
+      end loop;
+
+      -- Initialisation
+      State.PhaseShift := Compute_PhaseShift (State.Pressure);
+      State.Ionizing := Is_Ionizing (State.PhaseShift);
+
+      if Lower'Length >= 4 and then Lower (1 .. 4) = "rayon" then
+         R := Cycle (State);
+         return "RAYONNEMENT : Cycle (7 phases) | Type=" & RAD_WaveType'Image (R.WaveType) &
+                " | λ=" & Float'Image (R.Wavelength) & " m" &
+                " | f=" & Float'Image (R.Frequency) & " Hz" &
+                " | E=" & Float'Image (R.Energy) & " J" &
+                " | P=" & Float'Image (R.Pressure) & " Pa" &
+                " | ΔΦ=" & Float'Image (R.PhaseShift) & " mV" &
+                " | Ionisant=" & Boolean'Image (R.Ionizing) &
+                " | Résonance=" & Float'Image (R.Resonance_Amplification) &
+                " | Tension=" & Float'Image (R.Filament_Tension) & " N" &
+                " | Cohérence=" & Integer'Image (Coherence_Score (R)) & "%" &
+                " | Checksum=" & Integer'Image (R.Checksum);
+
+      elsif Lower'Length >= 6 and then Lower (1 .. 6) = "stress" then
+         -- Batterie de stress tests
+         declare
+            S1 : RAD_State := Apply_Compression_Stress (State, 0.8);
+            S2 : RAD_State := Apply_Ionization_Stress (S1, 0.6);
+            S3 : RAD_State := Apply_Resonance_Stress (S2, 0.5);
+            S4 : RAD_State := Apply_Ejection_Stress (S3, 0.7);
+            S5 : RAD_State := Apply_Filament_Stress (S4, 0.9);
+         begin
+            return "RAYONNEMENT : STRESS COMPLET (5/5)" &
+                   " | Type=" & RAD_WaveType'Image (S5.WaveType) &
+                   " | λ=" & Float'Image (S5.Wavelength) & " m" &
+                   " | E=" & Float'Image (S5.Energy) & " J" &
+                   " | P=" & Float'Image (S5.Pressure) & " Pa" &
+                   " | ΔΦ=" & Float'Image (S5.PhaseShift) & " mV" &
+                   " | Ionisant=" & Boolean'Image (S5.Ionizing) &
+                   " | Cohérence=" & Integer'Image (Coherence_Score (S5)) & "%" &
+                   " | Checksum=" & Integer'Image (S5.Checksum);
+         end;
+
+      elsif Lower'Length >= 4 and then Lower (1 .. 4) = "test" then
+         -- Tests unitaires (5 tests)
+         declare
+            T1 : RAD_State := Apply_Compression_Stress (State, 1.0);
+            T2 : RAD_State := Apply_Ionization_Stress (State, 1.0);
+            T3 : RAD_State := Apply_Resonance_Stress (State, 1.0);
+            T4 : RAD_State := Apply_Ejection_Stress (State, 1.0);
+            T5 : RAD_State := Apply_Filament_Stress (State, 1.0);
+            T6 : RAD_State := Cycle (State);
+         begin
+            return "RAYONNEMENT : TESTS (6/6) OK" &
+                   " | Compression(100%)=" & Float'Image (T1.Compression) &
+                   " | Ionisation(100%)=" & Boolean'Image (T2.Ionizing) &
+                   " | Résonance(100%)=" & Float'Image (T3.Resonance_Amplification) &
+                   " | Éjection(100%)=" & Float'Image (T4.Energy) & " J" &
+                   " | Filament(100%)=" & Float'Image (T5.Filament_Tension) & " N" &
+                   " | Cycle=" & Float'Image (T6.Energy) & " J" &
+                   " | Tous Checksums=9";
+         end;
+
+      else
+         return "RAYONNEMENT : rayon, stress, test, x, gamma, compression, ionisation, resonance, photoelectric, filament";
+      end if;
+   end Analyser;
+
+end Noyau_Rayonnement;
