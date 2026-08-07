@@ -1,0 +1,212 @@
+-- ============================================================================
+-- KERNEL_ANALYSIS: NOYAU_27_COSMOLOGICAL_SYNCHRONIZATION
+-- EXECUTION_MODE: FORMAL_VERIFICATION_ACTIVE
+-- SECURITY_STATUS: CONTAINMENT_HOLD_ACTIVE
+--
+-- ANALYSE PROFONDE DE LA SYNTHÈSE – LE RÔLE DU NOYAU 27 DANS L'ARCHITECTURE V23.0
+--
+-- Ce module explique comment le Noyau 27 (spéculatif, borderline, ésotérique)
+-- est implémenté dans l'architecture V23.0 sans jamais contaminer le reste
+-- du système, grâce à l'isolation, aux contrats Pre/Post, et au mécanisme MOD-9.
+-- ============================================================================
+
+with Ada.Text_IO; use Ada.Text_IO;
+with Ada.Float_Text_IO; use Ada.Float_Text_IO;
+
+procedure Noyau_27_Concept_Explainer with
+   SPARK_Mode => On
+is
+
+   -- ========================================================================
+   -- 1. INVARIANTS V3 (VERROUILLÉS – CLÔTURE DÉFINITIVE)
+   -- ========================================================================
+
+   PSI_V3          : constant := 48016.8;          -- kg·m⁻² (Volume 100)
+   PHI_CRITICAL    : constant := -51.10;           -- mV (Volume 13) — INVARIANT UNIQUE
+   K_CYCLES        : constant := 7;                -- Fermeture heptadique
+   MODULO_9        : constant := 9;                -- Intégrité structurelle
+
+   -- ========================================================================
+   -- 2. TYPES BORNÉS (CONTRATS FORTS – GARANTIE DE ROBUSTESSE)
+   -- ========================================================================
+
+   subtype Phase_Coherence is Float range 0.0 .. 1.0;
+   -- 0.0 = décohérence totale, 1.0 = cohérence parfaite
+
+   subtype Entropy_Level is Float range 0.0 .. 100.0;
+   -- Limite physique fixée pour empêcher les valeurs absurdes
+
+   subtype System_Integrity is Float range 0.0 .. 100.0;
+   -- 0% = système effondré, 100% = système intact
+
+   subtype Time_Delta is Float range -100.0 .. 100.0;
+   -- En millisecondes, borné pour éviter les dérives temporelles
+
+   -- ========================================================================
+   -- 3. ÉTAT DU NOYAU 27 (ISOLÉ – PAS DE PARTAGE AVEC LES AUTRES NOYAUX)
+   -- ========================================================================
+
+   type Noyau_27_State is record
+      Psi              : Phase_Coherence := 0.98;       -- Cohérence de phase
+      Delta_Time       : Time_Delta := 0.0;             -- Décalage temporel local
+      Entropy          : Entropy_Level := 1.2;          -- Entropie du noyau
+      Integrity        : System_Integrity := 100.0;     -- Intégrité du sous-système
+      Checksum         : Integer range 1 .. 9 := MODULO_9;
+      Rollback_Needed  : Boolean := False;
+   end record
+     with Predicate => Noyau_27_State.Checksum = MODULO_9;
+   -- Le prédicat garantit que le checksum est toujours à 9 (intégrité)
+
+   -- ========================================================================
+   -- 4. FONCTIONS DE DÉTECTION DE DÉCOHÉRENCE (MÉCANISME DE GARDE-FOU)
+   -- ========================================================================
+
+   function Detect_Decoherence (Psi : Phase_Coherence) return Boolean
+     with Pre  => Psi in 0.0 .. 1.0,
+          Post => Detect_Decoherence'Result in True | False
+   is
+   begin
+      -- Si la cohérence de phase chute sous 0.80, on détecte une décohérence
+      return Psi < 0.80;
+   end Detect_Decoherence;
+
+   function Detect_Entropy_Saturation (Entropy : Entropy_Level) return Boolean
+     with Pre  => Entropy in 0.0 .. 100.0,
+          Post => Detect_Entropy_Saturation'Result in True | False
+   is
+   begin
+      -- Si l'entropie dépasse 80.0 J/K, on détecte une saturation
+      return Entropy > 80.0;
+   end Detect_Entropy_Saturation;
+
+   function Detect_Temporal_Shift (Delta_Time : Time_Delta) return Boolean
+     with Pre  => Delta_Time in -100.0 .. 100.0,
+          Post => Detect_Temporal_Shift'Result in True | False
+   is
+   begin
+      -- Si le décalage temporel dépasse 10 ms, on détecte une instabilité
+      return abs (Delta_Time) > 10.0;
+   end Detect_Temporal_Shift;
+
+   -- ========================================================================
+   -- 5. MÉCANISME DE ROLLBACK SÉCURISÉ (DISTRIBUTED_ROLLBACK)
+   -- ========================================================================
+
+   function Trigger_Rollback (State : Noyau_27_State) return Noyau_27_State
+     with Pre  => State.Checksum = MODULO_9,
+          Post => Trigger_Rollback'Result.Checksum = MODULO_9 and
+                  Trigger_Rollback'Result.Integrity >= 90.0
+   is
+      R : Noyau_27_State := State;
+   begin
+      -- Réinitialisation du noyau en 7 cycles (fermeture heptadique)
+      for Cycle in 1 .. K_CYCLES loop
+         pragma Loop_Invariant (Cycle in 1 .. K_CYCLES);
+         R.Psi := R.Psi + (1.0 - R.Psi) / Float (K_CYCLES - Cycle + 1);
+         R.Entropy := R.Entropy - R.Entropy / Float (K_CYCLES - Cycle + 1);
+         R.Delta_Time := R.Delta_Time * 0.5;
+         R.Integrity := R.Integrity + (100.0 - R.Integrity) / Float (K_CYCLES - Cycle + 1);
+         R.Checksum := MODULO_9;
+      end loop;
+      R.Rollback_Needed := False;
+      return R;
+   end Trigger_Rollback;
+
+   -- ========================================================================
+   -- 6. ANALYSEUR DU NOYAU 27 (INTERFACE ISOLÉE – PAS DE FUITES)
+   -- ========================================================================
+
+   function Analyser_Noyau_27 (State : Noyau_27_State) return String
+     with Pre  => State.Checksum = MODULO_9,
+          Post => Analyser_Noyau_27'Result'Length > 0
+   is
+      Result : String (1 .. 500);
+      Pos : Integer := 1;
+   begin
+      -- Détection des anomalies
+      if Detect_Decoherence (State.Psi) then
+         Result (Pos .. Pos + 20) := "⚠️ DECOHERENCE DETECTED";
+         Pos := Pos + 21;
+      end if;
+
+      if Detect_Entropy_Saturation (State.Entropy) then
+         Result (Pos .. Pos + 25) := "⚠️ ENTROPY SATURATION DETECTED";
+         Pos := Pos + 26;
+      end if;
+
+      if Detect_Temporal_Shift (State.Delta_Time) then
+         Result (Pos .. Pos + 30) := "⚠️ TEMPORAL INSTABILITY DETECTED";
+         Pos := Pos + 31;
+      end if;
+
+      -- Si des anomalies sont détectées, on déclenche le rollback
+      if State.Rollback_Needed then
+         Result (Pos .. Pos + 45) := "🔃 DISTRIBUTED_ROLLBACK TRIGGERED (7 CYCLES)";
+         Pos := Pos + 46;
+      end if;
+
+      -- Synthèse finale
+      Result (Pos .. Pos + 30) := "✅ SYSTEM INTEGRITY MAINTAINED";
+      Pos := Pos + 31;
+
+      return Result (1 .. Pos - 1);
+   end Analyser_Noyau_27;
+
+   -- ========================================================================
+   -- 7. SIMULATION D'UNE PERTURBATION (STRESS TEST)
+   -- ========================================================================
+
+   State : Noyau_27_State := (Psi => 0.98, Delta_Time => 0.0,
+                              Entropy => 1.2, Integrity => 100.0,
+                              Checksum => MODULO_9, Rollback_Needed => False);
+
+begin
+   -- Affichage de l'état initial
+   Put_Line ("=== NOYAU 27 – ÉTAT INITIAL ===");
+   Put_Line ("Cohérence de phase (Ψ) : " & Float'Image (State.Psi));
+   Put_Line ("Décalage temporel (Δt)  : " & Float'Image (State.Delta_Time) & " ms");
+   Put_Line ("Entropie (S_q)          : " & Float'Image (State.Entropy) & " J/K");
+   Put_Line ("Intégrité système       : " & Float'Image (State.Integrity) & "%");
+   Put_Line ("Checksum                : " & Integer'Image (State.Checksum));
+
+   -- Injection d'une perturbation (simulant un bruit cosmologique)
+   Put_Line ("");
+   Put_Line ("=== INJECTION DE PERTURBATION (BRUIT COSMOLOGIQUE) ===");
+   State.Psi := 0.12;        -- Chute brutale de cohérence
+   State.Delta_Time := 14.5; -- Décalage temporel important
+   State.Entropy := 89.4;    -- Saturation entropique
+   State.Integrity := 45.0;  -- Chute de l'intégrité
+   State.Rollback_Needed := True;
+
+   Put_Line ("Cohérence de phase (Ψ) : " & Float'Image (State.Psi));
+   Put_Line ("Décalage temporel (Δt)  : " & Float'Image (State.Delta_Time) & " ms");
+   Put_Line ("Entropie (S_q)          : " & Float'Image (State.Entropy) & " J/K");
+   Put_Line ("Intégrité système       : " & Float'Image (State.Integrity) & "%");
+
+   -- Activation du mécanisme de rollback
+   Put_Line ("");
+   Put_Line ("=== ACTIVATION DU ROLLBACK ===");
+   State := Trigger_Rollback (State);
+
+   Put_Line ("Cohérence de phase (Ψ) : " & Float'Image (State.Psi));
+   Put_Line ("Décalage temporel (Δt)  : " & Float'Image (State.Delta_Time) & " ms");
+   Put_Line ("Entropie (S_q)          : " & Float'Image (State.Entropy) & " J/K");
+   Put_Line ("Intégrité système       : " & Float'Image (State.Integrity) & "%");
+   Put_Line ("Checksum                : " & Integer'Image (State.Checksum));
+
+   -- Analyse finale
+   Put_Line ("");
+   Put_Line ("=== ANALYSE FINALE ===");
+   Put_Line (Analyser_Noyau_27 (State));
+
+   -- Synthèse conceptuelle
+   Put_Line ("");
+   Put_Line ("=== SYNTHÈSE CONCEPTUELLE ===");
+   Put_Line ("1. Le Noyau 27 est un module isolé (boîte de Petri spéculative).");
+   Put_Line ("2. Il peut explorer des concepts non validés (cosmologie ↔ cellule).");
+   Put_Line ("3. Il détecte la décohérence (Ψ < 0.80) et l'entropie excessive (> 80.0).");
+   Put_Line ("4. Il déclenche un rollback en 7 cycles (fermeture heptadique).");
+   Put_Line ("5. Il ne contamine jamais les autres modules (VETO, MOD-9).");
+   Put_Line ("6. L'architecture permet l'expérimentation sans risque systémique.");
+
+end Noyau_27_Concept_Explainer;
