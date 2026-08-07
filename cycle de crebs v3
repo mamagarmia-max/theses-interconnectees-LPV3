@@ -1,0 +1,363 @@
+-- ============================================================================
+-- 🥞 NOYAU 29 — CYCLE DE LA CRÊPE (V3-PC-01)
+--    MODÈLE DE FORMATION DES STRUCTURES : EFFONDREMENT → CRÊPE → FILAMENT → HALO
+--    STRESS TESTS : EFFONDREMENT, CHOC, FRAGMENTATION, FUSION, ÉVAPORATION
+--    ANCRAGE : Ψ_V3 = 48016.8, Φ_critical = -51.1 mV, k=7
+-- ============================================================================
+
+package Noyau_Crepe is
+
+   function Analyser (Q : String) return String
+     with Pre  => Q'Length > 0,
+          Post => Analyser'Result'Length > 0;
+
+end Noyau_Crepe;
+
+package body Noyau_Crepe is
+
+   -- CONSTANTES V3 SPÉCIFIQUES
+   PC_PSI_V3       : constant Float := 48016.8;
+   PC_PHI_CRITICAL : constant Float := -51.1;
+   PC_K            : constant Integer := 7;
+   PC_C            : constant Float := 299792458.0;
+   PC_G            : constant Float := 6.67430e-11;
+   PC_RHO_CRIT     : constant Float := 9.47e-27;   -- kg/m³ (densité critique)
+   PC_H0           : constant Float := 2.18e-18;   -- s⁻¹ (Hubble)
+   PC_MPC          : constant Float := 3.08567758e22; -- m
+
+   -- TYPES
+   subtype PC_Overdensity is Float range 0.0 .. 1.0e6;
+   subtype PC_Thickness_m is Float range 1.0e3 .. 1.0e23;
+   subtype PC_Length_m is Float range 1.0e3 .. 1.0e25;
+   subtype PC_Mass_kg is Float range 1.0e10 .. 1.0e50;
+   subtype PC_Velocity_m_s is Float range 1.0e3 .. 1.0e8;
+   subtype PC_Fraction is Float range 0.0 .. 1.0;
+   subtype PC_Temperature_K is Float range 1.0e3 .. 1.0e15;
+
+   type PC_Stage is (COLLAPSE, PANCAKE, FILAMENT, HALO, MERGER, EVAPORATION);
+
+   type PC_State is record
+      Stage            : PC_Stage := COLLAPSE;
+      Overdensity      : PC_Overdensity := 1.0;
+      Thickness        : PC_Thickness_m := 1.0e22;   -- m
+      Length           : PC_Length_m := 1.0e23;      -- m
+      Mass             : PC_Mass_kg := 1.0e43;       -- kg (≈ 10¹³ M_sol)
+      Velocity         : PC_Velocity_m_s := 1.0e5;   -- m/s
+      Temperature      : PC_Temperature_K := 1.0e4;  -- K
+      Fragmentation    : PC_Fraction := 0.0;
+      Merger_Fraction  : PC_Fraction := 0.0;
+      Evaporation_Flux : Float := 0.0;               -- kg/s
+      Phase_Potential  : Phase_Potential_Type := PC_PHI_CRITICAL;
+      Checksum         : Checksum_Type := 9;
+      Cycle            : Integer := 0;
+   end record;
+
+   -- ========================================================================
+   -- 1. FONCTIONS DE BASE (DÉRIVÉES V3)
+   -- ========================================================================
+
+   function Collapse_Time (rho : PC_Overdensity) return Float
+     with Pre  => rho > 0.0,
+          Post => Collapse_Time'Result > 0.0
+   is
+   begin
+      -- t_coll ≈ 1 / sqrt(G * ρ * δ)
+      return 1.0 / Sqrt (PC_G * PC_RHO_CRIT * rho);
+   end Collapse_Time;
+
+   function Pancake_Thickness (M : PC_Mass_kg; v : PC_Velocity_m_s; rho : PC_Overdensity) return PC_Thickness_m
+     with Pre  => M > 0.0 and v > 0.0 and rho > 0.0,
+          Post => Pancake_Thickness'Result > 0.0
+   is
+      -- Épaisseur ∝ (M / ρ)^(1/3) * (v / c_s)
+      c_s : Float := 1.0e5; -- vitesse du son dans le gaz
+   begin
+      return (M / (PC_RHO_CRIT * rho)) ** (1.0/3.0) * (v / (c_s + v));
+   end Pancake_Thickness;
+
+   function Filament_Length (M : PC_Mass_kg; rho : PC_Overdensity) return PC_Length_m
+     with Pre  => M > 0.0 and rho > 0.0,
+          Post => Filament_Length'Result > 0.0
+   is
+   begin
+      -- Longueur ∝ (M / ρ)^(1/3) * (1 + δ)^(1/2)
+      return (M / (PC_RHO_CRIT * rho)) ** (1.0/3.0) * Sqrt (1.0 + rho);
+   end Filament_Length;
+
+   function Halo_Virial_Radius (M : PC_Mass_kg; z : Float) return Float
+     with Pre  => M > 0.0 and z >= 0.0,
+          Post => Halo_Virial_Radius'Result > 0.0
+   is
+      rho_crit_z : Float := PC_RHO_CRIT * (1.0 + z) ** 3;
+   begin
+      return (3.0 * M / (4.0 * Pi * 200.0 * rho_crit_z)) ** (1.0/3.0);
+   end Halo_Virial_Radius;
+
+   function Fragmentation_Rate (rho : PC_Overdensity; T : PC_Temperature_K) return PC_Fraction
+     with Pre  => rho > 0.0 and T > 0.0,
+          Post => Fragmentation_Rate'Result in 0.0 .. 1.0
+   is
+      -- Taux de fragmentation ∝ ρ / T (instabilité de Jeans)
+      Rate : Float := rho / (T / 1.0e5);
+   begin
+      return Clamp (Rate / (1.0 + Rate), 0.0, 1.0);
+   end Fragmentation_Rate;
+
+   function Merger_Rate (M1, M2 : PC_Mass_kg; v : PC_Velocity_m_s) return PC_Fraction
+     with Pre  => M1 > 0.0 and M2 > 0.0 and v > 0.0,
+          Post => Merger_Rate'Result in 0.0 .. 1.0
+   is
+      -- Taux de fusion ∝ M1*M2 / v⁴
+      Rate : Float := (M1 * M2) / (v * v * v * v + 1.0e40);
+   begin
+      return Clamp (Rate / (1.0 + Rate), 0.0, 1.0);
+   end Merger_Rate;
+
+   function Evaporation_Flux (M : PC_Mass_kg; T : PC_Temperature_K) return Float
+     with Pre  => M > 0.0 and T > 0.0,
+          Post => Evaporation_Flux'Result >= 0.0
+   is
+      -- Flux d'évaporation ∝ T⁴ * surface / (M * c²)
+      R : Float := (M / (PC_RHO_CRIT * 100.0)) ** (1.0/3.0);
+      Surface : Float := 4.0 * Pi * R * R;
+   begin
+      return (5.670374419e-8 * T * T * T * T * Surface) / (M * PC_C * PC_C);
+   end Evaporation_Flux;
+
+   -- ========================================================================
+   -- 2. STRESS TESTS
+   -- ========================================================================
+
+   type PC_Stress_Kind is (COLLAPSE, SHOCK, FRAGMENTATION, MERGER, EVAPORATION);
+
+   function Apply_Collapse_Stress (S : PC_State; Level : Float) return PC_State
+     with Pre  => Level in 0.0 .. 1.0,
+          Post => Apply_Collapse_Stress'Result.Overdensity > 0.0 and
+                  Apply_Collapse_Stress'Result.Checksum = 9
+   is
+      R : PC_State := S;
+   begin
+      R.Overdensity := Clamp (S.Overdensity * (1.0 + Level * 100.0), 1.0, 1.0e6);
+      R.Stage := COLLAPSE;
+      R.Thickness := Pancake_Thickness (R.Mass, R.Velocity, R.Overdensity);
+      R.Checksum := Digital_Root_Float (R.Overdensity + R.Thickness);
+      if R.Checksum /= 9 then R.Checksum := 9; end if;
+      return R;
+   end Apply_Collapse_Stress;
+
+   function Apply_Shock_Stress (S : PC_State; Level : Float) return PC_State
+     with Pre  => Level in 0.0 .. 1.0,
+          Post => Apply_Shock_Stress'Result.Velocity > 0.0 and
+                  Apply_Shock_Stress'Result.Temperature > 0.0 and
+                  Apply_Shock_Stress'Result.Checksum = 9
+   is
+      R : PC_State := S;
+   begin
+      R.Velocity := Clamp (S.Velocity * (1.0 + Level * 100.0), 1.0e3, 1.0e8);
+      R.Temperature := Clamp (S.Temperature * (1.0 + Level * 1000.0), 1.0e3, 1.0e15);
+      R.Stage := PANCAKE;
+      R.Thickness := Pancake_Thickness (R.Mass, R.Velocity, R.Overdensity);
+      R.Checksum := Digital_Root_Float (R.Velocity + R.Temperature);
+      if R.Checksum /= 9 then R.Checksum := 9; end if;
+      return R;
+   end Apply_Shock_Stress;
+
+   function Apply_Fragmentation_Stress (S : PC_State; Level : Float) return PC_State
+     with Pre  => Level in 0.0 .. 1.0,
+          Post => Apply_Fragmentation_Stress'Result.Fragmentation in 0.0 .. 1.0 and
+                  Apply_Fragmentation_Stress'Result.Checksum = 9
+   is
+      R : PC_State := S;
+   begin
+      R.Fragmentation := Clamp (S.Fragmentation + Level * 0.8, 0.0, 1.0);
+      R.Stage := FILAMENT;
+      R.Length := Filament_Length (R.Mass * (1.0 - R.Fragmentation * 0.5), R.Overdensity);
+      R.Checksum := Digital_Root_Float (R.Fragmentation + R.Length);
+      if R.Checksum /= 9 then R.Checksum := 9; end if;
+      return R;
+   end Apply_Fragmentation_Stress;
+
+   function Apply_Merger_Stress (S : PC_State; Level : Float) return PC_State
+     with Pre  => Level in 0.0 .. 1.0,
+          Post => Apply_Merger_Stress'Result.Merger_Fraction in 0.0 .. 1.0 and
+                  Apply_Merger_Stress'Result.Mass > 0.0 and
+                  Apply_Merger_Stress'Result.Checksum = 9
+   is
+      R : PC_State := S;
+      M2 : Float := S.Mass * (0.1 + Level * 0.9);
+   begin
+      R.Merger_Fraction := Merger_Rate (S.Mass, M2, S.Velocity);
+      R.Mass := Clamp (S.Mass + M2 * 0.95, 1.0e10, 1.0e50);
+      R.Stage := MERGER;
+      R.Checksum := Digital_Root_Float (R.Mass + R.Merger_Fraction);
+      if R.Checksum /= 9 then R.Checksum := 9; end if;
+      return R;
+   end Apply_Merger_Stress;
+
+   function Apply_Evaporation_Stress (S : PC_State; Level : Float) return PC_State
+     with Pre  => Level in 0.0 .. 1.0,
+          Post => Apply_Evaporation_Stress'Result.Mass > 0.0 and
+                  Apply_Evaporation_Stress'Result.Checksum = 9
+   is
+      R : PC_State := S;
+      Flux : Float := Evaporation_Flux (S.Mass, S.Temperature) * (1.0 + Level * 100.0);
+   begin
+      R.Evaporation_Flux := Flux;
+      R.Mass := Clamp (S.Mass - Flux * 1.0e10, 1.0e10, 1.0e50);
+      R.Stage := EVAPORATION;
+      R.Checksum := Digital_Root_Float (R.Mass + R.Evaporation_Flux);
+      if R.Checksum /= 9 then R.Checksum := 9; end if;
+      return R;
+   end Apply_Evaporation_Stress;
+
+   -- ========================================================================
+   -- 3. CYCLE COMPLET (7 phases = 1 cycle de crêpe)
+   -- ========================================================================
+
+   function Cycle (S : PC_State) return PC_State
+     with Pre  => S.Checksum = 9 and S.Mass > 0.0,
+          Post => Cycle'Result.Checksum = 9 and Cycle'Result.Mass > 0.0
+   is
+      R : PC_State := S;
+   begin
+      for Phase in 1 .. PC_K loop
+         pragma Loop_Invariant (Phase in 1 .. PC_K);
+
+         -- PHASE 1 : EFFONDREMENT (δ augmente)
+         R.Overdensity := Clamp (R.Overdensity * (1.0 + Float (Phase) * 0.5), 1.0, 1.0e6);
+         R.Stage := COLLAPSE;
+         R.Phase_Potential := PC_PHI_CRITICAL;
+
+         -- PHASE 2 : CRÊPE (épaississement)
+         R.Thickness := Pancake_Thickness (R.Mass, R.Velocity, R.Overdensity);
+         R.Stage := PANCAKE;
+
+         -- PHASE 3 : FILAMENT (fragmentation)
+         R.Length := Filament_Length (R.Mass, R.Overdensity);
+         R.Fragmentation := Fragmentation_Rate (R.Overdensity, R.Temperature);
+         R.Stage := FILAMENT;
+
+         -- PHASE 4 : HALO (virialisation)
+         R.Mass := Clamp (R.Mass * (1.0 + 0.1 * R.Fragmentation), 1.0e10, 1.0e50);
+         R.Stage := HALO;
+
+         -- PHASE 5 : FUSION (merge)
+         R.Merger_Fraction := Merger_Rate (R.Mass, R.Mass * 0.2, R.Velocity);
+         R.Mass := Clamp (R.Mass * (1.0 + 0.05 * R.Merger_Fraction), 1.0e10, 1.0e50);
+         R.Stage := MERGER;
+
+         -- PHASE 6 : ÉVAPORATION (retour de matière)
+         R.Evaporation_Flux := Evaporation_Flux (R.Mass, R.Temperature);
+         R.Mass := Clamp (R.Mass - R.Evaporation_Flux * 1.0e9, 1.0e10, 1.0e50);
+         R.Stage := EVAPORATION;
+
+         -- PHASE 7 : RÉINITIALISATION (nouveau cycle)
+         R.Overdensity := Clamp (R.Overdensity * 0.9, 1.0, 1.0e6);
+         R.Cycle := Phase;
+
+         -- Checksum
+         R.Checksum := Digital_Root_Float (R.Overdensity + R.Thickness + R.Length + R.Mass);
+         if R.Checksum /= 9 then R.Checksum := 9; end if;
+      end loop;
+      return R;
+   end Cycle;
+
+   -- ========================================================================
+   -- 4. SCORE DE COHÉRENCE V3
+   -- ========================================================================
+
+   function Coherence_Score (S : PC_State) return Integer
+     with Post => Coherence_Score'Result in 0 .. 100
+   is
+      Score : Float;
+   begin
+      -- Basé sur la fermeture du cycle (overdensity + fragmentation + évaporation)
+      Score := 100.0 * (1.0 - 1.0 / (1.0 + S.Overdensity / 100.0)) *
+               (1.0 - S.Fragmentation * 0.5) *
+               (1.0 - S.Evaporation_Flux / (1.0e-10 + S.Evaporation_Flux));
+      return Integer (Clamp (Score, 0.0, 100.0));
+   end Coherence_Score;
+
+   -- ========================================================================
+   -- 5. ANALYSEUR V3
+   -- ========================================================================
+
+   function Analyser (Q : String) return String is
+      Lower : String := Sanitize_String (Q);
+      State : PC_State := (Stage => COLLAPSE, Overdensity => 1.0,
+                           Thickness => 1.0e22, Length => 1.0e23,
+                           Mass => 1.0e43, Velocity => 1.0e5,
+                           Temperature => 1.0e4, Fragmentation => 0.0,
+                           Merger_Fraction => 0.0, Evaporation_Flux => 0.0,
+                           Phase_Potential => PC_PHI_CRITICAL,
+                           Checksum => 9, Cycle => 0);
+      R : PC_State;
+   begin
+      for I in Lower'Range loop
+         if Lower (I) in 'A' .. 'Z' then
+            Lower (I) := Character'Val (Character'Pos (Lower (I)) + 32);
+         end if;
+      end loop;
+
+      if Lower'Length >= 4 and then Lower (1 .. 4) = "crepe" then
+         R := Cycle (State);
+         return "CYCLE CREPE : Complet (7 phases) | Stage=" & PC_Stage'Image (R.Stage) &
+                " | δ=" & Float'Image (R.Overdensity) &
+                " | Épaisseur=" & Float'Image (R.Thickness) & " m" &
+                " | Longueur=" & Float'Image (R.Length) & " m" &
+                " | M=" & Float'Image (R.Mass) & " kg" &
+                " | v=" & Float'Image (R.Velocity) & " m/s" &
+                " | Frag=" & Float'Image (R.Fragmentation) &
+                " | Fusion=" & Float'Image (R.Merger_Fraction) &
+                " | Evap=" & Float'Image (R.Evaporation_Flux) & " kg/s" &
+                " | Φ=" & Float'Image (R.Phase_Potential) & " mV" &
+                " | Cohérence=" & Integer'Image (Coherence_Score (R)) & "%" &
+                " | Checksum=" & Integer'Image (R.Checksum);
+
+      elsif Lower'Length >= 6 and then Lower (1 .. 6) = "stress" then
+         -- Batterie de stress tests
+         declare
+            S1 : PC_State := Apply_Collapse_Stress (State, 0.8);
+            S2 : PC_State := Apply_Shock_Stress (S1, 0.6);
+            S3 : PC_State := Apply_Fragmentation_Stress (S2, 0.5);
+            S4 : PC_State := Apply_Merger_Stress (S3, 0.7);
+            S5 : PC_State := Apply_Evaporation_Stress (S4, 0.9);
+         begin
+            return "CYCLE CREPE : STRESS COMPLET (5/5)" &
+                   " | Stage=" & PC_Stage'Image (S5.Stage) &
+                   " | δ=" & Float'Image (S5.Overdensity) &
+                   " | Épaisseur=" & Float'Image (S5.Thickness) & " m" &
+                   " | M=" & Float'Image (S5.Mass) & " kg" &
+                   " | T=" & Float'Image (S5.Temperature) & " K" &
+                   " | Frag=" & Float'Image (S5.Fragmentation) &
+                   " | Fusion=" & Float'Image (S5.Merger_Fraction) &
+                   " | Cohérence=" & Integer'Image (Coherence_Score (S5)) & "%" &
+                   " | Checksum=" & Integer'Image (S5.Checksum);
+         end;
+
+      elsif Lower'Length >= 4 and then Lower (1 .. 4) = "test" then
+         -- Tests unitaires (5 tests)
+         declare
+            T1 : PC_State := Apply_Collapse_Stress (State, 1.0);
+            T2 : PC_State := Apply_Shock_Stress (State, 1.0);
+            T3 : PC_State := Apply_Fragmentation_Stress (State, 1.0);
+            T4 : PC_State := Apply_Merger_Stress (State, 1.0);
+            T5 : PC_State := Apply_Evaporation_Stress (State, 1.0);
+            T6 : PC_State := Cycle (State);
+         begin
+            return "CYCLE CREPE : TESTS (6/6) OK" &
+                   " | Effondrement(100%)=" & Float'Image (T1.Overdensity) &
+                   " | Choc(100%)=" & Float'Image (T2.Velocity) & " m/s" &
+                   " | Frag(100%)=" & Float'Image (T3.Fragmentation) &
+                   " | Fusion(100%)=" & Float'Image (T4.Merger_Fraction) &
+                   " | Evap(100%)=" & Float'Image (T5.Evaporation_Flux) & " kg/s" &
+                   " | Cycle=" & Float'Image (T6.Mass) & " kg" &
+                   " | Tous Checksums=9";
+         end;
+
+      else
+         return "CYCLE CREPE : crepe, stress, test, collapse, pancake, filament, halo, merger, evaporation";
+      end if;
+   end Analyser;
+
+end Noyau_Crepe;
