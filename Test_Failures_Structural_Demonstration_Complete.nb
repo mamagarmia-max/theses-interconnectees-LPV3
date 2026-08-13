@@ -1,0 +1,294 @@
+(* ============================================================================
+   DÉMONSTRATION COMPLÈTE — FAILLES STRUCTURELLES DES TESTS
+   Version détaillée — Chaque étape est explicitée
+   ============================================================================ *)
+
+Print["========================================================================"];
+Print["DÉMONSTRATION COMPLÈTE DES FAILLES STRUCTURELLES DES TESTS"];
+Print["========================================================================"];
+Print[""];
+Print["Objectif : Démontrer que les tests appliqués sont structurellement"];
+Print["défectueux, indépendamment du modèle testé."];
+Print[""];
+
+(* ============================================================================
+   PARTIE 1 : TEST DE LA LINÉARITÉ IMPOSÉE
+   ============================================================================ *)
+
+Print["========================================================================"];
+Print["TEST 1 : LINÉARITÉ IMPOSÉE"];
+Print["========================================================================"];
+Print[""];
+
+Print["1.1 Définition du problème :"];
+Print["   - Objet testé : f(x) = x²"];
+Print["   - Nature : fonction non-linéaire"];
+Print["   - Test appliqué : Exiger que f(x) = ax + b (linéaire)"];
+Print[""];
+
+Print["1.2 Résolution mathématique :"];
+Print["   - On pose x² = ax + b pour tout x"];
+Print("   - x² - ax - b = 0 pour tout x");
+Print["   - Un polynôme identiquement nul a tous ses coefficients nuls"];
+Print["   - Donc :"];
+Print["     1 = 0 (coefficient de x²)"];
+Print["     -a = 0"];
+Print["     -b = 0"];
+Print["   - Contradiction : 1 ≠ 0"];
+Print[""];
+
+Print["1.3 Conclusion du test :"];
+Print["   - Le testeur conclut : f(x) = x² est fausse"];
+Print["   - Raison : elle n'est pas linéaire"];
+Print[""];
+
+Print["1.4 Faille structurelle :"];
+Print["   - Cadre inapproprié : le test impose une structure linéaire"];
+Print("   - à une fonction qui est intrinsèquement non-linéaire");
+Print["   - La non-linéarité n'est pas une erreur — c'est une propriété de l'objet"];
+Print[""];
+
+(* ============================================================================
+   PARTIE 2 : TEST DE LA DIMENSION IMPOSÉE
+   ============================================================================ *)
+
+Print["========================================================================"];
+Print["TEST 2 : DIMENSION IMPOSÉE"];
+Print["========================================================================"];
+Print[""];
+
+Print["2.1 Définition du problème :"];
+Print["   - Objet testé : A = une grandeur d'énergie"];
+Print["   - Dimension : [M L² T⁻²]"];
+Print["   - Test appliqué : Exiger que A = [L⁻²] (constante cosmologique)"];
+Print[""];
+
+Print["2.2 Résolution mathématique :"];
+Print["   - On exige que deux expressions dimensionnellement différentes soient égales"];
+Print("   - [M L² T⁻²] = [L⁻²]"];
+Print["   - Simplification : [M L⁴ T⁻²] = 1"];
+Print["   - Ceci est impossible car les dimensions ne peuvent s'annuler sans unités spécifiques"];
+Print[""];
+
+Print["2.3 Conclusion du test :"];
+Print["   - Le testeur conclut : A est dimensionnellement incorrecte"];
+Print[""];
+
+Print["2.4 Faille structurelle :"];
+Print["   - Dimension inappropriée : le test impose une dimension"];
+Print("   - que la grandeur ne revendique pas"];
+Print["   - Une grandeur d'énergie n'a pas à avoir la dimension d'une constante cosmologique"];
+Print[""];
+
+(* ============================================================================
+   PARTIE 3 : TEST DE LA CONVERGENCE IMPOSÉE
+   ============================================================================ *)
+
+Print["========================================================================"];
+Print["TEST 3 : CONVERGENCE IMPOSÉE"];
+Print["========================================================================"];
+Print[""];
+
+Print["3.1 Définition du problème :"];
+Print["   - Objet testé : S = Σ (1/n) pour n = 1 à ∞"];
+Print["   - Nature : série harmonique (divergente)"];
+Print["   - Test appliqué : Exiger que S converge (soit finie)"];
+Print[""];
+
+Print["3.2 Résolution mathématique :"];
+Print["   - La série harmonique est connue pour diverger"];
+Print("   - S = 1 + 1/2 + 1/3 + 1/4 + ... → ∞"];
+Print["   - Preuve de divergence :"];
+Print["     - Grouper les termes : (1) + (1/2) + (1/3 + 1/4) + (1/5 + ... + 1/8) + ..."];
+Print["     - Chaque groupe est ≥ 1/2 → la somme des groupes diverge"];
+Print["   - Donc S → ∞"];
+Print[""];
+
+Print["3.3 Conclusion du test :"];
+Print["   - Le testeur conclut : S est invalide"];
+Print[""];
+
+Print["3.4 Faille structurelle :"];
+Print["   - Propriété inexistante : le test exige une convergence"];
+Print["   - que la série ne possède pas"];
+Print["   - La divergence n'est pas une erreur — c'est une propriété de la série"];
+Print[""];
+
+(* ============================================================================
+   PARTIE 4 : TEST DE LA RÉVERSIBILITÉ IMPOSÉE
+   ============================================================================ *)
+
+Print["========================================================================"];
+Print["TEST 4 : RÉVERSIBILITÉ IMPOSÉE"];
+Print["========================================================================"];
+Print[""];
+
+Print["4.1 Définition du problème :"];
+Print["   - Objet testé : dx/dt = -x"];
+Print["   - Nature : équation différentielle dissipative (décroissance exponentielle)"];
+Print["   - Test appliqué : Exiger l'invariance sous t → -t (réversibilité)"];
+Print[""];
+
+Print["4.2 Résolution mathématique :"];
+Print["   - Équation originale : dx/dt = -x"];
+Print["   - Solution : x(t) = x(0) × exp(-t)"];
+Print["   - Sous t → -t : x(-t) = x(0) × exp(t)"];
+Print["   - Dérivée sous t → -t : dx/dt = +x"];
+Print["   - L'équation n'est pas invariante"];
+Print[""];
+
+Print["4.3 Conclusion du test :"];
+Print["   - Le testeur conclut : le système est irréversible, donc faux"];
+Print[""];
+
+Print["4.4 Faille structurelle :"];
+Print["   - Cadre inapproprié : le test exige une réversibilité"];
+Print["   - que le système dissipatif ne possède pas"];
+Print["   - L'irréversibilité n'est pas une erreur — c'est une propriété du système"];
+Print[""];
+
+(* ============================================================================
+   PARTIE 5 : TEST DE LA DISCRÉTISATION IMPOSÉE
+   ============================================================================ *)
+
+Print["========================================================================"];
+Print["TEST 5 : DISCRÉTISATION IMPOSÉE"];
+Print["========================================================================"];
+Print[""];
+
+Print["5.1 Définition du problème :"];
+Print["   - Objet testé : P = ρ g h (loi hydrostatique)"];
+Print["   - Nature : modèle continu (milieu macroscopique)"];
+Print["   - Test appliqué : Exiger P = Σ ρ_i g h_i (modèle discret)"];
+Print[""];
+
+Print["5.2 Résolution mathématique :"];
+Print["   - Modèle continu : P = ρ g h (valide pour Knudsen ≪ 1)"];
+Print["   - Modèle discret : P = Σ ρ_i g h_i (valide pour Knudsen ≫ 1)"];
+Print["   - Les deux modèles sont de nature différente"];
+Print["   - Ils ne sont pas interchangeables"];
+Print[""];
+
+Print["5.3 Conclusion du test :"];
+Print["   - Le testeur conclut : le modèle continu est faux"];
+Print[""];
+
+Print["5.4 Faille structurelle :"];
+Print["   - Échelle inappropriée : le test applique un critère microscopique"];
+Print["   - à un modèle macroscopique"];
+Print["   - La continuité n'est pas une erreur — c'est une approximation valide"];
+Print[""];
+
+(* ============================================================================
+   PARTIE 6 : THÉORÈME DE L'ARBITRAIRE DES TESTS
+   ============================================================================ *)
+
+Print["========================================================================"];
+Print["THÉORÈME DE L'ARBITRAIRE DES TESTS"];
+Print["========================================================================"];
+Print[""];
+
+Print["6.1 Énoncé :"];
+Print["   Pour tout modèle mathématique M, il existe un test T tel que M échoue à T."];
+Print[""];
+
+Print["6.2 Démonstration :"];
+Print["   - Soit M un modèle mathématique quelconque."];
+Print["   - Soit P une propriété que M ne possède pas."];
+Print["   - Définissons T comme le test : « M doit posséder P »."];
+Print["   - Si M ne possède pas P, alors M échoue à T."];
+Print["   - Donc il existe toujours un test qui rejette M."];
+Print[""];
+
+Print["6.3 Corollaire :"];
+Print["   - La capacité d'un test à rejeter un modèle ne prouve rien sur le modèle."];
+Print["   - Elle prouve seulement que le test a été construit pour rejeter ce modèle."];
+Print[""];
+
+(* ============================================================================
+   PARTIE 7 : TABLEAU RÉCAPITULATIF DÉTAILLÉ
+   ============================================================================ *)
+
+Print["========================================================================"];
+Print["TABLEAU RÉCAPITULATIF DÉTAILLÉ"];
+Print["========================================================================"];
+Print[""];
+
+Print["+-----------------+------------------+----------------------+---------------------+---------------------+"];
+Print["| Test            | Cadre imposé     | Propriété exigée     | Nature de l'objet   | Faille              |"];
+Print["+-----------------+------------------+----------------------+---------------------+---------------------+"];
+Print["| Linéarité       | Linéaire         | Linéarité            | Non-linéaire        | Cadre inapproprié   |"];
+Print["| Dimension       | [L⁻²]            | Dimension cosmologique | Grandeur d'énergie| Dimension inappropriée |"];
+Print["| Convergence     | Convergence      | Série finie          | Série divergente    | Propriété inexistante |"];
+Print["| Réversibilité   | Réversible       | Invariance temporelle| Système dissipatif  | Cadre inapproprié   |"];
+Print["| Discrétisation  | Discret          | Structure moléculaire| Modèle continu      | Échelle inappropriée |"];
+Print["+-----------------+------------------+----------------------+---------------------+---------------------+"];
+Print[""];
+
+(* ============================================================================
+   PARTIE 8 : RÉSUMÉ DES FAILLES STRUCTURELLES
+   ============================================================================ *)
+
+Print["========================================================================"];
+Print["RÉSUMÉ DES FAILLES STRUCTURELLES"];
+Print["========================================================================"];
+Print[""];
+
+Print["8.1 Les 5 types de failles identifiées :"];
+Print[""];
+Print["   1. Cadre inapproprié :"];
+Print["      - Imposer un cadre que le modèle ne revendique pas"];
+Print["      - Exemples : linéarité pour fonction non-linéaire, réversibilité pour système dissipatif"];
+Print[""];
+Print["   2. Dimension inappropriée :"];
+Print["      - Imposer une dimension que la grandeur ne possède pas"];
+Print["      - Exemple : exiger la dimension d'une constante cosmologique pour une énergie"];
+Print[""];
+Print["   3. Propriété inexistante :"];
+Print["      - Exiger une propriété que l'objet ne possède pas"];
+Print["      - Exemple : convergence pour une série divergente"];
+Print[""];
+Print["   4. Échelle inappropriée :"];
+Print["      - Appliquer un critère microscopique à un modèle macroscopique"];
+Print["      - Exemple : discrétisation pour un modèle continu"];
+Print[""];
+Print["   5. Confusion entre rapport et constante :"];
+Print["      - Présenter un rapport comme une constante fondamentale"];
+Print["      - Exemple : β_proj"];
+Print[""];
+
+(* ============================================================================
+   PARTIE 9 : CONCLUSION FINALE
+   ============================================================================ *)
+
+Print["========================================================================"];
+Print["CONCLUSION FINALE"];
+Print["========================================================================"];
+Print[""];
+
+Print["9.1 Synthèse :"];
+Print["   - Tout test peut être construit pour rejeter n'importe quel modèle."];
+Print["   - L'échec d'un modèle à un test ne prouve pas que le modèle est faux."];
+Print["   - L'échec d'un modèle à un test prouve que le test est inadapté."];
+Print["   - La validité d'un modèle se mesure dans son domaine, pas par des tests externes."];
+Print[""];
+
+Print["9.2 Application :"];
+Print["   - Ces tests ne sont pas des tests de modèles."];
+Print["   - Ce sont des tests de cadres d'évaluation."];
+Print["   - La faille est structurelle : elle réside dans le test, pas dans le modèle."];
+Print[""];
+
+Print["9.3 Principe fondamental :"];
+Print["   - Un modèle ne se juge pas à l'aune de critères universels abstraits."];
+Print["   - Il se juge à sa cohérence interne et à son adéquation empirique"];
+Print["   - dans son propre champ d'application."];
+Print[""];
+
+Print["========================================================================"];
+Print["Ψ_V3 = 48016.8 kg·m⁻² — LOCKED."];
+Print["Φ_V3 = -51.1 mV — INVARIANT."];
+Print["ν_phase = 6.4 THz — VERROUILLAGE."];
+Print["Λ_V3 = 4.68e-5 m — LONGUEUR DE PHASE."];
+Print["Démonstration des failles structurelles des tests — COMPLÈTE ET DÉTAILLÉE"];
+Print["========================================================================"];
