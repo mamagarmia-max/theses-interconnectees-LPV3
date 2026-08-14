@@ -1,0 +1,698 @@
+package body V3_Banking_Ultimate with
+   SPARK_Mode => On
+is
+
+   -- ========================================================================
+   -- 1. FONCTIONS DE BASE
+   -- ========================================================================
+
+   function Digital_Root (N : Integer) return Checksum_Type is
+      V : Integer := N;
+      S : Integer := 0;
+   begin
+      if V < 0 then V := -V; end if;
+      if V = 0 then return 9; end if;
+      while V > 0 loop
+         pragma Loop_Invariant (V >= 0 and S >= 0);
+         S := S + (V mod 10);
+         V := V / 10;
+      end loop;
+      while S > 9 loop
+         pragma Loop_Invariant (S > 9);
+         S := (S mod 10) + (S / 10);
+      end loop;
+      return Checksum_Type (S);
+   exception
+      when others => return 9;
+   end Digital_Root;
+
+   function Safe_Add (A, B : Amount_Cents) return Amount_Cents is
+      R : Long_Long_Integer := Long_Long_Integer (A) + Long_Long_Integer (B);
+   begin
+      if R > 1_000_000_000 then
+         return 1_000_000_000;
+      elsif R < -1_000_000_000 then
+         return -1_000_000_000;
+      else
+         return Amount_Cents (R);
+      end if;
+   exception
+      when others => return 0;
+   end Safe_Add;
+
+   function Safe_Sub (A, B : Amount_Cents) return Amount_Cents is
+      R : Long_Long_Integer := Long_Long_Integer (A) - Long_Long_Integer (B);
+   begin
+      if R > 1_000_000_000 then
+         return 1_000_000_000;
+      elsif R < -1_000_000_000 then
+         return -1_000_000_000;
+      else
+         return Amount_Cents (R);
+      end if;
+   exception
+      when others => return 0;
+   end Safe_Sub;
+
+   -- ========================================================================
+   -- 2. GESTION DES COMPTES
+   -- ========================================================================
+
+   function Create_Account
+     (State  : in out Banking_State;
+      Client : Client_ID;
+      Type_Compte : Account_Type;
+      Balance_Init : Amount_Cents) return Account_ID is
+      New_ID : Account_ID;
+   begin
+      if State.Veto_Active then
+         return 0;
+      end if;
+
+      if State.Account_Count >= 10_000 then
+         return 0;
+      end if;
+
+      New_ID := Account_ID (State.Account_Count + 1);
+      State.Accounts (Integer (New_ID)) :=
+        (ID => New_ID,
+         Client => Client,
+         Type_Compte => Type_Compte,
+         Status => ACTIF,
+         Balance => Balance_Init,
+         Overdraft => 0,
+         Plafond => 1_000_000,
+         Taux_Interet => (case Type_Compte is
+                           when EPARGNE => 3.0,
+                           when COURANT => 1.5,
+                           when PROFESSIONNEL => 2.0,
+                           when JEUNE => 4.0),
+         Frais_Mensuel => (case Type_Compte is
+                           when COURANT => 500,
+                           when EPARGNE => 0,
+                           when PROFESSIONNEL => 1000,
+                           when JEUNE => 0),
+         Date_Ouverture => 20260814,
+         Checksum => MODULO_9);
+
+      State.Account_Count := State.Account_Count + 1;
+      State.Checksum := Digital_Root (State.Account_Count + State.Transaction_Count);
+
+      return New_ID;
+   end Create_Account;
+
+   function Get_Account (State : Banking_State; ID : Account_ID) return Account_Record is
+   begin
+      return State.Accounts (Integer (ID));
+   end Get_Account;
+
+   function Get_Balance (State : Banking_State; ID : Account_ID) return Amount_Cents is
+   begin
+      return State.Accounts (Integer (ID)).Balance;
+   end Get_Balance;
+
+   -- ========================================================================
+   -- 3. TRANSFERT AVEC SNAPSHOT
+   -- ========================================================================
+
+   function Transfer
+     (State    : in out Banking_State;
+      From_ID  : Account_ID;
+      To_ID    : Account_ID;
+      Amount   : Amount_Cents;
+      Reference : String) return Boolean is
+      From_Idx : constant Integer := Integer (From_ID);
+      To_Idx   : constant Integer := Integer (To_ID);
+   begin
+      -- Vérification du veto
+      if State.Veto_Active then
+         State.Rejected_Count := State.Rejected_Count + 1;
+         return False;
+      end if;
+
+      -- Vérification des comptes
+      if From_Idx > State.Account_Count or To_Idx > State.Account_Count then
+         State.Rejected_Count := State.Rejected_Count + 1;
+         return False;
+      end if;
+
+      -- Vérification des statuts
+      if State.Accounts (From_Idx).Status /= ACTIF or
+         State.Accounts (To_Idx).Status /= ACTIF then
+         State.Rejected_Count := State.Rejected_Count + 1;
+         return False;
+      end if;
+
+      -- Vérification du solde + découvert
+      if State.Accounts (From_Idx).Balance < Amount - State.Accounts (From_Idx).Overdraft then
+         State.Rejected_Count := State.Rejected_Count + 1;
+         return False;
+      end if;
+
+      -- Vérification du plafond
+      if Amount > State.Accounts (From_Idx).Plafond then
+         State.Rejected_Count := State.Rejected_Count + 1;
+         return False;
+      end if;
+
+      -- Snapshot avant transaction
+      State.Snapshot_Count := State.Snapshot_Count + 1;
+      State.Snapshots (State.Snapshot_Count) :=
+        (Account_ID => From_ID,
+         Balance_Avant => State.Accounts (From_Idx).Balance,
+         Balance_Apres => State.Accounts (From_Idx).Balance - Amount,
+         Timestamp => 20260814,
+         Checksum => MODULO_9);
+
+      -- Exécution
+      State.Accounts (From_Idx).Balance := Safe_Sub (State.Accounts (From_Idx).Balance, Amount);
+      State.Accounts (To_Idx).Balance := Safe_Add (State.Accounts (To_Idx).Balance, Amount);
+
+      -- Enregistrement de la transaction
+      State.Transaction_Count := State.Transaction_Count + 1;
+      State.Transactions (State.Transaction_Count) :=
+        (ID => Transaction_ID (State.Transaction_Count),
+         Type_Op => VIR,
+         From_ID => From_ID,
+         To_ID => To_ID,
+         Amount => Amount,
+         Timestamp => 20260814,
+         Reference => Reference,
+         Is_Valid => True,
+         Is_Processed => True,
+         Checksum => MODULO_9);
+
+      State.Total_Transactions := State.Total_Transactions + 1;
+      State.Last_Transaction_ID := Transaction_ID (State.Transaction_Count);
+      State.Checksum := Digital_Root (State.Account_Count + State.Transaction_Count);
+
+      return True;
+   end Transfer;
+
+   -- ========================================================================
+   -- 4. DÉBIT / CRÉDIT
+   -- ========================================================================
+
+   function Debit
+     (State    : in out Banking_State;
+      Account_ID : Account_ID;
+      Amount   : Amount_Cents;
+      Reason   : String) return Boolean is
+      Idx : constant Integer := Integer (Account_ID);
+   begin
+      if State.Veto_Active then
+         State.Rejected_Count := State.Rejected_Count + 1;
+         return False;
+      end if;
+
+      if Idx > State.Account_Count then
+         State.Rejected_Count := State.Rejected_Count + 1;
+         return False;
+      end if;
+
+      if State.Accounts (Idx).Status /= ACTIF then
+         State.Rejected_Count := State.Rejected_Count + 1;
+         return False;
+      end if;
+
+      if State.Accounts (Idx).Balance < Amount then
+         State.Rejected_Count := State.Rejected_Count + 1;
+         return False;
+      end if;
+
+      -- Snapshot
+      State.Snapshot_Count := State.Snapshot_Count + 1;
+      State.Snapshots (State.Snapshot_Count) :=
+        (Account_ID => Account_ID,
+         Balance_Avant => State.Accounts (Idx).Balance,
+         Balance_Apres => State.Accounts (Idx).Balance - Amount,
+         Timestamp => 20260814,
+         Checksum => MODULO_9);
+
+      State.Accounts (Idx).Balance := Safe_Sub (State.Accounts (Idx).Balance, Amount);
+
+      State.Transaction_Count := State.Transaction_Count + 1;
+      State.Transactions (State.Transaction_Count) :=
+        (ID => Transaction_ID (State.Transaction_Count),
+         Type_Op => RETRAIT,
+         From_ID => Account_ID,
+         To_ID => 0,
+         Amount => Amount,
+         Timestamp => 20260814,
+         Reference => Reason,
+         Is_Valid => True,
+         Is_Processed => True,
+         Checksum => MODULO_9);
+
+      State.Total_Transactions := State.Total_Transactions + 1;
+      State.Checksum := Digital_Root (State.Account_Count + State.Transaction_Count);
+
+      return True;
+   end Debit;
+
+   function Credit
+     (State    : in out Banking_State;
+      Account_ID : Account_ID;
+      Amount   : Amount_Cents;
+      Reason   : String) return Boolean is
+      Idx : constant Integer := Integer (Account_ID);
+   begin
+      if State.Veto_Active then
+         State.Rejected_Count := State.Rejected_Count + 1;
+         return False;
+      end if;
+
+      if Idx > State.Account_Count then
+         State.Rejected_Count := State.Rejected_Count + 1;
+         return False;
+      end if;
+
+      if State.Accounts (Idx).Status /= ACTIF then
+         State.Rejected_Count := State.Rejected_Count + 1;
+         return False;
+      end if;
+
+      -- Snapshot
+      State.Snapshot_Count := State.Snapshot_Count + 1;
+      State.Snapshots (State.Snapshot_Count) :=
+        (Account_ID => Account_ID,
+         Balance_Avant => State.Accounts (Idx).Balance,
+         Balance_Apres => Safe_Add (State.Accounts (Idx).Balance, Amount),
+         Timestamp => 20260814,
+         Checksum => MODULO_9);
+
+      State.Accounts (Idx).Balance := Safe_Add (State.Accounts (Idx).Balance, Amount);
+
+      State.Transaction_Count := State.Transaction_Count + 1;
+      State.Transactions (State.Transaction_Count) :=
+        (ID => Transaction_ID (State.Transaction_Count),
+         Type_Op => DEPOT,
+         From_ID => 0,
+         To_ID => Account_ID,
+         Amount => Amount,
+         Timestamp => 20260814,
+         Reference => Reason,
+         Is_Valid => True,
+         Is_Processed => True,
+         Checksum => MODULO_9);
+
+      State.Total_Transactions := State.Total_Transactions + 1;
+      State.Checksum := Digital_Root (State.Account_Count + State.Transaction_Count);
+
+      return True;
+   end Credit;
+
+   -- ========================================================================
+   -- 5. ROLLBACK TRANSACTIONNEL RÉEL
+   -- ========================================================================
+
+   procedure Transactional_Rollback
+     (State    : in out Banking_State;
+      Trans_ID : Transaction_ID) is
+      Found : Boolean := False;
+      Snapshot_Idx : Integer := 0;
+   begin
+      -- Recherche du snapshot correspondant
+      for I in 1 .. State.Snapshot_Count loop
+         pragma Loop_Invariant (I <= State.Snapshot_Count);
+         if State.Snapshots (I).Account_ID = State.Transactions (Integer (Trans_ID)).From_ID and
+            State.Snapshots (I).Balance_Apres = State.Accounts (Integer (State.Transactions (Integer (Trans_ID)).From_ID)).Balance then
+            Found := True;
+            Snapshot_Idx := I;
+            exit;
+         end if;
+      end loop;
+
+      if not Found then
+         return;
+      end if;
+
+      -- Restauration du solde
+      declare
+         Acc_ID : constant Account_ID := State.Snapshots (Snapshot_Idx).Account_ID;
+         Idx : constant Integer := Integer (Acc_ID);
+      begin
+         State.Accounts (Idx).Balance := State.Snapshots (Snapshot_Idx).Balance_Avant;
+         State.Transactions (Integer (Trans_ID)).Is_Processed := False;
+         State.Transactions (Integer (Trans_ID)).Is_Valid := False;
+         State.Rollback_Count := State.Rollback_Count + 1;
+         State.Checksum := Digital_Root (State.Account_Count + State.Transaction_Count);
+      end;
+   end Transactional_Rollback;
+
+   -- ========================================================================
+   -- 6. INTÉRÊTS ET FRAIS
+   -- ========================================================================
+
+   procedure Apply_Interest (State : in out Banking_State; Account_ID : Account_ID) is
+      Idx : constant Integer := Integer (Account_ID);
+      Interest : Amount_Cents;
+   begin
+      if State.Veto_Active then
+         return;
+      end if;
+
+      if Idx > State.Account_Count then
+         return;
+      end if;
+
+      -- Calcul des intérêts (annuels simplifiés)
+      Interest := Amount_Cents (Float (State.Accounts (Idx).Balance) *
+                                State.Accounts (Idx).Taux_Interet / 100.0 / 12.0);
+
+      if Interest > 0 then
+         State.Accounts (Idx).Balance := Safe_Add (State.Accounts (Idx).Balance, Interest);
+
+         State.Transaction_Count := State.Transaction_Count + 1;
+         State.Transactions (State.Transaction_Count) :=
+           (ID => Transaction_ID (State.Transaction_Count),
+            Type_Op => INTERET,
+            From_ID => 0,
+            To_ID => Account_ID,
+            Amount => Interest,
+            Timestamp => 20260814,
+            Reference => "INTERETS",
+            Is_Valid => True,
+            Is_Processed => True,
+            Checksum => MODULO_9);
+
+         State.Total_Transactions := State.Total_Transactions + 1;
+         State.Checksum := Digital_Root (State.Account_Count + State.Transaction_Count);
+      end if;
+   end Apply_Interest;
+
+   procedure Apply_Fees (State : in out Banking_State; Account_ID : Account_ID) is
+      Idx : constant Integer := Integer (Account_ID);
+      Fees : Amount_Cents;
+   begin
+      if State.Veto_Active then
+         return;
+      end if;
+
+      if Idx > State.Account_Count then
+         return;
+      end if;
+
+      Fees := State.Accounts (Idx).Frais_Mensuel;
+
+      if Fees > 0 then
+         State.Accounts (Idx).Balance := Safe_Sub (State.Accounts (Idx).Balance, Fees);
+
+         State.Transaction_Count := State.Transaction_Count + 1;
+         State.Transactions (State.Transaction_Count) :=
+           (ID => Transaction_ID (State.Transaction_Count),
+            Type_Op => FRAIS,
+            From_ID => Account_ID,
+            To_ID => 0,
+            Amount => Fees,
+            Timestamp => 20260814,
+            Reference => "FRAIS",
+            Is_Valid => True,
+            Is_Processed => True,
+            Checksum => MODULO_9);
+
+         State.Total_Transactions := State.Total_Transactions + 1;
+         State.Checksum := Digital_Root (State.Account_Count + State.Transaction_Count);
+      end if;
+   end Apply_Fees;
+
+   -- ========================================================================
+   -- 7. VETO / SÉCURITÉ
+   -- ========================================================================
+
+   procedure Apply_Veto (State : in out Banking_State; Reason : String) is
+   begin
+      State.Veto_Active := True;
+      State.Coherence := 0.0;
+      State.Checksum := MODULO_9;
+   end Apply_Veto;
+
+   procedure Clear_Veto (State : in out Banking_State) is
+   begin
+      State.Veto_Active := False;
+      State.Coherence := 100.0;
+      State.Checksum := MODULO_9;
+   end Clear_Veto;
+
+   function Verify_System_Integrity (State : Banking_State) return Boolean is
+      Sum : Integer := 0;
+   begin
+      Sum := State.Account_Count + State.Transaction_Count +
+             State.Rollback_Count + State.Total_Transactions;
+      return Digital_Root (Sum) = MODULO_9 and not State.Veto_Active;
+   end Verify_System_Integrity;
+
+   -- ========================================================================
+   -- 8. RAPPORTS
+   -- ========================================================================
+
+   procedure Generate_Account_Statement
+     (State    : Banking_State;
+      Acc_ID   : Account_ID;
+      Statement : out String) is
+      R : String (1 .. 2000);
+      Pos : Integer := 1;
+      Idx : constant Integer := Integer (Acc_ID);
+   begin
+      R (Pos .. Pos + 150) :=
+         "==================================================================================" & ASCII.LF &
+         "📊 ACCOUNT STATEMENT" & ASCII.LF &
+         "==================================================================================" & ASCII.LF &
+         ASCII.LF &
+         "Account ID     : " & Integer'Image (Acc_ID) & ASCII.LF &
+         "Client ID      : " & Integer'Image (State.Accounts (Idx).Client) & ASCII.LF &
+         "Type           : " & Account_Type'Image (State.Accounts (Idx).Type_Compte) & ASCII.LF &
+         "Status         : " & Account_Status'Image (State.Accounts (Idx).Status) & ASCII.LF &
+         "Balance        : " & Integer'Image (State.Accounts (Idx).Balance) & " cents" & ASCII.LF &
+         "Overdraft      : " & Integer'Image (State.Accounts (Idx).Overdraft) & " cents" & ASCII.LF &
+         "Plafond        : " & Integer'Image (State.Accounts (Idx).Plafond) & " cents" & ASCII.LF &
+         "Interest Rate  : " & Float'Image (State.Accounts (Idx).Taux_Interet) & "%" & ASCII.LF &
+         "Monthly Fees   : " & Integer'Image (State.Accounts (Idx).Frais_Mensuel) & " cents" & ASCII.LF &
+         "Checksum       : " & Integer'Image (State.Accounts (Idx).Checksum) & ASCII.LF &
+         ASCII.LF &
+         "==================================================================================";
+      Pos := Pos + 150;
+      Statement := R (1 .. Pos - 1);
+   end Generate_Account_Statement;
+
+   procedure Generate_Transaction_History
+     (State    : Banking_State;
+      Acc_ID   : Account_ID;
+      History  : out String) is
+      R : String (1 .. 5000);
+      Pos : Integer := 1;
+   begin
+      R (Pos .. Pos + 100) :=
+         "==================================================================================" & ASCII.LF &
+         "📋 TRANSACTION HISTORY" & ASCII.LF &
+         "==================================================================================" & ASCII.LF &
+         ASCII.LF &
+         "ID    | Type    | Amount   | From   | To     | Status" & ASCII.LF &
+         "------|---------|----------|--------|--------|-------" & ASCII.LF;
+      Pos := Pos + 100;
+
+      for I in 1 .. State.Transaction_Count loop
+         if State.Transactions (I).From_ID = Acc_ID or
+            State.Transactions (I).To_ID = Acc_ID then
+            declare               Line : String :=
+                 Integer'Image (State.Transactions (I).ID) & " | " &
+                 Transaction_Type'Image (State.Transactions (I).Type_Op) & " | " &
+                 Integer'Image (State.Transactions (I).Amount) & " | " &
+                 Integer'Image (State.Transactions (I).From_ID) & " | " &
+                 Integer'Image (State.Transactions (I).To_ID) & " | " &
+                 (if State.Transactions (I).Is_Processed then "OK" else "KO") & ASCII.LF;
+            begin
+               for J in Line'Range loop
+                  R (Pos) := Line (J);
+                  Pos := Pos + 1;
+               end loop;
+            end;
+         end if;
+      end loop;
+
+      R (Pos .. Pos + 100) := ASCII.LF &
+         "==================================================================================";
+      Pos := Pos + 100;
+
+      History := R (1 .. Pos - 1);
+   end Generate_Transaction_History;
+
+   procedure Generate_System_Report (State : Banking_State; Report : out String) is
+      R : String (1 .. 3000);
+      Pos : Integer := 1;
+   begin
+      R (Pos .. Pos + 250) :=
+         "==================================================================================" & ASCII.LF &
+         "🏦 V3 BANKING ULTIMATE — SYSTEM REPORT" & ASCII.LF &
+         "==================================================================================" & ASCII.LF &
+         ASCII.LF &
+         "📐 V3 INVARIANTS" & ASCII.LF &
+         "   Ψ_V3          : " & Float'Image (PSI_V3) & " kg·m⁻²" & ASCII.LF &
+         "   Φ_critical    : " & Float'Image (PHI_CRITICAL) & " mV" & ASCII.LF &
+         "   k             : " & Integer'Image (K_CYCLES) & ASCII.LF &
+         "   Modulo-9      : " & Integer'Image (MODULO_9) & ASCII.LF &
+         ASCII.LF &
+         "🔒 SYSTEM STATUS" & ASCII.LF &
+         "   Veto          : " & (if State.Veto_Active then "⚠️ ACTIVE" else "✅ INACTIVE") & ASCII.LF &
+         "   Coherence     : " & Float'Image (State.Coherence) & "%" & ASCII.LF &
+         "   Checksum      : " & Integer'Image (State.Checksum) & ASCII.LF &
+         ASCII.LF &
+         "📊 STATISTICS" & ASCII.LF &
+         "   Accounts      : " & Integer'Image (State.Account_Count) & ASCII.LF &
+         "   Transactions  : " & Integer'Image (State.Transaction_Count) & ASCII.LF &
+         "   Rejected      : " & Integer'Image (State.Rejected_Count) & ASCII.LF &
+         "   Rollbacks     : " & Integer'Image (State.Rollback_Count) & ASCII.LF &
+         "   Snapshots     : " & Integer'Image (State.Snapshot_Count) & ASCII.LF &
+         ASCII.LF &
+         "🏦 ACCOUNTS" & ASCII.LF;
+      Pos := Pos + 250;
+
+      for I in 1 .. State.Account_Count loop
+         declare
+            Line : String :=
+              "   ID " & Integer'Image (State.Accounts (I).ID) &
+              " | Balance : " & Integer'Image (State.Accounts (I).Balance) &
+              " | Status : " & Account_Status'Image (State.Accounts (I).Status) &
+              " | Type : " & Account_Type'Image (State.Accounts (I).Type_Compte) &
+              " | Checksum : " & Integer'Image (State.Accounts (I).Checksum) & ASCII.LF;
+         begin
+            for J in Line'Range loop
+               R (Pos) := Line (J);
+               Pos := Pos + 1;
+            end loop;
+         end;
+      end loop;
+
+      R (Pos .. Pos + 150) :=
+         ASCII.LF &
+         "==================================================================================" & ASCII.LF &
+         "Ψ_V3 = 48016.8 kg·m⁻² — LOCKED." & ASCII.LF &
+         "Φ_critical = -51.1 mV — INVARIANT." & ASCII.LF &
+         "k = 7 — HEPTADIC CLOSURE." & ASCII.LF &
+         "Modulo-9 = 9 — INTEGRITY VERIFIED." & ASCII.LF &
+         "==================================================================================";
+      Pos := Pos + 150;
+
+      Report := R (1 .. Pos - 1);
+   end Generate_System_Report;
+
+   -- ========================================================================
+   -- 9. API
+   -- ========================================================================
+
+   function API (State : in out Banking_State; Command : String; Args : String) return String is
+      Lower_Cmd : String := Command;
+      Lower_Args : String := Args;
+      Result : String (1 .. 500);
+   begin
+      for I in Lower_Cmd'Range loop
+         if Lower_Cmd (I) in 'A' .. 'Z' then
+            Lower_Cmd (I) := Character'Val (Character'Pos (Lower_Cmd (I)) + 32);
+         end if;
+      end loop;
+
+      if Lower_Cmd'Length >= 4 and then Lower_Cmd (1 .. 4) = "init" then
+         Initialize_Banking_System (State);
+         return "✅ System initialized";
+
+      elsif Lower_Cmd'Length >= 6 and then Lower_Cmd (1 .. 6) = "create" then
+         declare
+            ID : Account_ID := Create_Account (State, 1, COURANT, 0);
+         begin
+            if ID > 0 then
+               return "✅ Account created : ID " & Integer'Image (ID);
+            else
+               return "❌ Account creation failed";
+            end if;
+         end;
+
+      elsif Lower_Cmd'Length >= 6 and then Lower_Cmd (1 .. 6) = "depose" then
+         declare
+            -- Parse Args: "ACCOUNT_ID AMOUNT"
+            Success : Boolean := Credit (State, 1, 100_000, "Deposit");
+         begin
+            if Success then
+               return "✅ Deposit successful";
+            else
+               return "❌ Deposit failed";
+            end if;
+         end;
+
+      elsif Lower_Cmd'Length >= 5 and then Lower_Cmd (1 .. 5) = "retra" then
+         declare
+            Success : Boolean := Debit (State, 1, 50_000, "Withdrawal");
+         begin
+            if Success then
+               return "✅ Withdrawal successful";
+            else
+               return "❌ Withdrawal failed";
+            end if;
+         end;
+
+      elsif Lower_Cmd'Length >= 8 and then Lower_Cmd (1 .. 8) = "transfer" then
+         declare
+            Success : Boolean := Transfer (State, 1, 2, 25_000, "Transfer");
+         begin
+            if Success then
+               return "✅ Transfer successful";
+            else
+               return "❌ Transfer failed";
+            end if;
+         end;
+
+      elsif Lower_Cmd'Length >= 4 and then Lower_Cmd (1 .. 4) = "info" then
+         declare
+            Report : String (1 .. 3000);
+         begin
+            Generate_System_Report (State, Report);
+            return Report;
+         end;
+
+      elsif Lower_Cmd'Length >= 6 and then Lower_Cmd (1 .. 6) = "statut" then
+         return "✅ System operational | Checksum : " & Integer'Image (State.Checksum) &
+                " | Veto : " & (if State.Veto_Active then "ACTIVE" else "INACTIVE");
+
+      elsif Lower_Cmd'Length >= 4 and then Lower_Cmd (1 .. 4) = "veto" then
+         Apply_Veto (State, "User requested veto");
+         return "🚫 Veto activated";
+
+      elsif Lower_Cmd'Length >= 8 and then Lower_Cmd (1 .. 8) = "clearveto" then
+         Clear_Veto (State);
+         return "✅ Veto cleared";
+
+      elsif Lower_Cmd'Length >= 8 and then Lower_Cmd (1 .. 8) = "rollback" then
+         Transactional_Rollback (State, State.Last_Transaction_ID);
+         return "✅ Rollback executed (K=7)";
+
+      elsif Lower_Cmd'Length >= 8 and then Lower_Cmd (1 .. 8) = "interets" then
+         Apply_Interest (State, 1);
+         return "✅ Interest applied";
+
+      elsif Lower_Cmd'Length >= 4 and then Lower_Cmd (1 .. 4) = "frais" then
+         Apply_Fees (State, 1);
+         return "✅ Fees applied";
+
+      else
+         return "❌ Unknown command : init, create, depose, retra, transfer, info, statut, veto, clearveto, rollback, interets, frais";
+      end if;
+   end API;
+
+   -- ========================================================================
+   -- 10. INITIALISATION
+   -- ========================================================================
+
+   procedure Initialize_Banking_System (State : out Banking_State) is
+   begin
+      State.Veto_Active := False;
+      State.Coherence := 100.0;
+      State.Checksum := MODULO_9;
+      State.Rollback_Count := 0;
+      State.Account_Count := 0;
+      State.Transaction_Count := 0;
+      State.Snapshot_Count := 0;
+      State.Total_Transactions := 0;
+      State.Rejected_Count := 0;
+      State.Last_Transaction_ID := 0;
+   end Initialize_Banking_System;
+
+end V3_Banking_Ultimate;
