@@ -1,0 +1,68 @@
+with Ada.Text_IO; use Ada.Text_IO;
+with V3_Banking_Ultimate; use V3_Banking_Ultimate;
+
+procedure Test_Banking_Ultimate is
+   State : Banking_State;
+   Response : String (1 .. 5000);
+   Acc1, Acc2 : Account_ID;
+begin
+   Put_Line ("================================================================================");
+   Put_Line ("🏦 V3 BANKING ULTIMATE — COMMERCIAL BANKING CORE");
+   Put_Line ("   Complete banking system with snapshots, rollback, interests, fees");
+   Put_Line ("   100% GNATPROVE — No parasite modules");
+   Put_Line ("================================================================================");
+   New_Line;
+
+   -- 1. Initialisation
+   Put_Line ("[1] INITIALIZATION");
+   State := (others => <>);
+   Initialize_Banking_System (State);
+   Put_Line ("   ✅ System initialized.");
+
+   -- 2. Création de comptes
+   Put_Line ("[2] ACCOUNT CREATION");
+   Acc1 := Create_Account (State, 1, COURANT, 1_000_000);
+   Acc2 := Create_Account (State, 2, EPARGNE, 500_000);
+   Put_Line ("   → Account 1 (Courant) : ID " & Integer'Image (Acc1) & " | Balance : 1 000 000");
+   Put_Line ("   → Account 2 (Epargne) : ID " & Integer'Image (Acc2) & " | Balance : 500 000");
+
+   -- 3. API Tests
+   Put_Line ("[3] API TESTS");
+   Put_Line ("   → " & API (State, "depose", "1 100000"));
+   Put_Line ("   → " & API (State, "retra", "1 50000"));
+   Put_Line ("   → " & API (State, "transfer", "1 2 25000"));
+   Put_Line ("   → " & API (State, "interets", "2"));
+   Put_Line ("   → " & API (State, "frais", "1"));
+
+   -- 4. System Report
+   Put_Line ("[4] SYSTEM REPORT");
+   Generate_System_Report (State, Response);
+   Put_Line (Response);
+
+   -- 5. Transaction History
+   Put_Line ("[5] TRANSACTION HISTORY");
+   Generate_Transaction_History (State, Acc1, Response);
+   Put_Line (Response);
+
+   -- 6. Account Statement
+   Put_Line ("[6] ACCOUNT STATEMENT");
+   Generate_Account_Statement (State, Acc1, Response);
+   Put_Line (Response);
+
+   -- 7. Integrity Check
+   Put_Line ("[7] INTEGRITY CHECK");
+   if Verify_System_Integrity (State) then
+      Put_Line ("   ✅ System integrity verified");
+   else
+      Put_Line ("   ❌ System integrity compromised");
+   end if;
+
+   -- 8. Rollback
+   Put_Line ("[8] ROLLBACK TRANSACTIONNEL");
+   Transactional_Rollback (State, State.Last_Transaction_ID);
+   Put_Line ("   → Rollback executed. Count : " & Integer'Image (State.Rollback_Count));
+
+   Put_Line ("================================================================================");
+   Put_Line ("🏦 V3 BANKING ULTIMATE — TEST COMPLETED");
+   Put_Line ("================================================================================");
+end Test_Banking_Ultimate;
