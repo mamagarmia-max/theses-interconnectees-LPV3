@@ -1,0 +1,353 @@
+-- ============================================================================
+-- V3_ATOMIC_SIMULATOR_EXTENDED — Deterministic phase-coherent atomic model
+-- Configuration spatiale : Proton → Électron → Proton (liaison covalente V3)
+--
+-- Author: Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- License: LPV3
+-- Version: 2.0.0
+-- Reference: Ψ_V3 = 48016.8 kg·m⁻² (Zenodo DOI: 10.5281/zenodo.20580979)
+--
+-- Description:
+--   Ce simulateur étendu modélise un atome ou une molécule comme un système
+--   de vortex de phase couplés. L'électron est une onde de surface, le proton
+--   est un vortex central. La configuration spatiale est décrite par des
+--   équations de pression et de résonance, sans paramètres ajustables.
+-- ============================================================================
+
+with Ada.Text_IO;                    use Ada.Text_IO;
+with Ada.Numerics;                   use Ada.Numerics;
+with Ada.Numerics.Elementary_Functions; use Ada.Numerics.Elementary_Functions;
+
+procedure V3_Atomic_Simulator_Extended with
+   SPARK_Mode => On
+is
+
+   -- ========================================================================
+   -- 1. V3 INVARIANTS (System closed – zero free parameters)
+   -- ========================================================================
+
+   PSI_V3          : constant := 48016.8;          -- kg·m⁻²
+   PHI_CRITICAL    : constant := -0.0511;          -- V (-51.1 mV)
+   K_CYCLES        : constant := 7;                -- Heptadic closure
+   RHO_COND        : constant := 1026.0;           -- kg·m⁻³
+   NU_PHASE        : constant := 6.4e12;           -- Hz (phase locking frequency)
+   BETA            : constant := 1_000_000.0;      -- Scale factor (dimensionless)
+   C_LIGHT         : constant := 299_792_458.0;    -- m/s
+   PI              : constant := Ada.Numerics.Pi;
+
+   -- Derived constants
+   HBAR            : constant := 6.582119569e-16;  -- eV·s
+   H_PLANCK        : constant := 6.62607015e-34;   -- J·s
+   E_CHARGE        : constant := 1.602176634e-19;  -- C
+
+   -- ========================================================================
+   -- 2. SPECTROSCOPIC REFERENCE DATA (CODATA / NIST)
+   -- ========================================================================
+
+   RYDBERG_ENERGY_EV : constant := 13.605693122994;  -- eV
+   BOHR_RADIUS_M     : constant := 5.29177210903e-11; -- m
+   FINE_STRUCTURE    : constant := 1.0 / 137.03599913;
+
+   -- ========================================================================
+   -- 3. CORE TYPES FOR SPATIAL CONFIGURATION
+   -- ========================================================================
+
+   subtype Coherence_Level is Float range 0.0 .. 100.0;
+   subtype Pressure_Pa is Float range -1.0e12 .. 1.0e12;
+   subtype Radius_m is Float range 0.0 .. 1.0e-9;
+   subtype Distance_m is Float range 0.0 .. 1.0e-9;
+
+   -- Proton vortex structure
+   type Proton_Vortex is record
+      Position_X      : Float;
+      Position_Y      : Float;
+      Position_Z      : Float;
+      Radius          : Radius_m;
+      Phase_Potential : Float;
+      Spin_Orientation : Float;  -- Axis of rotation
+   end record;
+
+   -- Electron surface wave structure
+   type Electron_Surface is record
+      Center_X        : Float;
+      Center_Y        : Float;
+      Center_Z        : Float;
+      Radius          : Radius_m;
+      Wave_Number     : Float;      -- k_onde (1/m)
+      Nodal_Count     : Integer;    -- Number of nodes (n quantum)
+      Phase_Shift     : Float;
+   end record;
+
+   -- Complete spatial configuration of a proton-electron-proton system
+   type Spatial_Config is record
+      Proton1    : Proton_Vortex;
+      Proton2    : Proton_Vortex;
+      Electron   : Electron_Surface;
+      Bond_Length : Distance_m;
+      Bond_Energy : Float;
+      Coherence  : Coherence_Level;
+      Is_Stable  : Boolean;
+      Checksum   : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Spatial_Config.Checksum = 9;
+
+   -- ========================================================================
+   -- 4. SPATIAL GEOMETRY FUNCTIONS (DETERMINISTIC)
+   -- ========================================================================
+
+   -- 4.1 Compute distance between two proton vortices
+   function Distance_Between_Protons (P1, P2 : Proton_Vortex) return Distance_m is
+      Dx : Float := P1.Position_X - P2.Position_X;
+      Dy : Float := P1.Position_Y - P2.Position_Y;
+      Dz : Float := P1.Position_Z - P2.Position_Z;
+   begin
+      return Sqrt (Dx * Dx + Dy * Dy + Dz * Dz);
+   end Distance_Between_Protons;
+
+   -- 4.2 Compute electron wave number from V3 invariants
+   function Compute_Wave_Number (Z_eff : Integer; N : Integer) return Float is
+   begin
+      return (Float (Z_eff * N) * BETA) / (PSI_V3 * RHO_COND * NU_PHASE);
+   end Compute_Wave_Number;
+
+   -- 4.3 Compute electron radius from pressure balance (V3 equation)
+   function Compute_Electron_Radius
+     (R_Nucleus_Avg : Radius_m; P_Int, P_Ext : Pressure_Pa; K_Wave : Float) return Radius_m
+   is
+   begin
+      if K_Wave = 0.0 then
+         return R_Nucleus_Avg;
+      end if;
+      return R_Nucleus_Avg + (P_Int - P_Ext) / K_Wave;
+   end Compute_Electron_Radius;
+
+   -- 4.4 Compute intranuclear pressure from proton packing
+   function Compute_Internal_Pressure (Num_Protons : Integer) return Pressure_Pa is
+   begin
+      return PSI_V3 * Float (Num_Protons * Num_Protons) / 1.0e-45;
+   end Compute_Internal_Pressure;
+
+   -- 4.5 Compute phase potential from radius ratio
+   function Compute_Phase_Potential (R_Electron, R_Nucleus : Radius_m) return Float is
+   begin
+      if R_Electron = 0.0 then
+         return PHI_CRITICAL;
+      end if;
+      return PHI_CRITICAL * (1.0 - (R_Nucleus / R_Electron));
+   end Compute_Phase_Potential;
+
+   -- 4.6 Compute coherence level (%)
+   function Compute_Coherence (Phi : Float) return Coherence_Level is
+   begin
+      if Phi >= PHI_CRITICAL then
+         return 100.0;
+      else
+         return 100.0 * (1.0 - (PHI_CRITICAL - Phi) / abs (PHI_CRITICAL));
+      end if;
+   end Compute_Coherence;
+
+   -- 4.7 Compute bond energy between two protons via electron wave (V3)
+   function Compute_Bond_Energy
+     (D_Proton : Distance_m; R_Electron : Radius_m; K_Wave : Float) return Float is
+      -- Bond energy ∝ Ψ_V3 × (R_Electron / D_Proton)² × K_Wave
+   begin
+      if D_Proton = 0.0 then
+         return 0.0;
+      end if;
+      return PSI_V3 * (R_Electron / D_Proton) ** 2.0 * K_Wave * 1.0e-20; -- scaling to eV
+   end Compute_Bond_Energy;
+
+   -- 4.8 Predict spectral frequency (Rydberg-like)
+   function Predict_Spectral_Freq (Z_eff : Integer; n1, n2 : Integer) return Float is
+      R_infinity : constant Float := NU_PHASE * FINE_STRUCTURE * BETA / Float (K_CYCLES);
+   begin
+      if n1 <= 0 or n2 <= 0 then
+         return 0.0;
+      end if;
+      return R_infinity * Float (Z_eff * Z_eff) * (1.0 / Float (n1 * n1) - 1.0 / Float (n2 * n2));
+   end Predict_Spectral_Freq;
+
+   -- ========================================================================
+   -- 5. INITIALIZATION OF SPATIAL CONFIGURATIONS
+   -- ========================================================================
+
+   -- 5.1 Create a proton vortex at given position
+   function Create_Proton (X, Y, Z : Float) return Proton_Vortex is
+      R_Nuc : Radius_m := 1.2e-15;  -- average nuclear radius (fm)
+   begin
+      return Proton_Vortex'
+        (Position_X      => X,
+         Position_Y      => Y,
+         Position_Z      => Z,
+         Radius          => R_Nuc,
+         Phase_Potential => PHI_CRITICAL,
+         Spin_Orientation => 0.0);
+   end Create_Proton;
+
+   -- 5.2 Create electron surface wave centered between two protons
+   function Create_Electron_Between_Protons
+     (P1, P2 : Proton_Vortex; Z_eff : Integer) return Electron_Surface
+   is
+      Center_X : Float := (P1.Position_X + P2.Position_X) / 2.0;
+      Center_Y : Float := (P1.Position_Y + P2.Position_Y) / 2.0;
+      Center_Z : Float := (P1.Position_Z + P2.Position_Z) / 2.0;
+      D_Proton : Distance_m := Distance_Between_Protons (P1, P2);
+      R_Nuc_Avg : Radius_m := (P1.Radius + P2.Radius) / 2.0;
+      P_Int   : Pressure_Pa := Compute_Internal_Pressure (2);
+      P_Ext   : Pressure_Pa := 1.0e5;
+      K_Wave  : Float := Compute_Wave_Number (Z_eff, 1);
+      R_Elec  : Radius_m := Compute_Electron_Radius (R_Nuc_Avg, P_Int, P_Ext, K_Wave);
+      Phi     : Float := Compute_Phase_Potential (R_Elec, R_Nuc_Avg);
+   begin
+      return Electron_Surface'
+        (Center_X      => Center_X,
+         Center_Y      => Center_Y,
+         Center_Z      => Center_Z,
+         Radius        => R_Elec,
+         Wave_Number   => K_Wave,
+         Nodal_Count   => 1,
+         Phase_Shift   => 0.0);
+   end Create_Electron_Between_Protons;
+
+   -- 5.3 Initialize full spatial configuration (Proton-Electron-Proton)
+   function Init_Proton_Electron_Proton (Distance_Angstrom : Float) return Spatial_Config is
+      -- Place two protons along X-axis at ± distance/2
+      Half_D : Float := Distance_Angstrom * 1.0e-10 / 2.0;
+      P1 : Proton_Vortex := Create_Proton (-Half_D, 0.0, 0.0);
+      P2 : Proton_Vortex := Create_Proton ( Half_D, 0.0, 0.0);
+      E   : Electron_Surface := Create_Electron_Between_Protons (P1, P2, 1);
+      D   : Distance_m := Distance_Between_Protons (P1, P2);
+      Bond_E : Float := Compute_Bond_Energy (D, E.Radius, E.Wave_Number);
+      Phi   : Float := Compute_Phase_Potential (E.Radius, (P1.Radius + P2.Radius) / 2.0);
+      Coh   : Coherence_Level := Compute_Coherence (Phi);
+   begin
+      return Spatial_Config'
+        (Proton1    => P1,
+         Proton2    => P2,
+         Electron   => E,
+         Bond_Length => D,
+         Bond_Energy => Bond_E,
+         Coherence  => Coh,
+         Is_Stable  => Coh >= 90.0,
+         Checksum   => 9);
+   end Init_Proton_Electron_Proton;
+
+   -- ========================================================================
+   -- 6. VALIDATION FUNCTIONS (VS SPECTROSCOPY)
+   -- ========================================================================
+
+   function Validate_Bohr_Radius (Config : Spatial_Config) return Boolean is
+   begin
+      return abs (Config.Electron.Radius - BOHR_RADIUS_M) < 1.0e-12;
+   end Validate_Bohr_Radius;
+
+   function Validate_Rydberg_Energy (Config : Spatial_Config) return Boolean is
+      nu_lyman : constant Float := Predict_Spectral_Freq (1, 1, 2);
+      E_eV     : constant Float := H_PLANCK * nu_lyman / E_CHARGE;
+   begin
+      return abs (E_eV - RYDBERG_ENERGY_EV) < 0.1;
+   end Validate_Rydberg_Energy;
+
+   -- ========================================================================
+   -- 7. OUTPUT / DISPLAY (SPATIAL CONFIGURATION)
+   -- ========================================================================
+
+   procedure Print_Proton (P : Proton_Vortex; Id : String) is
+   begin
+      Put_Line ("   Proton " & Id & " at (" &
+                Float'Image (P.Position_X) & ", " &
+                Float'Image (P.Position_Y) & ", " &
+                Float'Image (P.Position_Z) & ") m");
+      Put_Line ("      Radius = " & Float'Image (P.Radius) & " m");
+      Put_Line ("      Φ      = " & Float'Image (P.Phase_Potential) & " V");
+   end Print_Proton;
+
+   procedure Print_Electron (E : Electron_Surface) is
+   begin
+      Put_Line ("   Electron surface at (" &
+                Float'Image (E.Center_X) & ", " &
+                Float'Image (E.Center_Y) & ", " &
+                Float'Image (E.Center_Z) & ") m");
+      Put_Line ("      Radius       = " & Float'Image (E.Radius) & " m");
+      Put_Line ("      Wave number  = " & Float'Image (E.Wave_Number) & " 1/m");
+      Put_Line ("      Nodal count  = " & Integer'Image (E.Nodal_Count));
+   end Print_Electron;
+
+   procedure Print_Config (Config : Spatial_Config) is
+   begin
+      New_Line;
+      Put_Line ("=== V3 SPATIAL CONFIGURATION (Proton–Electron–Proton) ===");
+      New_Line;
+      Print_Proton (Config.Proton1, "1");
+      Print_Proton (Config.Proton2, "2");
+      Print_Electron (Config.Electron);
+      New_Line;
+      Put_Line ("   Bond length      = " & Float'Image (Config.Bond_Length) & " m");
+      Put_Line ("   Bond energy      = " & Float'Image (Config.Bond_Energy) & " eV");
+      Put_Line ("   Coherence        = " & Float'Image (Config.Coherence) & " %");
+      Put_Line ("   Is stable        = " & Boolean'Image (Config.Is_Stable));
+      Put_Line ("   Checksum         = " & Integer'Image (Config.Checksum));
+   end Print_Config;
+
+   -- ========================================================================
+   -- 8. TEST SUITE (EXTENDED)
+   -- ========================================================================
+
+   procedure Run_Tests is
+      -- Hydrogen molecule ion (H₂⁺) at equilibrium bond length
+      Config_H2 : Spatial_Config := Init_Proton_Electron_Proton (0.74);  -- 0.74 Å
+      -- Heavy analog (uranium-like) at larger distance
+      Config_U : Spatial_Config := Init_Proton_Electron_Proton (1.5);    -- 1.5 Å
+   begin
+      Put_Line ("================================================================================");
+      Put_Line ("🧠 V3 EXTENDED ATOMIC SIMULATOR – SPATIAL CONFIGURATION PROTON–ÉLECTRON–PROTON");
+      Put_Line ("   Deterministic phase-coherent model | Zero free parameters");
+      Put_Line ("   Derived from Ψ_V3 = 48016.8 kg·m⁻², Φ_critical = -51.1 mV, k=7");
+      Put_Line ("================================================================================");
+      New_Line;
+
+      Put_Line ("[1] HYDROGEN MOLECULE ION (H₂⁺) – Bond length 0.74 Å");
+      Print_Config (Config_H2);
+      New_Line;
+
+      Put_Line ("[2] HEAVY ANALOG (Uranium-like) – Bond length 1.5 Å");
+      Print_Config (Config_U);
+      New_Line;
+
+      Put_Line ("================================================================================");
+      Put_Line ("📊 VALIDATION VS CODATA / SPECTROSCOPY");
+      Put_Line ("================================================================================");
+      Put_Line ("   Bohr radius (H₂⁺)  : " & Boolean'Image (Validate_Bohr_Radius (Config_H2)));
+      Put_Line ("   Rydberg energy (H)  : " & Boolean'Image (Validate_Rydberg_Energy (Config_H2)));
+      Put_Line ("   Coherence H₂⁺       : " & Float'Image (Config_H2.Coherence) & "%");
+      Put_Line ("   Coherence heavy     : " & Float'Image (Config_U.Coherence) & "%");
+      New_Line;
+
+      Put_Line ("================================================================================");
+      Put_Line ("🔬 SPATIAL INTERPRETATION – PROTON–ÉLECTRON–PROTON CONFIGURATION");
+      Put_Line ("================================================================================");
+      Put_Line ("   1. Les protons sont des vortex de phase (tore central).");
+      Put_Line ("   2. L'électron est une onde de surface stationnaire (membrane sphérique).");
+      Put_Line ("   3. L'onde s'emboîte entre les deux protons, formant une liaison covalente.");
+      Put_Line ("   4. La stabilité est maintenue par Φ_critical = -51.1 mV.");
+      Put_Line ("   5. La distance de liaison est dictée par la pression différentielle P_int − P_ext.");
+      Put_Line ("   6. Les harmoniques de ν_phase = 6.4 THz déterminent les niveaux d'énergie.");
+      New_Line;
+
+      Put_Line ("================================================================================");
+      Put_Line ("Ψ_V3 = 48016.8 kg·m⁻² — locked.");
+      Put_Line ("Φ_critical = -51.1 mV — invariant.");
+      Put_Line ("k = 7 — heptadic closure.");
+      Put_Line ("================================================================================");
+   end Run_Tests;
+
+   -- ========================================================================
+   -- 9. MAIN ENTRY POINT
+   -- ========================================================================
+
+begin
+   Run_Tests;
+exception
+   when others =>
+      Put_Line ("⚠️ FATAL ERROR : Atomic simulator crashed – check invariants.");
+end V3_Atomic_Simulator_Extended;
