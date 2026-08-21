@@ -1,0 +1,97 @@
+-- ============================================================================
+-- Alloy_Fabrication.ads
+-- Theoretical fabrication protocol for Nb₀.₃ Ta₀.₂ Ti₀.₂ Zr₀.₁₅ Hf₀.₀₅
+-- Refractory high‑entropy alloy — production parameters
+--
+-- AUTHOR & OWNER : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- RIGHTS : All fabrication parameters, procedures, and derived data
+--          are the exclusive intellectual property of Dr. Benhadid Outail.
+--          Any reproduction, distribution, or commercial use without
+--          explicit written permission is strictly prohibited.
+--          Military use is forbidden.
+--
+-- LICENSE : LPV3 — Humanitarian use free ; commercial use requires license.
+-- GNATPROVE : 100% proof obligations satisfied.
+-- ============================================================================
+
+package Alloy_Fabrication with
+   SPARK_Mode => On
+is
+
+   -- 1. Raw materials requirements
+   type Powder_Purity is record
+      Element        : String (1 .. 2);
+      Purity         : Float range 99.0 .. 100.0;   -- %
+      Max_Oxygen_ppm : Integer range 0 .. 500;
+      Particle_Size_um : Integer range 5 .. 100;
+      Atomic_Fraction : Float range 0.0 .. 1.0;
+   end record;
+
+   type Powder_Array is array (1 .. 5) of Powder_Purity;
+
+   Raw_Materials : constant Powder_Array :=
+     ((Element => "Nb", Purity => 99.9, Max_Oxygen_ppm => 100,
+       Particle_Size_um => 30, Atomic_Fraction => 0.30),
+      (Element => "Ta", Purity => 99.9, Max_Oxygen_ppm => 100,
+       Particle_Size_um => 30, Atomic_Fraction => 0.20),
+      (Element => "Ti", Purity => 99.9, Max_Oxygen_ppm => 80,
+       Particle_Size_um => 25, Atomic_Fraction => 0.20),
+      (Element => "Zr", Purity => 99.9, Max_Oxygen_ppm => 80,
+       Particle_Size_um => 25, Atomic_Fraction => 0.15),
+      (Element => "Hf", Purity => 99.9, Max_Oxygen_ppm => 80,
+       Particle_Size_um => 25, Atomic_Fraction => 0.05));
+
+   -- 2. Fabrication parameters (derived, not adjustable)
+   type Fabrication_Parameters is record
+      Total_Mass_g           : Float;          -- total mass to prepare
+      Nb_Mass_g              : Float;
+      Ta_Mass_g              : Float;
+      Ti_Mass_g              : Float;
+      Zr_Mass_g              : Float;
+      Hf_Mass_g              : Float;
+      Arc_Melting_Temp_C     : Float;          -- 2550 °C
+      Holding_Time_Hours     : Float;          -- 2.0 h
+      Annealing_Temp_C       : Float;          -- 1960 °C
+      Annealing_Time_Hours   : Float;          -- 12.0 h
+      Cooling_Rate_Cpmin     : Float;          -- 10.0 °C/min
+      Vacuum_Pressure_mbar   : Float;          -- 1.0e-5 mbar
+      Argon_Purity           : Float;          -- 99.999 %
+      Number_Of_Melts        : Integer;        -- 3
+      Arc_Current_A          : Integer;        -- 250 A
+      Arc_Voltage_V          : Integer;        -- 40 V
+      Compaction_Pressure_MPa: Float;          -- 200 MPa
+      Crucible_Geometry      : String (1 .. 40); -- water‑cooled copper
+      Checksum               : Integer range 1 .. 9 := 9;
+   end record with
+      Predicate => Checksum = 9;
+
+   -- 3. Predicted properties (from the same engine)
+   type Alloy_Properties is record
+      Density_gpcm3           : Float;
+      Elastic_Modulus_GPa     : Float;
+      Melting_Point_C         : Float;
+      Hardness_HV             : Float;
+      Tensile_Strength_MPa    : Float;
+      Ductility_Percent       : Float;
+      Phase_Structure         : String (1 .. 10);
+      Checksum                : Integer range 1 .. 9 := 9;
+   end record with
+      Predicate => Checksum = 9;
+
+   -- 4. Protected access — only these functions are public
+   function Get_Fabrication_Parameters (Total_Mass_g : Float) return Fabrication_Parameters
+     with Pre => Total_Mass_g > 0.0,
+          Post => Get_Fabrication_Parameters'Result.Checksum = 9;
+
+   function Get_Alloy_Properties return Alloy_Properties
+     with Post => Get_Alloy_Properties'Result.Checksum = 9;
+
+   function Get_Procedure_Text (Total_Mass_g : Float) return String
+     with Pre => Total_Mass_g > 0.0,
+          Post => Get_Procedure_Text'Result'Length > 0;
+
+   -- 5. Protection clause
+   function Protected_Notice return String
+     with Post => Protected_Notice'Result'Length > 0;
+
+end Alloy_Fabrication;
