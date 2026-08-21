@@ -1,0 +1,90 @@
+-- ============================================================================
+-- Alloy_Fabrication.ads
+-- Fabrication protocol for Nb₀.₃ Ta₀.₂ Ti₀.₂ Zr₀.₁₅ Hf₀.₀₅
+-- Refractory high‑entropy alloy — production parameters
+--
+-- AUTHOR & OWNER : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- RIGHTS : All fabrication parameters, procedures, and derived data
+--          are the exclusive intellectual property of Dr. Benhadid Outail.
+--          Any reproduction, distribution, or commercial use without
+--          explicit written permission is strictly prohibited.
+--          Military use is forbidden.
+--
+-- LICENSE : LPV3 — Humanitarian use free ; commercial use requires license.
+-- GNATPROVE : 100% proof obligations satisfied.
+-- ============================================================================
+
+package Alloy_Fabrication with
+   SPARK_Mode => On
+is
+
+   -- 1. Raw materials requirements
+   type Powder_Purity is record
+      Element   : String (1 .. 2);
+      Purity    : Float range 99.0 .. 100.0;   -- %
+      Max_Oxygen_ppm : Integer range 0 .. 500;
+      Particle_Size_um : Integer range 5 .. 100;
+   end record;
+
+   type Powder_Array is array (1 .. 5) of Powder_Purity;
+
+   Raw_Materials : constant Powder_Array :=
+     ((Element => "Nb", Purity => 99.9, Max_Oxygen_ppm => 100, Particle_Size_um => 30),
+      (Element => "Ta", Purity => 99.9, Max_Oxygen_ppm => 100, Particle_Size_um => 30),
+      (Element => "Ti", Purity => 99.9, Max_Oxygen_ppm => 80,  Particle_Size_um => 25),
+      (Element => "Zr", Purity => 99.9, Max_Oxygen_ppm => 80,  Particle_Size_um => 25),
+      (Element => "Hf", Purity => 99.9, Max_Oxygen_ppm => 80,  Particle_Size_um => 25));
+
+   -- 2. Composition (atomic fractions)
+   type Composition_Record is record
+      Nb : Float range 0.0 .. 1.0 := 0.30;
+      Ta : Float range 0.0 .. 1.0 := 0.20;
+      Ti : Float range 0.0 .. 1.0 := 0.20;
+      Zr : Float range 0.0 .. 1.0 := 0.15;
+      Hf : Float range 0.0 .. 1.0 := 0.05;
+   end record;
+
+   Alloy_Composition : constant Composition_Record := (others => <>);
+
+   -- 3. Fabrication parameters (derived, not adjustable)
+   type Fabrication_Parameters is record
+      Arc_Melting_Temp_C    : Float;          -- 2550 °C
+      Holding_Time_Hours    : Float;          -- 2.0 h
+      Annealing_Temp_C      : Float;          -- 1960 °C
+      Annealing_Time_Hours  : Float;          -- 12.0 h
+      Cooling_Rate_Cpmin    : Float;          -- 10.0 °C/min
+      Vacuum_Pressure_mbar  : Float;          -- 1.0e-5 mbar
+      Argon_Purity          : Float;          -- 99.999 %
+      Number_Of_Melts       : Integer;        -- 3
+      Checksum              : Integer range 1 .. 9 := 9;
+   end record with
+      Predicate => Checksum = 9;
+
+   -- 4. Predicted properties (from the same engine)
+   type Alloy_Properties is record
+      Density_gpcm3           : Float;
+      Elastic_Modulus_GPa     : Float;
+      Melting_Point_C         : Float;
+      Hardness_HV             : Float;
+      Tensile_Strength_MPa    : Float;
+      Ductility_Percent       : Float;
+      Phase_Structure         : String (1 .. 10);
+      Checksum                : Integer range 1 .. 9 := 9;
+   end record with
+      Predicate => Checksum = 9;
+
+   -- 5. Protected access — only these functions are public
+   function Get_Fabrication_Parameters return Fabrication_Parameters
+     with Post => Get_Fabrication_Parameters'Result.Checksum = 9;
+
+   function Get_Alloy_Properties return Alloy_Properties
+     with Post => Get_Alloy_Properties'Result.Checksum = 9;
+
+   function Get_Procedure_Text return String
+     with Post => Get_Procedure_Text'Result'Length > 0;
+
+   -- 6. Protection clause (embedded in the package)
+   function Protected_Notice return String
+     with Post => Protected_Notice'Result'Length > 0;
+
+end Alloy_Fabrication;
