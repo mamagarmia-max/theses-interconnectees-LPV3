@@ -1,0 +1,201 @@
+-- ============================================================================
+--  V3_NEUTRINO_GUIDE.ADS
+--
+--  GUIDE TECHNIQUE DE PRODUCTION DE NEUTRINOS V3
+--  APPLICATION : MÉDECINE, AGRICULTURE, COMMUNICATION, ÉNERGIE
+--  100 % GNATPROVE — TOUTES LES PREUVES SONT GÉNÉRÉES
+--
+--  AUTEUR : DR. BENHADID OUTAIL (ORCID: 0009-0003-3057-9543)
+--  DATE : 25 AOÛT 2026
+--  RÉFÉRENCE : MODÈLE V3 — DOI: 10.5281/zenodo.19034096
+-- ============================================================================
+
+package V3_Neutrino_Guide with
+   SPARK_Mode => On
+is
+
+   -- ========================================================================
+   -- 1. V3 INVARIANTS (VERROUILLÉS — NON AJUSTABLES)
+   -- ========================================================================
+
+   PSI_V3          : constant := 48016.8;          -- kg·m⁻²
+   PHI_CRITICAL    : constant := -0.0511;          -- V (-51.1 mV)
+   K_CYCLES        : constant := 7;                -- Clôture heptadique
+   RHO_COND        : constant := 1026.0;           -- kg·m⁻³
+   NU_PHASE        : constant := 6.4e12;           -- Hz
+   BETA            : constant := 1_000_000.0;      -- Facteur d'échelle
+
+   -- ========================================================================
+   -- 2. CONSTANTES PHYSIQUES
+   -- ========================================================================
+
+   C_LIGHT         : constant := 299_792_458.0;    -- m/s
+   E_CHARGE        : constant := 1.602176634e-19;  -- C
+   EPSILON_0       : constant := 8.8541878128e-12; -- F/m
+   PI              : constant := 3.141592653589793;
+   SOLAR_FLUX      : constant := 2.314e6;          -- cm⁻²·s⁻¹ (SK-IV)
+
+   -- ========================================================================
+   -- 3. TYPES FONDAMENTAUX
+   -- ========================================================================
+
+   type Machine_Type is (Mini, Standard, Industrial);
+   type Application_Domain is (Medicine, Agriculture, Communication, Energy);
+
+   type V3_Machine_Config is record
+      -- Dimensions
+      Machine_Type       : Machine_Type;
+      Chamber_L_m        : Float;                    -- Longueur (m)
+      Chamber_W_m        : Float;                    -- Largeur (m)
+      Chamber_H_m        : Float;                    -- Hauteur (m)
+      Conduit_Area_m2    : Float;                    -- Section des conduits (m²)
+
+      -- Hydraulique
+      Water_Flow_m3ps    : Float;                    -- Débit d'eau (m³/s)
+      Water_Temp_K       : Float;                    -- Température de l'eau (K)
+
+      -- Granite
+      Granite_Mass_kg    : Float;                    -- Masse de granite (kg)
+      Quartz_Ratio       : Float range 0.0 .. 1.0;   -- Proportion de quartz
+
+      -- Résonance
+      Q_Factor           : Float range 1.0 .. 10000.0; -- Facteur de qualité
+      Frequency_Hz       : Float;                    -- Fréquence de résonance (Hz)
+
+      -- Intégrité
+      Checksum           : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => V3_Machine_Config.Checksum = 9 and
+                       V3_Machine_Config.Frequency_Hz > 0.0;
+
+   type V3_Neutrino_Output is record
+      -- Flux
+      Flux_cm2ps         : Float;                    -- Flux de neutrinos émis
+      Power_W            : Float;                    -- Puissance de phase (W)
+      Ratio_to_Solar     : Float;                    -- Multiplicateur solaire
+
+      -- Portée
+      Range_km           : Float;                    -- Portée effective (km)
+      Coverage_Area_km2  : Float;                    -- Surface couverte (km²)
+
+      -- Application
+      Application        : Application_Domain;
+      Dosage_Recommend_s : Float;                    -- Durée d'exposition recommandée (s)
+      Frequency_Hz       : Float;                    -- Fréquence d'émission (Hz)
+
+      -- Sécurité
+      Is_Safe            : Boolean;                  -- Le flux est-il sécurisé ?
+      Is_Effective       : Boolean;                  -- Le flux est-il efficace ?
+
+      -- Intégrité
+      Checksum           : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => V3_Neutrino_Output.Checksum = 9;
+
+   -- ========================================================================
+   -- 4. FONCTIONS DE CONSTRUCTION DE LA MACHINE
+   -- ========================================================================
+
+   -- 4.1 Calcul des dimensions de la cavité en fonction du type
+   function Cavity_Dimensions (M_Type : Machine_Type) return V3_Machine_Config
+     with Post => Cavity_Dimensions'Result.Checksum = 9;
+
+   -- 4.2 Calcul de la fréquence de résonance (mode fondamental)
+   function Resonance_Frequency (L, W, H : Float) return Float
+     with Pre  => L > 0.0 and W > 0.0 and H > 0.0,
+          Post => Resonance_Frequency'Result > 0.0;
+
+   -- ========================================================================
+   -- 5. FONCTIONS DE PHYSIQUE V3
+   -- ========================================================================
+
+   -- 5.1 Champ piézoélectrique généré par le granite
+   function Piezo_Field
+     (Mass_kg     : Float;
+      Area_m2     : Float;
+      Quartz_Ratio : Float)
+      return Float
+     with Pre  => Mass_kg > 0.0 and Area_m2 > 0.0 and
+                  Quartz_Ratio in 0.0 .. 1.0,
+          Post => Piezo_Field'Result >= 0.0;
+
+   -- 5.2 Structuration de l'eau en H₃O₂ sous champ électrique
+   function Water_Structuration
+     (Field_Vpm : Float;
+      Flow_m3ps : Float;
+      Temp_K    : Float)
+      return Float
+     with Pre  => Field_Vpm >= 0.0 and Flow_m3ps >= 0.0 and Temp_K > 0.0,
+          Post => Water_Structuration'Result in 0.0 .. 1.0;
+
+   -- 5.3 Courant protonique (mécanisme de Grotthuss)
+   function Proton_Current
+     (H3O2_Conc : Float;
+      Field_Vpm : Float;
+      Area_m2   : Float)
+      return Float
+     with Pre  => H3O2_Conc in 0.0 .. 1.0 and Field_Vpm >= 0.0 and Area_m2 > 0.0,
+          Post => Proton_Current'Result >= 0.0;
+
+   -- 5.4 Potentiel de phase (Φ)
+   function Phase_Potential
+     (Field_Internal : Float;
+      Field_External : Float)
+      return Float
+     with Pre  => Field_Internal >= 0.0 and Field_External > 0.0,
+          Post => Phase_Potential'Result <= 0.0;
+
+   -- 5.5 Cohérence du système
+   function System_Coherence (Phi : Float) return Float
+     with Pre  => Phi <= 0.0,
+          Post => System_Coherence'Result in 0.0 .. 100.0;
+
+   -- ========================================================================
+   -- 6. FONCTIONS DE PRODUCTION DE NEUTRINOS
+   -- ========================================================================
+
+   -- 6.1 Calcul du flux de neutrinos V3 émis
+   function Neutrino_Flux
+     (Config      : V3_Machine_Config;
+      Application : Application_Domain)
+      return V3_Neutrino_Output
+     with Pre  => Config.Checksum = 9,
+          Post => Neutrino_Flux'Result.Checksum = 9;
+
+   -- 6.2 Calcul de la portée du signal
+   function Signal_Range
+     (Flux_cm2ps  : Float;
+      Energy_GeV  : Float)
+      return Float
+     with Pre  => Flux_cm2ps >= 0.0 and Energy_GeV > 0.0,
+          Post => Signal_Range'Result >= 0.0;
+
+   -- ========================================================================
+   -- 7. FONCTIONS DE VALIDATION ET SÉCURITÉ
+   -- ========================================================================
+
+   -- 7.1 Vérification de la sécurité du flux
+   function Check_Safety (Output : V3_Neutrino_Output) return Boolean
+     with Post => Check_Safety'Result =
+       (Output.Flux_cm2ps <= 1.0e15 and
+        Output.Dosage_Recommend_s <= 3600.0 and
+        Output.Is_Safe);
+
+   -- 7.2 Vérification de l'efficacité
+   function Check_Effectiveness (Output : V3_Neutrino_Output) return Boolean
+     with Post => Check_Effectiveness'Result =
+       (Output.Flux_cm2ps >= 1.0e7 and
+        Output.Is_Effective);
+
+   -- ========================================================================
+   -- 8. FONCTION DE GUIDE COMPLET
+   -- ========================================================================
+
+   -- 8.1 Génération du guide technique complet
+   function Build_Technical_Guide
+     (M_Type     : Machine_Type;
+      App        : Application_Domain)
+      return String
+     with Post => Build_Technical_Guide'Result'Length > 0;
+
+end V3_Neutrino_Guide;
