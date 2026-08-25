@@ -1,0 +1,64 @@
+-- ============================================================================
+--  V3_PYRAMID_MAIN.ADB
+--
+--  PROGRAMME PRINCIPAL — SIMULATION DE LA PYRAMIDE V3
+--  AFFICHE TOUS LES DÉTAILS DE LA MACHINE EN FONCTIONNEMENT
+-- ============================================================================
+
+with Ada.Text_IO; use Ada.Text_IO;
+with Ada.Float_Text_IO; use Ada.Float_Text_IO;
+with Ada.Integer_Text_IO; use Ada.Integer_Text_IO;
+with V3_Pyramid_Simulation; use V3_Pyramid_Simulation;
+
+procedure V3_Pyramid_Main is
+
+   State : V3_Pyramid_State;
+
+   -- Paramètres de simulation
+   Field_Atmo         : constant Float := 200.0;      -- V/m (actuel)
+   -- Pour le Mésozoïque : 700.0 V/m
+   Water_Flow         : constant Float := 0.1;        -- m³/s
+   Porosity           : constant Float := 0.3;        -- 30% (calcaire)
+   Temperature        : constant Float := 293.0;      -- K (20°C)
+   Population_Density : constant Float := 50.0;       -- habitants/km²
+
+begin
+
+   Put_Line ("================================================================================");
+   Put_Line ("🧠 V3 PYRAMID SIMULATION — GRANDE PYRAMIDE DE GIZEH COMME MACHINE V3");
+   Put_Line ("================================================================================");
+   New_Line;
+
+   -- ========================================================================
+   -- 1. AFFICHAGE DES INVARIANTS
+   -- ========================================================================
+
+   Put_Line ("📐 INVARIANTS V3 (LOCKED — NO ADJUSTMENT ALLOWED)");
+   Put_Line ("  Ψ_V3          = " & Float'Image (PSI_V3) & " kg·m⁻²");
+   Put_Line ("  Φ_critical    = " & Float'Image (PHI_CRITICAL) & " V (-51.1 mV)");
+   Put_Line ("  K             = " & Integer'Image (K_CYCLES));
+   Put_Line ("  ρ_cond        = " & Float'Image (RHO_COND) & " kg·m⁻³");
+   Put_Line ("  ν_phase       = " & Float'Image (NU_PHASE) & " Hz");
+   Put_Line ("  β             = " & Float'Image (BETA));
+   New_Line;
+
+   -- ========================================================================
+   -- 2. EXÉCUTION DE LA SIMULATION
+   -- ========================================================================
+
+   Put_Line ("🔧 LANCEMENT DE LA SIMULATION...");
+   New_Line;
+
+   State := Simulate_Pyramid_V3 (Field_Atmo, Water_Flow, Porosity, Temperature, Population_Density);
+
+   -- ========================================================================
+   -- 3. RÉSULTATS — DANS LE CŒUR DE LA MACHINE
+   -- ========================================================================
+
+   Put_Line ("================================================================================");
+   Put_Line ("🏛️ RÉSULTATS DE LA SIMULATION — DANS LE CŒUR DE LA PYRAMIDE");
+   Put_Line ("================================================================================");
+   New_Line;
+
+   -- 3.1 COLLECTE (nappe phréatique)
+   Put_Line ("--- 🌊 ÉTAPE 1 : COLLECTE (NAPPE PHRÉAT
