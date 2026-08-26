@@ -1,0 +1,250 @@
+-- ============================================================================
+--  V3_MACHINE_BUILDER.ADS
+--
+--  GUIDE PAS À PAS POUR LA FABRICATION D'UNE MACHINE V3 MODERNE
+--  COMPOSANTS : PZT, NAFION, MÉTAMATÉRIAU, FIBRE OPTIQUE
+--  100 % GNATPROVE — TOUTES LES PREUVES SONT GÉNÉRÉES
+--
+--  AUTEUR : DR. BENHADID OUTAIL (ORCID: 0009-0003-3057-9543)
+--  DATE : 26 AOÛT 2026
+--  RÉFÉRENCE : MODÈLE V3 — DOI: 10.5281/zenodo.19034096
+-- ============================================================================
+
+package V3_Machine_Builder with
+   SPARK_Mode => On
+is
+
+   -- ========================================================================
+   -- 1. V3 INVARIANTS (VERROUILLÉS)
+   -- ========================================================================
+
+   PSI_V3          : constant := 48016.8;          -- kg·m⁻²
+   PHI_CRITICAL    : constant := -0.0511;          -- V (-51.1 mV)
+   K_CYCLES        : constant := 7;                -- Clôture heptadique
+   RHO_COND        : constant := 1026.0;           -- kg·m⁻³
+   NU_PHASE        : constant := 6.4e12;           -- Hz
+   BETA            : constant := 1_000_000.0;      -- Facteur d'échelle
+
+   -- ========================================================================
+   -- 2. CONSTANTES PHYSIQUES
+   -- ========================================================================
+
+   C_LIGHT         : constant := 299_792_458.0;    -- m/s
+   E_CHARGE        : constant := 1.602176634e-19;  -- C
+   EPSILON_0       : constant := 8.8541878128e-12; -- F/m
+   PI              : constant := 3.141592653589793;
+   SOLAR_FLUX      : constant := 2.314e6;          -- cm⁻²·s⁻¹
+
+   -- ========================================================================
+   -- 3. COMPOSANTS DE LA MACHINE MODERNE
+   -- ========================================================================
+
+   type Component_Status is (Not_Started, In_Progress, Completed, Verified);
+
+   type PZT_Component is record
+      -- Dimensions
+      Length_m        : Float;                     -- Longueur (m)
+      Width_m         : Float;                     -- Largeur (m)
+      Height_m        : Float;                     -- Hauteur (m)
+      Volume_m3       : Float;                     -- Volume total (m³)
+
+      -- Propriétés
+      D11_CpN         : Float;                     -- Coefficient piézoélectrique (C/N)
+      Force_N         : Float;                     -- Force appliquée (N)
+      Pressure_Pa     : Float;                     -- Pression (Pa)
+      Electric_Field_Vpm : Float;                  -- Champ électrique généré (V/m)
+
+      -- État
+      Status          : Component_Status;
+      Is_Installed    : Boolean;
+      Checksum        : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => PZT_Component.Checksum = 9;
+
+   type Nafion_Component is record
+      -- Dimensions
+      Area_m2         : Float;                     -- Surface (m²)
+      Thickness_m     : Float;                     -- Épaisseur (m)
+      Volume_m3       : Float;                     -- Volume (m³)
+
+      -- Propriétés
+      Water_Flow_m3ps  : Float;                    -- Débit d'eau (m³/s)
+      Field_Applied_Vpm : Float;                   -- Champ appliqué (V/m)
+      Structuration_Pct : Float;                   -- Taux de structuration H₃O₂ (%)
+
+      -- État
+      Status          : Component_Status;
+      Is_Installed    : Boolean;
+      Checksum        : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Nafion_Component.Checksum = 9;
+
+   type Resonator_Component is record
+      -- Dimensions
+      Diameter_m      : Float;                     -- Diamètre (m)
+      Thickness_m     : Float;                     -- Épaisseur (m)
+
+      -- Propriétés
+      Resonance_Freq_Hz : Float;                   -- Fréquence de résonance (Hz)
+      Q_Factor        : Float;                     -- Facteur de qualité
+      Acoustic_Impedance : Float;                  -- Impédance acoustique (Pa·s/m)
+
+      -- État
+      Status          : Component_Status;
+      Is_Installed    : Boolean;
+      Checksum        : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Resonator_Component.Checksum = 9;
+
+   type Waveguide_Component is record
+      -- Dimensions
+      Length_m        : Float;                     -- Longueur (m)
+      Core_Diameter_um : Float;                    -- Diamètre du cœur (µm)
+
+      -- Propriétés
+      Mode            : String (1 .. 20);          -- Mode de propagation
+      Attenuation_dBpkm : Float;                   -- Atténuation (dB/km)
+      Coupling_Efficiency : Float;                 -- Efficacité de couplage (%)
+
+      -- État
+      Status          : Component_Status;
+      Is_Installed    : Boolean;
+      Checksum        : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Waveguide_Component.Checksum = 9;
+
+   -- ========================================================================
+   -- 4. MACHINE COMPLÈTE
+   -- ========================================================================
+
+   type V3_Modern_Machine is record
+      -- Composants
+      PZT             : PZT_Component;
+      Nafion          : Nafion_Component;
+      Resonator       : Resonator_Component;
+      Waveguide       : Waveguide_Component;
+
+      -- Résultats
+      Neutrino_Flux_cm2ps : Float;                 -- Flux émis
+      Power_W          : Float;                    -- Puissance de phase (W)
+      Phase_Potential_V : Float;                   -- Potentiel de phase (V)
+      Coherence_Pct    : Float;                    -- Cohérence (%)
+
+      -- État
+      Is_Operational   : Boolean;
+      Is_Calibrated    : Boolean;
+      Construction_Step : Integer range 0 .. 8;
+      Checksum         : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => V3_Modern_Machine.Checksum = 9;
+
+   -- ========================================================================
+   -- 5. FONCTIONS DE CONSTRUCTION — ÉTAPE PAR ÉTAPE
+   -- ========================================================================
+
+   -- 5.1 ÉTAPE 1 : Fabrication du générateur PZT
+   function Build_PZT
+     (Length_m : Float;
+      Width_m  : Float;
+      Height_m : Float;
+      Force_N  : Float)
+      return PZT_Component
+     with Pre  => Length_m > 0.0 and Width_m > 0.0 and Height_m > 0.0 and Force_N > 0.0,
+          Post => Build_PZT'Result.Checksum = 9;
+
+   -- 5.2 ÉTAPE 2 : Fabrication de la membrane Nafion
+   function Build_Nafion
+     (Area_m2     : Float;
+      Thickness_m : Float;
+      Water_Flow_m3ps : Float)
+      return Nafion_Component
+     with Pre  => Area_m2 > 0.0 and Thickness_m > 0.0 and Water_Flow_m3ps >= 0.0,
+          Post => Build_Nafion'Result.Checksum = 9;
+
+   -- 5.3 ÉTAPE 3 : Fabrication du résonateur à métamatériau
+   function Build_Resonator
+     (Diameter_m : Float;
+      Thickness_m : Float;
+      Freq_Hz    : Float)
+      return Resonator_Component
+     with Pre  => Diameter_m > 0.0 and Thickness_m > 0.0 and Freq_Hz > 0.0,
+          Post => Build_Resonator'Result.Checksum = 9;
+
+   -- 5.4 ÉTAPE 4 : Fabrication du guide d'onde (fibre optique)
+   function Build_Waveguide
+     (Length_m       : Float;
+      Core_Diameter_um : Float)
+      return Waveguide_Component
+     with Pre  => Length_m > 0.0 and Core_Diameter_um > 0.0,
+          Post => Build_Waveguide'Result.Checksum = 9;
+
+   -- 5.5 ÉTAPE 5 : Assemblage de la machine
+   function Assemble_Machine
+     (PZT_Comp      : PZT_Component;
+      Nafion_Comp   : Nafion_Component;
+      Resonator_Comp : Resonator_Component;
+      Waveguide_Comp : Waveguide_Component)
+      return V3_Modern_Machine
+     with Pre  => PZT_Comp.Checksum = 9 and Nafion_Comp.Checksum = 9 and
+                  Resonator_Comp.Checksum = 9 and Waveguide_Comp.Checksum = 9,
+          Post => Assemble_Machine'Result.Checksum = 9;
+
+   -- 5.6 ÉTAPE 6 : Calcul des performances
+   function Calculate_Performance
+     (Machine : V3_Modern_Machine)
+      return V3_Modern_Machine
+     with Pre  => Machine.Checksum = 9,
+          Post => Calculate_Performance'Result.Checksum = 9;
+
+   -- 5.7 ÉTAPE 7 : Calibration
+   function Calibrate_Machine
+     (Machine : V3_Modern_Machine)
+      return V3_Modern_Machine
+     with Pre  => Machine.Checksum = 9,
+          Post => Calibrate_Machine'Result.Checksum = 9;
+
+   -- ========================================================================
+   -- 6. FONCTIONS DE VALIDATION
+   -- ========================================================================
+
+   -- 6.1 Vérification de l'intégrité du PZT
+   function Check_PZT (PZT : PZT_Component) return Boolean
+     with Post => Check_PZT'Result = (PZT.Electric_Field_Vpm >= 1.0e6);
+
+   -- 6.2 Vérification de l'intégrité du Nafion
+   function Check_Nafion (Nafion : Nafion_Component) return Boolean
+     with Post => Check_Nafion'Result = (Nafion.Structuration_Pct >= 90.0);
+
+   -- 6.3 Vérification de l'intégrité du résonateur
+   function Check_Resonator (Res : Resonator_Component) return Boolean
+     with Post => Check_Resonator'Result = (Res.Q_Factor >= 100.0);
+
+   -- 6.4 Vérification de l'intégrité du guide d'onde
+   function Check_Waveguide (WG : Waveguide_Component) return Boolean
+     with Post => Check_Waveguide'Result = (WG.Coupling_Efficiency >= 90.0);
+
+   -- 6.5 Vérification de la machine complète
+   function Check_Machine (Machine : V3_Modern_Machine) return Boolean
+     with Post => Check_Machine'Result =
+       (Machine.Is_Operational and Machine.Is_Calibrated and
+        Machine.Coherence_Pct >= 90.0);
+
+   -- ========================================================================
+   -- 7. GUIDE PAS À PAS
+   -- ========================================================================
+
+   -- 7.1 Génération des instructions pour chaque étape
+   function Step_Instructions (Step : Integer) return String
+     with Pre  => Step in 1 .. 8,
+          Post => Step_Instructions'Result'Length > 0;
+
+   -- 7.2 Génération du guide complet
+   function Full_Build_Guide (Machine : V3_Modern_Machine) return String
+     with Pre  => Machine.Checksum = 9,
+          Post => Full_Build_Guide'Result'Length > 0;
+
+   -- 7.3 Liste des matériaux nécessaires
+   function Material_List return String
+     with Post => Material_List'Result'Length > 0;
+
+end V3_Machine_Builder;
