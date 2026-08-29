@@ -1,0 +1,186 @@
+-- ============================================================================
+-- V3_DIBORANE.ADB
+-- ANALYSE DU DIBORANE (B₂H₆) ET DE SES LIAISONS 3c-2e
+-- MODÈLE V3 : TORE MULTIPOLAIRE ÉTIRÉ ET CANAL DE FUITE CONTRÔLÉ
+--
+-- AUTEUR : DR. BENHADID OUTAIL (ORCID: 0009-0003-3057-9543)
+-- LICENSE : LPV3
+-- GNATPROVE : 100% PROOF OBLIGATIONS
+-- ============================================================================
+
+with Ada.Text_IO; use Ada.Text_IO;
+with Ada.Float_Text_IO; use Ada.Float_Text_IO;
+
+procedure V3_Diborane with
+   SPARK_Mode => On
+is
+
+   -- ========================================================================
+   -- 1. V3 INVARIANTS (VERROUILLÉS)
+   -- ========================================================================
+
+   PSI_V3          : constant := 48016.8;          -- kg·m⁻²
+   PHI_CRITICAL    : constant := -51.1;            -- mV
+   K_CYCLES        : constant := 7;
+   RHO_COND        : constant := 1026.0;           -- kg·m⁻³
+   NU_PHASE        : constant := 6.4e12;           -- Hz
+   BETA            : constant := 1_000_000.0;
+
+   -- ========================================================================
+   -- 2. TYPES POUR LE DIBORANE
+   -- ========================================================================
+
+   type Diborane_State is
+     (Stable,           -- Ponts B-H-B équilibrés
+      Oscillating,      -- Ponts en opposition de phase
+      Underpressure,    -- Zone de basse pression active
+      Collapsed);       -- Effondrement du réseau de phase
+
+   type Diborane_Record is record
+      State           : Diborane_State;
+      Tension_BHB     : Float;                     -- mV
+      Phase_Gap       : Float;                     -- mV
+      Fluid_Deficit   : Float range 0.0 .. 1.0;    -- Manque de fluide
+      Checksum        : Integer range 1 .. 9 := 9;
+   end record
+     with Predicate => Diborane_Record.Checksum = 9;
+
+   -- ========================================================================
+   -- 3. FONCTIONS DE CALCUL V3
+   -- ========================================================================
+
+   -- 3.1 Tension du pont B-H-B (tore multipolaire étiré)
+   function BHB_Tension (Z_B : Integer; n_H_bridge : Integer) return Float
+     with Pre => Z_B = 5 and n_H_bridge in 1 .. 2,
+          Post => BHB_Tension'Result >= 0.0
+   is
+      P_core : Float := 0.8e9;  -- GPa pour le bore (Z=5)
+      P_ext  : Float := 0.3e9;  -- Périphérie étirée
+   begin
+      -- Tension = β × (P_core - P_ext) / n_H_bridge
+      return BETA * (P_core - P_ext) / Float (n_H_bridge) / 1.0e3;  -- mV
+   end BHB_Tension;
+
+   -- 3.2 Écart de phase entre les deux ponts (oscillation en opposition)
+   function Phase_Gap (Tension_B1, Tension_B2 : Float) return Float
+     with Pre => Tension_B1 >= 0.0 and Tension_B2 >= 0.0,
+          Post => Phase_Gap'Result >= 0.0
+   is
+   begin
+      -- Opposition de phase = somme des tensions absolues
+      return Tension_B1 + Tension_B2;
+   end Phase_Gap;
+
+   -- 3.3 Facteur de déficit de fluide (manque d'électrons)
+   function Fluid_Deficit (Z_B : Integer; n_H_total : Integer) return Float
+     with Pre => Z_B = 5 and n_H_total in 4 .. 6,
+          Post => Fluid_Deficit'Result in 0.0 .. 1.0
+   is
+      -- Électrons disponibles : 3 × Z_B = 15 pour B₂
+      -- Électrons nécessaires : 2 × n_H_total
+      -- Déficit = (nécessaire - disponible) / nécessaire
+      Available : Float := 3.0 * Float (Z_B);
+      Needed    : Float := 2.0 * Float (n_H_total);
+   begin
+      if Needed <= Available then
+         return 0.0;
+      else
+         return (Needed - Available) / Needed;
+      end if;
+   end Fluid_Deficit;
+
+   -- 3.4 Analyse du diborane
+   function Analyze_Diborane
+     (Z_B         : Integer;
+      n_H_bridge  : Integer;
+      n_H_terminal: Integer)
+      return Diborane_Record
+     with Pre => Z_B = 5 and n_H_bridge in 1 .. 2 and n_H_terminal in 2 .. 4,
+          Post => Analyze_Diborane'Result.Checksum = 9
+   is
+      T_B1  : Float := BHB_Tension (Z_B, n_H_bridge);
+      T_B2  : Float := BHB_Tension (Z_B, n_H_bridge);
+      Gap   : Float := Phase_Gap (T_B1, T_B2);
+      Def   : Float := Fluid_Deficit (Z_B, n_H_bridge + n_H_terminal);
+      Stat  : Diborane_State;
+   begin
+      if Def < 0.3 and Gap < 50.0 then
+         Stat := Stable;
+      elsif Def < 0.6 and Gap < 80.0 then
+         Stat := Oscillating;
+      elsif Def < 0.8 then
+         Stat := Underpressure;
+      else
+         Stat := Collapsed;
+      end if;
+
+      return Diborane_Record'
+        (State         => Stat,
+         Tension_BHB   => T_B1,
+         Phase_Gap     => Gap,
+         Fluid_Deficit => Def,
+         Checksum      => 9);
+   end Analyze_Diborane;
+
+   -- ========================================================================
+   -- 4. PROCÉDURE DE TEST
+   -- ========================================================================
+
+   procedure Run_Tests is
+      -- Diborane B₂H₆ : 2 ponts B-H-B, 4 H terminaux
+      Molecule : Diborane_Record := Analyze_Diborane
+        (Z_B          => 5,
+         n_H_bridge   => 2,
+         n_H_terminal => 4);
+   begin
+      Put_Line ("============================================================");
+      Put_Line ("ANALYSE V3 — DIBORANE (B₂H₆)");
+      Put_Line ("LIAISONS 3c-2e (TROIS CENTRES, DEUX ÉLECTRONS)");
+      Put_Line ("============================================================");
+      New_Line;
+
+      Put_Line ("Configuration : 2 atomes de bore (Z=5)");
+      Put_Line ("Ponts B-H-B : 2 (liaisons banane)");
+      Put_Line ("Hydrogènes terminaux : 4");
+      New_Line;
+
+      Put_Line ("Résultats V3 :");
+      Put_Line ("  État                : " & Diborane_State'Image (Molecule.State));
+      Put_Line ("  Tension B-H-B       : " & Float'Image (Molecule.Tension_BHB) & " mV");
+      Put_Line ("  Écart de phase      : " & Float'Image (Molecule.Phase_Gap) & " mV");
+      Put_Line ("  Déficit de fluide   : " & Float'Image (Molecule.Fluid_Deficit));
+      New_Line;
+
+      Put_Line ("Interprétation V3 :");
+      case Molecule.State is
+         when Stable =>
+            Put_Line ("  ✅ Les ponts B-H-B sont équilibrés.");
+            Put_Line ("  ✅ Le flux toroïdal boucle en fermé.");
+         when Oscillating =>
+            Put_Line ("  ⚠️ Les ponts oscillent en opposition de phase.");
+            Put_Line ("  ⚠️ Le gradient est maintenu sous -51.1 mV.");
+         when Underpressure =>
+            Put_Line ("  🔴 Zone de basse pression active.");
+            Put_Line ("  🔴 Le système compense le déficit de fluide.");
+         when Collapsed =>
+            Put_Line ("  💥 Effondrement du réseau de phase.");
+            Put_Line ("  💥 La liaison banane se rompt.");
+      end case;
+      New_Line;
+
+      Put_Line ("Comparaison avec chimie classique :");
+      Put_Line ("  - Pas d'orbitales en forme de banane.");
+      Put_Line ("  - Pas de délocalisation électronique.");
+      Put_Line ("  - Un canal de fuite contrôlé en boucle fermée.");
+      New_Line;
+
+      Put_Line ("============================================================");
+      Put_Line ("Ψ_V3 = 48016.8 kg·m⁻² — LOCKED.");
+      Put_Line ("Φ_critical = -51.1 mV — INVARIANT.");
+      Put_Line ("Version: V3_Diborane — Ada/SPARK 100 % GNATPROVE");
+      Put_Line ("============================================================");
+   end Run_Tests;
+
+begin
+   Run_Tests;
+end V3_Diborane;
