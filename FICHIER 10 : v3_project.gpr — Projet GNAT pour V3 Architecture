@@ -1,0 +1,177 @@
+-- ============================================================================
+-- v3_project.gpr — Projet GNAT pour V3 Architecture
+-- Version 11.0.0 — Complete with Geometry & Radiation
+-- 
+-- Ce projet compile l'intégralité du pack V3 :
+--   - V3_Constants       (constantes V3 et physiques)
+--   - V3_Geometry        (géométrie des éléments)
+--   - V3_Radiation       (rayonnements : corps noir, bremsstrahlung, Cherenkov, GW)
+--   - V3_Unified         (spécification principale)
+--   - V3_Main            (programme principal)
+-- 
+-- Auteur : Dr. Benhadid Outail (ORCID: 0009-0003-3057-9543)
+-- Licence : LPV3
+-- 
+-- Commandes :
+--   gprbuild -P v3_project.gpr
+--   gnatprove -P v3_project.gpr --level=4 --counterexamples=on
+--   ./obj/V3_Main [options]
+-- 
+-- Options de V3_Main :
+--   --full      : Tableau complet avec détails
+--   --details   : Détails de chaque élément
+--   --radiation : Exemples de rayonnements
+--   --masses    : Masses V3 du proton et de l'électron
+--   --harmonics : Harmoniques (muon, tau)
+--   --valence   : Valence géométrique
+--   --proofs    : Preuves V3
+--   --stats     : Statistiques du tableau
+--   --geometry  : Géométries des éléments
+--   --help      : Aide
+-- ============================================================================
+
+project V3_Project is
+
+   -- ========================================================================
+   -- 1. IDENTIFICATION DU PROJET
+   -- ========================================================================
+
+   for Source_Dirs use ("src");
+   for Object_Dir use "obj";
+   for Exec_Dir use ".";
+   for Main use ("V3_Main.adb");
+
+   -- ========================================================================
+   -- 2. LANGAGE ET COMPILATEUR
+   -- ========================================================================
+
+   for Languages use ("Ada");
+   for Source_Files use (
+      "V3_Constants.ads",
+      "V3_Constants.adb",
+      "V3_Geometry.ads",
+      "V3_Geometry.adb",
+      "V3_Radiation.ads",
+      "V3_Radiation.adb",
+      "V3_Unified.ads",
+      "V3_Unified.adb",
+      "V3_Main.adb"
+   );
+
+   -- ========================================================================
+   -- 3. OPTIONS DE COMPILATION
+   -- ========================================================================
+
+   package Compiler is
+      Default_Switches := (
+         "-gnatwa",           -- Tous les avertissements
+         "-gnat12",           -- Norme Ada 2012
+         "-gnata",            -- Assertions activées
+         "-gnatp",            -- Supprimer les contrôles à l'exécution (pour performance)
+         "-gnato",            -- Vérification des débordements
+         "-gnatf",            -- Messages d'erreur complets
+         "-gnatyg",           -- Affichage des lignes
+         "-gnatwA",           -- Avertissements pour les paramètres non utilisés
+         "-gnatwC",           -- Avertissements pour les conditions
+         "-gnatwD",           -- Avertissements pour les déclarations
+         "-gnatwE",           -- Avertissements pour les extensions
+         "-gnatwF",           -- Avertissements pour les sous-programmes obsolètes
+         "-gnatwG",           -- Avertissements pour les étiquettes
+         "-gnatwH",           -- Avertissements pour les restrictions
+         "-gnatwI",           -- Avertissements pour les parties inactives
+         "-gnatwJ",           -- Avertissements pour les sous-programmes obsolètes
+         "-gnatwK",           -- Avertissements pour les constantes
+         "-gnatwL",           -- Avertissements pour les lignes vides
+         "-gnatwM",           -- Avertissements pour les conventions
+         "-gnatwO",           -- Avertissements pour les sous-programmes
+         "-gnatwP",           -- Avertissements pour les paramètres
+         "-gnatwR",           -- Avertissements pour les références
+         "-gnatwS",           -- Avertissements pour les spécifications
+         "-gnatwT",           -- Avertissements pour les types
+         "-gnatwU",           -- Avertissements pour les sous-programmes inutilisés
+         "-gnatwV",           -- Avertissements pour les variables
+         "-gnatwW",           -- Avertissements pour les appels
+         "-gnatwX",           -- Avertissements pour les expressions
+         "-gnatwY",           -- Avertissements pour les pragmas
+         "-gnatwZ",           -- Avertissements pour les paramètres
+         "-O2"                -- Optimisation
+      );
+   end Compiler;
+
+   -- ========================================================================
+   -- 4. OPTIONS DE L'ÉDITEUR DE LIENS
+   -- ========================================================================
+
+   package Binder is
+      Default_Switches := (
+         "-E",                -- Forcer les liens
+         "-n"                 -- Pas de code d'initialisation
+      );
+   end Binder;
+
+   package Linker is
+      Default_Switches := (
+         "-g"                 -- Debug
+      );
+   end Linker;
+
+   -- ========================================================================
+   -- 5. OPTIONS POUR GNATPROVE (SPARK)
+   -- ========================================================================
+
+   package Prove is
+      Default_Switches := (
+         "--level=4",         -- Niveau de preuve maximal
+         "--counterexamples=on", -- Générer des contre-exemples
+         "--timeout=60",      -- Timeout de 60 secondes par vérification
+         "--show-trace",      -- Afficher la trace
+         "--report=all",      -- Rapport complet
+         "--warnings=on",     -- Avertissements
+         "--checks-as-errors" -- Les vérifications échouées sont des erreurs
+      );
+
+      -- Fichiers à prouver avec SPARK
+      for SPARK_Files use (
+         "V3_Constants.ads",
+         "V3_Constants.adb",
+         "V3_Geometry.ads",
+         "V3_Geometry.adb",
+         "V3_Radiation.ads",
+         "V3_Radiation.adb",
+         "V3_Unified.ads",
+         "V3_Unified.adb"
+      );
+   end Prove;
+
+   -- ========================================================================
+   -- 6. OPTIONS DE NETTOYAGE
+   -- ========================================================================
+
+   package Clean is
+      Default_Switches := (
+         "-r",                -- Récursif
+         "-f",                -- Forcer
+         "-q"                 -- Silencieux
+      );
+   end Clean;
+
+   -- ========================================================================
+   -- 7. CONFIGURATION SPARK
+   -- ========================================================================
+
+   package SPARK is
+      -- Fichiers à inclure dans l'analyse SPARK
+      for SPARK_Files use (
+         "V3_Constants.ads",
+         "V3_Constants.adb",
+         "V3_Geometry.ads",
+         "V3_Geometry.adb",
+         "V3_Radiation.ads",
+         "V3_Radiation.adb",
+         "V3_Unified.ads",
+         "V3_Unified.adb"
+      );
+      for SPARK_Mode use "On";
+   end SPARK;
+
+end V3_Project;
