@@ -1,0 +1,994 @@
+-- ============================================================================
+-- V3_UNIFIED.ADB — Implementation V3 Unified Complete with Geometry
+-- Version 10.0.0
+-- ============================================================================
+
+package body V3_Unified with
+   SPARK_Mode => On
+is
+
+   -- ========================================================================
+   -- 5. FONCTIONS DE GÉOMÉTRIE DES ÉLÉMENTS
+   -- ========================================================================
+
+   function Get_Compact_Packing (N : Integer) return Compact_Packing_Type is
+   begin
+      case N is
+         when 1      => return Single;
+         when 2      => return Pair;
+         when 6      => return Octahedron;
+         when 8      => return Cube;
+         when 10     => return Bipyramid;
+         when 12     => return Icosahedron;
+         when 14     => return None;      -- Non compact mais stable (Si)
+         when 16     => return None;      -- Non compact mais stable (S)
+         when 18     => return None;      -- Non compact mais stable (Ar)
+         when 20     => return None;
+         when 24     => return None;
+         when 28     => return None;
+         when 32     => return None;
+         when 36     => return None;
+         when 50     => return None;
+         when 54     => return None;
+         when 82     => return None;
+         when 86     => return None;
+         when others => return None;
+      end case;
+   end Get_Compact_Packing;
+
+   function Is_Stable_Vortex_Count (N : Integer) return Boolean is
+   begin
+      for I in Stable_Numbers'Range loop
+         if Stable_Numbers (I) = N then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Is_Stable_Vortex_Count;
+
+   function Compute_Valence_Sites (N : Integer; Packing : Compact_Packing_Type) 
+                                   return Valence_Site_Array is
+      Sites : Valence_Site_Array;
+      Max_Sites : Integer := 0;
+   begin
+      -- Initialisation
+      for I in 1 .. 20 loop
+         Sites (I) := (Site_Index => I,
+                       Position_X => 0.0,
+                       Position_Y => 0.0,
+                       Position_Z => 0.0,
+                       Is_Occupied => False,
+                       Site_Type => S,
+                       Phase_Availability => 0.0);
+      end loop;
+
+      -- Nombre de sites selon la géométrie
+      case Packing is
+         when Single =>
+            Max_Sites := 1;
+            Sites (1) := (1, 0.0, 0.0, 0.0, False, S, 1.0);
+         when Pair =>
+            Max_Sites := 2;
+            Sites (1) := (1, -1.0, 0.0, 0.0, False, S, 1.0);
+            Sites (2) := (2, 1.0, 0.0, 0.0, False, S, 1.0);
+         when Octahedron =>
+            Max_Sites := 4;
+            Sites (1) := (1, 1.0, 0.0, 0.0, False, P, 1.0);
+            Sites (2) := (2, -1.0, 0.0, 0.0, False, P, 1.0);
+            Sites (3) := (3, 0.0, 1.0, 0.0, False, P, 1.0);
+            Sites (4) := (4, 0.0, -1.0, 0.0, False, P, 1.0);
+         when Cube =>
+            Max_Sites := 2;
+            Sites (1) := (1, 0.0, 0.0, 0.0, False, S, 1.0);
+            Sites (2) := (2, 0.0, 0.0, 0.0, False, S, 1.0);
+         when Bipyramid =>
+            Max_Sites := 3;
+            Sites (1) := (1, 1.0, 0.0, 0.0, False, P, 1.0);
+            Sites (2) := (2, -1.0, 0.0, 0.0, False, P, 1.0);
+            Sites (3) := (3, 0.0, 1.0, 0.0, False, P, 1.0);
+         when Icosahedron =>
+            Max_Sites := 2;
+            Sites (1) := (1, 0.0, 0.0, 0.0, False, S, 1.0);
+            Sites (2) := (2, 0.0, 0.0, 0.0, False, S, 1.0);
+         when None =>
+            Max_Sites := 0;
+      end case;
+
+      for I in Max_Sites + 1 .. 20 loop
+         Sites (I).Is_Occupied := True;  -- Marquer comme occupé (non disponible)
+      end loop;
+
+      return Sites;
+   end Compute_Valence_Sites;
+
+   function Phase_Demand_Of_Cluster (N : Integer) return Float is
+      -- Chaque vortex consomme une partie de la pression de phase
+      Base_Demand : constant Float := 0.01;  -- V par vortex
+   begin
+      return Base_Demand * Float (N);
+   end Phase_Demand_Of_Cluster;
+
+   function Check_Phase_Stability_Geometric (N : Integer; Phi_local : Float) return Boolean is
+      Demand : Float := Phase_Demand_Of_Cluster (N);
+   begin
+      return (Phi_local - Demand) >= PHI_CRITICAL;
+   end Check_Phase_Stability_Geometric;
+
+   function Geometric_Valence (Z : Integer) return Integer is
+   begin
+      if Z in 1 .. 118 then
+         return Valence_Table (Z);
+      else
+         return 0;
+      end if;
+   end Geometric_Valence;
+
+   function Geometric_Period (N : Integer) return Integer is
+   begin
+      if N <= 2 then return 1;
+      elsif N <= 10 then return 2;
+      elsif N <= 18 then return 3;
+      elsif N <= 36 then return 4;
+      elsif N <= 54 then return 5;
+      elsif N <= 86 then return 6;
+      elsif N <= 118 then return 7;
+      else return 0;
+      end if;
+   end Geometric_Period;
+
+   function Geometric_Group (N : Integer) return Integer is
+   begin
+      case N is
+         when 1 | 3 | 11 | 19 | 37 | 55 | 87 => return 1;
+         when 4 | 12 | 20 | 38 | 56 | 88 => return 2;
+         when 5 | 13 | 31 | 49 | 81 | 113 => return 13;
+         when 6 | 14 | 32 | 50 | 82 | 114 => return 14;
+         when 7 | 15 | 33 | 51 | 83 | 115 => return 15;
+         when 8 | 16 | 34 | 52 | 84 | 116 => return 16;
+         when 9 | 17 | 35 | 53 | 85 | 117 => return 17;
+         when 2 | 10 | 18 | 36 | 54 | 86 | 118 => return 18;
+         when 57 .. 71 | 89 .. 103 => return 3;  -- Lanthanides/Actinides
+         when others => return 3;
+      end case;
+   end Geometric_Group;
+
+   -- ========================================================================
+   -- 6. FONCTIONS V3 — HADRONS
+   -- ========================================================================
+
+   function Vortex_Radius (A : Integer) return Float is
+      R0 : constant Float := 1.2e-15;  -- m
+   begin
+      return R0 * Float (A) ** (1.0 / 3.0);
+   end Vortex_Radius;
+
+   function Vortex_Pressure (Z, N : Integer; R_m : Float) return Float is
+      A         : Integer := Z + N;
+      E_bind_J  : Float := ENERGY_SCALE_J * (Float (Z * N) / Float (A));
+      Volume    : Float := (4.0 / 3.0) * PI * R_m * R_m * R_m;
+   begin
+      if Volume = 0.0 then
+         return 0.0;
+      end if;
+      return (E_bind_J / Volume) / 1.0e9;  -- Pa → GPa
+   end Vortex_Pressure;
+
+   function Phase_Potential (R_Vortex, R_Reference : Float) return Float is
+   begin
+      if R_Reference = 0.0 then
+         return PHI_CRITICAL;
+      end if;
+      return PHI_CRITICAL * (1.0 - (R_Vortex / R_Reference));
+   end Phase_Potential;
+
+   function Compute_Coherence (Phi : Float) return Float is
+   begin
+      if Phi >= PHI_CRITICAL then
+         return 100.0;
+      else
+         return 100.0 * (1.0 - (PHI_CRITICAL - Phi) / abs (PHI_CRITICAL));
+      end if;
+   end Compute_Coherence;
+
+   function Surface_Wave_Radius (n, l : Integer; Z_eff : Float) return Float is
+   begin
+      return (Float (n * n) / Z_eff) * BOHR_RADIUS * (1.0 + (Float (l) / Float (n)));
+   end Surface_Wave_Radius;
+
+   function Phase_State_Occupancy (l : Integer) return Integer is
+   begin
+      return 2 * (2 * l + 1);
+   end Phase_State_Occupancy;
+
+   function Rupture_Pressure_Energy (Z, n : Integer) return Float is
+      Z_eff : Float := Float (Z) - 0.35 * Float (Z - 1);
+   begin
+      return ENERGY_SCALE_eV * (Z_eff * Z_eff) / Float (n * n);
+   end Rupture_Pressure_Energy;
+
+   function Differential_Pressure (Z : Integer; Waves : Surface_Wave_Array) return Float is
+      Valence_Occ : Integer := 0;
+   begin
+      for I in 1 .. 7 loop
+         if Waves (I).Principal_N = Phase_Period (Z) then
+            Valence_Occ := Valence_Occ + Waves (I).Occupancy;
+         end if;
+      end loop;
+      return abs (PHI_CRITICAL) * Float (Valence_Occ) / Float (Z);
+   end Differential_Pressure;
+
+   function Pressure_Gradient (Z : Integer; Rupture, Diff : Float) return Float is
+      X : Float := 0.5 * (Rupture + Diff) / ENERGY_SCALE_eV * (Float (Z) / 10.0) ** 0.5;
+   begin
+      if X > 4.0 then
+         return 4.0;
+      elsif X < 0.0 then
+         return 0.0;
+      else
+         return X;
+      end if;
+   end Pressure_Gradient;
+
+   function Orbital_Magnetic_Moment (Z : Integer; Waves : Surface_Wave_Array) return Float is
+      Total_Moment : Float := 0.0;
+   begin
+      for I in 1 .. 7 loop
+         if Waves (I).Occupancy > 0 then
+            Total_Moment := Total_Moment +
+              MU_B * Float (Waves (I).Subshell_L) * Float (Waves (I).Occupancy);
+         end if;
+      end loop;
+      Total_Moment := Total_Moment + MU_B * Float (Z) / 1836.0;
+      return Total_Moment;
+   end Orbital_Magnetic_Moment;
+
+   function Phase_Polarizability (Waves : Surface_Wave_Array) return Float is
+      Alpha : Float := 0.0;
+   begin
+      for I in 1 .. 7 loop
+         if Waves (I).Occupancy > 0 then
+            Alpha := Alpha +
+              (Waves (I).Radius_Bohr * BOHR_RADIUS) ** 3.0 *
+              Float (Waves (I).Occupancy);
+         end if;
+      end loop;
+      Alpha := Alpha * PSI_V3_ATOMIC / (RHO_COND * BETA);
+      return Alpha;
+   end Phase_Polarizability;
+
+   function Shear_Wave_Emission (Z, n1, n2 : Integer) return Shear_Wave is
+      R_infinity : constant Float := NU_PHASE * ALPHA_FS * BETA / Float (K_CYCLES);
+      Freq       : Float := R_infinity * Float (Z * Z) *
+                             (1.0 / Float (n1 * n1) - 1.0 / Float (n2 * n2));
+      Wav        : Float := C_LIGHT / Freq;
+      Ener       : Float := HBAR * Freq / E_CHARGE;
+   begin
+      return Shear_Wave'
+        (Wavelength_M   => Wav,
+         Frequency_Hz   => Freq,
+         Energy_eV      => Ener,
+         Transition     => (others => ' '),
+         Intensity_Rel  => 1.0 / Float (n2 - n1));
+   end Shear_Wave_Emission;
+
+   function Vortex_Magnetic_Field (Z, A : Integer; R_Fm : Float) return Float is
+      R_m : Float := R_Fm * 1.0e-15;
+      Omega : Float := NU_PHASE * (Float (A) / Float (Z)) ** 0.5;
+      Mu_0  : constant Float := 4.0 * PI * 1.25663706212e-6;
+   begin
+      return Mu_0 * Float (Z) * E_CHARGE * Omega / (4.0 * PI * R_m);
+   end Vortex_Magnetic_Field;
+
+   function Pressure_Wave_Amplitude (Z, n, l : Integer; Occupancy : Integer) return Float is
+      Z_eff : Float := Float (Z) - 0.35 * Float (Z - 1);
+      E_ev  : Float := ENERGY_SCALE_eV * (Z_eff * Z_eff) / Float (n * n);
+      R_m   : Float := Surface_Wave_Radius (n, l, Z_eff);
+      Volume : Float := (4.0 / 3.0) * PI * R_m * R_m * R_m;
+   begin
+      if Volume = 0.0 then
+         return 0.0;
+      end if;
+      return (E_ev * E_CHARGE * Float (Occupancy)) / Volume;
+   end Pressure_Wave_Amplitude;
+
+   -- ========================================================================
+   -- 7. FONCTIONS DE LIAISON V3 (Verrouillage de phase)
+   -- ========================================================================
+
+   function Phase_Locking_Condition (Phi1, Phi2 : Float) return Boolean is
+   begin
+      return abs (Phi1 - Phi2) < 0.01;
+   end Phase_Locking_Condition;
+
+   function Phase_Locking_Energy (Phi1, Phi2 : Float; R_Ang : Float) return Float is
+      Delta_Phi : Float := abs (Phi1 - Phi2);
+   begin
+      if R_Ang = 0.0 then
+         return 0.0;
+      end if;
+      return (Delta_Phi * E_CHARGE) / (4.0 * PI * R_Ang * 1.0e-10);
+   end Phase_Locking_Energy;
+
+   function Membrane_Fusion_Distance (Z1, Z2 : Integer; Fusion_Order : Integer) return Float is
+      R1 : Float := Surface_Wave_Radius (Phase_Period (Z1), 0, Float (Z1));
+      R2 : Float := Surface_Wave_Radius (Phase_Period (Z2), 0, Float (Z2));
+      R_avg : Float := (R1 + R2) / 2.0;
+   begin
+      if Fusion_Order = 0 then
+         return (R1 + R2) * 10.0;
+      else
+         return R_avg / (1.0 + 0.5 * Float (Fusion_Order)) * 1.0e10;
+      end if;
+   end Membrane_Fusion_Distance;
+
+   function Membrane_Fusion_Energy (Z1, Z2 : Integer; R_Ang : Float) return Float is
+      P1 : Float := Pressure_Wave_Amplitude (Z1, Phase_Period (Z1), 0, 1);
+      P2 : Float := Pressure_Wave_Amplitude (Z2, Phase_Period (Z2), 0, 1);
+      R1 : Float := Surface_Wave_Radius (Phase_Period (Z1), 0, Float (Z1));
+      R2 : Float := Surface_Wave_Radius (Phase_Period (Z2), 0, Float (Z2));
+      A_fusion : Float := PI * (if R1 < R2 then R1 else R2) ** 2.0;
+   begin
+      return (P1 + P2) * A_fusion / E_CHARGE;
+   end Membrane_Fusion_Energy;
+
+   function Determine_Fusion_Type (Z1, Z2 : Integer; Grad1, Grad2 : Float)
+                                  return Bond_Type_V3 is
+      Delta : Float := abs (Grad1 - Grad2);
+      Phi1  : Float := Phase_Potential (Vortex_Radius (Z1), 1.0e-10);
+      Phi2  : Float := Phase_Potential (Vortex_Radius (Z2), 1.0e-10);
+   begin
+      -- Vérifier le verrouillage de phase d'abord
+      if Phase_Locking_Condition (Phi1, Phi2) then
+         return Phase_Locking;
+      elsif Delta < 0.4 then
+         return Membrane_Fusion;
+      elsif Delta < 1.7 then
+         return Pressure_Gradient;
+      else
+         return Surface_Resonance;
+      end if;
+   end Determine_Fusion_Type;
+
+   function Membrane_Fusion_Area (R1, R2 : Float) return Float is
+      R_min : Float := (if R1 < R2 then R1 else R2);
+   begin
+      return PI * R_min * R_min;
+   end Membrane_Fusion_Area;
+
+   function Wave_Interference (A1, A2 : Float) return Float is
+   begin
+      if A1 + A2 = 0.0 then
+         return 0.0;
+      end if;
+      return A1 + A2 + 2.0 * A1 * A2 / (A1 + A2);
+   end Wave_Interference;
+
+   -- ========================================================================
+   -- 8. FONCTIONS DE RELAXATION DE PHASE
+   -- ========================================================================
+
+   function Phase_Relaxation_Time (Z, N : Integer) return Float is
+      A      : Integer := Z + N;
+      R_m    : Float := Vortex_Radius (A);
+      P_int  : Float := Vortex_Pressure (Z, N, R_m);
+      P_crit : Float := Critical_Pressure (R_m);
+   begin
+      if P_int < P_crit then
+         return 1.0e30;
+      else
+         return 1.0e-6 * exp (P_crit / P_int - 1.0);
+      end if;
+   end Phase_Relaxation_Time;
+
+   function Predict_Relaxation_Mode (Z, N : Integer) return Decay_Type_V3 is
+      A      : Integer := Z + N;
+      R_m    : Float := Vortex_Radius (A);
+      P_int  : Float := Vortex_Pressure (Z, N, R_m);
+      P_crit : Float := Critical_Pressure (R_m);
+      Ratio  : Float := Float (N) / Float (Z);
+   begin
+      if P_int < P_crit then
+         return Stable;
+      elsif Z > 82 then
+         if Ratio > 1.6 then
+            return Pressure_Ejection;
+         elsif Z > 92 then
+            return Vortex_Collapse;
+         else
+            return Phase_Relaxation;
+         end if;
+      else
+         return Phase_Relaxation;
+      end if;
+   end Predict_Relaxation_Mode;
+
+   function Phase_Relaxation_Chain (Z_Start, N_Start : Integer) return Decay_Chain_V3_Array is
+      Chain     : Decay_Chain_V3_Array;
+      Current_Z : Integer := Z_Start;
+      Current_N : Integer := N_Start;
+      Step      : Integer := 1;
+   begin
+      for I in 1 .. 10 loop
+         Chain (I) := (Isotope_Z => 0, Isotope_N => 0, Decay_Mode => Stable,
+                       Half_Life_Seconds => 0.0, Decay_Energy_MeV => 0.0,
+                       Daughter_Z => 0, Daughter_N => 0, Checksum => 9);
+      end loop;
+
+      while Step <= 10 and Current_Z > 0 and Current_Z <= 118 loop
+         declare
+            Mode : Decay_Type_V3 := Predict_Relaxation_Mode (Current_Z, Current_N);
+            D_Z  : Integer := Current_Z;
+            D_N  : Integer := Current_N;
+            Half : Float := Phase_Relaxation_Time (Current_Z, Current_N);
+            Ener : Float := (if Mode = Phase_Relaxation then 5.0
+                             elsif Mode = Pressure_Ejection then 1.0
+                             else 0.5);
+         begin
+            if Mode = Phase_Relaxation then
+               D_Z := Current_Z - 2;
+               D_N := Current_N - 2;
+            elsif Mode = Pressure_Ejection then
+               D_Z := Current_Z + 1;
+               D_N := Current_N - 1;
+            elsif Mode = Vortex_Collapse then
+               D_Z := Current_Z / 2;
+               D_N := Current_N / 2;
+            else
+               D_Z := Current_Z;
+               D_N := Current_N;
+            end if;
+
+            Chain (Step) := (Isotope_Z => Current_Z, Isotope_N => Current_N,
+                             Decay_Mode => Mode, Half_Life_Seconds => Half,
+                             Decay_Energy_MeV => Ener, Daughter_Z => D_Z,
+                             Daughter_N => D_N, Checksum => 9);
+
+            Current_Z := D_Z;
+            Current_N := D_N;
+            Step := Step + 1;
+
+            exit when Mode = Stable or (Current_Z <= 0) or (Current_Z > 118);
+         end;
+      end loop;
+
+      return Chain;
+   end Phase_Relaxation_Chain;
+
+   -- ========================================================================
+   -- 9. FONCTIONS THERMODYNAMIQUES V3
+   -- ========================================================================
+
+   function Friction_Gradient_Melting (Z : Integer) return Float is
+      E_bind_J : Float := ENERGY_SCALE_J * Float (Z) / 10.0;
+      Phi      : Float := Phase_Potential (Vortex_Radius (Z), 1.0e-10);
+      Coh      : Float := Compute_Coherence (Phi);
+      T_raw    : Float := (E_bind_J / (K_B * 0.693)) * (1.0 - Coh / 100.0);
+   begin
+      return T_raw * 12.75;
+   end Friction_Gradient_Melting;
+
+   function Friction_Gradient_Boiling (Z : Integer) return Float is
+      T_melt : Float := Friction_Gradient_Melting (Z);
+   begin
+      return 3.0 * T_melt * (1.0 + Float (Z) / 100.0);
+   end Friction_Gradient_Boiling;
+
+   function Phase_Capacity (Z : Integer) return Float is
+      A : Integer := Z + (if Z <= 2 then 0 else Z);
+   begin
+      return (3.0 * K_B * N_A) / (AMU * Float (A)) * (1.0 + Float (Z) / 100.0);
+   end Phase_Capacity;
+
+   -- ========================================================================
+   -- 10. FONCTIONS HARMONIQUES V3
+   -- ========================================================================
+
+   function First_Harmonic_Mass_Ratio return Float is
+      Alpha : constant Float := 1.0 / 137.03599913;
+      K     : constant Integer := 7;
+   begin
+      return 1.0 / (4.0 * PI * PI * Alpha * Alpha * Float (K));
+   end First_Harmonic_Mass_Ratio;
+
+   function Second_Harmonic_Mass_Ratio return Float is
+      Mu    : Float := First_Harmonic_Mass_Ratio;
+      Alpha : constant Float := 1.0 / 137.03599913;
+      K     : constant Float := 7.0;
+   begin
+      return Mu * (K + Alpha) / (K - Alpha) * 8.58;
+   end Second_Harmonic_Mass_Ratio;
+
+   function Phase_Anomaly return Float is
+      Phase_Contrib : Float := (2.0 * PI * ALPHA_FS) * (PSI_V3 / RHO_COND);
+      Beta_Sq       : Float := BETA * BETA;
+      Raw_Drag      : Float := Phase_Contrib / Beta_Sq;
+      Hept_Amplif   : Float := sqrt (2.0 * PI * ALPHA_FS * Float (K_CYCLES));
+   begin
+      return Raw_Drag * Hept_Amplif;
+   end Phase_Anomaly;
+
+   function Get_Harmonics return Harmonic_Table is
+      Harmonics : Harmonic_Table;
+   begin
+      Harmonics (0) := (Kind => Fundamental, Mode_Number => 0,
+                        Mass_Ratio => 1.0, Mass_MeV => 0.51099895,
+                        Half_Life_s => 0.0, Decay_Channel => "Stable     ",
+                        Contraction => 1.0, Checksum => 9);
+
+      Harmonics (1) := (Kind => First_Harmonic, Mode_Number => 1,
+                        Mass_Ratio => First_Harmonic_Mass_Ratio,
+                        Mass_MeV => First_Harmonic_Mass_Ratio * 0.51099895,
+                        Half_Life_s => 2.19698e-6,
+                        Decay_Channel => "e + νe + νμ",
+                        Contraction => 8.5319, Checksum => 9);
+
+      Harmonics (2) := (Kind => Second_Harmonic, Mode_Number => 2,
+                        Mass_Ratio => Second_Harmonic_Mass_Ratio,
+                        Mass_MeV => Second_Harmonic_Mass_Ratio * 0.51099895,
+                        Half_Life_s => 2.903e-13,
+                        Decay_Channel => "hadrons + ντ",
+                        Contraction => 72.8, Checksum => 9);
+
+      return Harmonics;
+   end Get_Harmonics;
+
+   -- ========================================================================
+   -- 11. FONCTIONS RÉSEAU/NEUD V3
+   -- ========================================================================
+
+   function Phase_Velocity (Temperature_K : Float) return Float is
+   begin
+      if Temperature_K <= COSMIC_TEMP_K then
+         return C_LIGHT * 1.0e6;
+      else
+         return C_LIGHT * (1.0 + 1.0 / (Temperature_K - COSMIC_TEMP_K + 1.0));
+      end if;
+   end Phase_Velocity;
+
+   function Friction_Limit (Temperature_K : Float) return Float is
+   begin
+      if Temperature_K <= COSMIC_TEMP_K then
+         return C_LIGHT;
+      else
+         return C_LIGHT * (1.0 + 1.0 / (Temperature_K - COSMIC_TEMP_K + 1.0));
+      end if;
+   end Friction_Limit;
+
+   function Get_V3_State (Z, N : Integer; T_K : Float) return V3_State is
+      Phi : Float := Phase_Potential (Vortex_Radius (Z + N), 1.0e-10);
+   begin
+      return V3_State'
+        (Phase_Potential_V => Phi,
+         Node_Density_kgpm3 => Float (Z + N) * AMU / ((4.0/3.0) * PI * Vortex_Radius (Z + N) ** 3.0),
+         Temperature_K => T_K,
+         Phase_Velocity => Phase_Velocity (T_K),
+         Friction_Limit => Friction_Limit (T_K),
+         Is_Node => Phi < PHI_CRITICAL,
+         Checksum => 9);
+   end Get_V3_State;
+
+   -- ========================================================================
+   -- 12. FONCTIONS DE MASSE V3
+   -- ========================================================================
+
+   function V3_Proton_Mass (R_p : Float) return Float is
+      V_core : Float := PI * PI * R_p * R_p * R_p / 2.0;
+   begin
+      return BETA * RHO_COND * V_core;
+   end V3_Proton_Mass;
+
+   function V3_Pressure_Ratio (R_p : Float) return Float is
+      M_V3  : Float := V3_Proton_Mass (R_p);
+      M_CODATA : constant Float := 1.67262192e-27;
+   begin
+      return M_V3 / M_CODATA;
+   end V3_Pressure_Ratio;
+
+   function Mass_As_Pressure_Differential (P_vortex, P_ambient : Float; V_core : Float) return Float is
+   begin
+      return (P_vortex - P_ambient) * V_core / (C_LIGHT * C_LIGHT);
+   end Mass_As_Pressure_Differential;
+
+   function Boundary_Layer_Thickness (R_p : Float; Alpha : Float) return Float is
+   begin
+      return R_p / (2.0 * PI * Alpha);
+   end Boundary_Layer_Thickness;
+
+   function Shell_Volume (R_p : Float; Delta : Float) return Float is
+      Surface : Float := 4.0 * PI * R_p * R_p;
+   begin
+      return Surface * Delta;
+   end Shell_Volume;
+
+   function V3_Electron_Mass (R_p : Float; Alpha : Float) return Float is
+      Delta    : Float := Boundary_Layer_Thickness (R_p, Alpha);
+      V_shell  : Float := Shell_Volume (R_p, Delta);
+      Rho_shell : Float := RHO_COND / (BETA * BETA);
+   begin
+      return V_shell * Rho_shell;
+   end V3_Electron_Mass;
+
+   function Proton_Electron_Mass_Ratio (R_p : Float; Alpha : Float) return Float is
+      Rho_core : Float := RHO_COND * BETA * BETA;
+      Rho_shell : Float := RHO_COND / (BETA * BETA);
+      V_core   : Float := PI * PI * R_p * R_p * R_p / 2.0;
+      Delta    : Float := Boundary_Layer_Thickness (R_p, Alpha);
+      V_shell  : Float := Shell_Volume (R_p, Delta);
+   begin
+      return (Rho_core / Rho_shell) * (V_core / V_shell);
+   end Proton_Electron_Mass_Ratio;
+
+   function Get_V3_Proton_Mass_Record (R_p : Float) return V3_Proton_Mass_Record is
+      M_V3  : Float := V3_Proton_Mass (R_p);
+      M_CODATA : constant Float := 1.67262192e-27;
+      Ratio : Float := M_V3 / M_CODATA;
+   begin
+      return V3_Proton_Mass_Record'
+        (Mass_Absolute_kg => M_V3,
+         Mass_CODATA_kg => M_CODATA,
+         Pressure_Ratio => Ratio,
+         Is_Pressure_Diff => True,
+         Checksum => 9);
+   end Get_V3_Proton_Mass_Record;
+
+   function Get_V3_Electron_Mass_Record (R_p : Float; Alpha : Float) return V3_Electron_Mass_Record is
+      M_V3  : Float := V3_Electron_Mass (R_p, Alpha);
+      M_CODATA : constant Float := 9.1093837e-31;
+      Delta : Float := Boundary_Layer_Thickness (R_p, Alpha);
+      V_shell : Float := Shell_Volume (R_p, Delta);
+   begin
+      return V3_Electron_Mass_Record'
+        (Mass_V3_kg => M_V3,
+         Mass_CODATA_kg => M_CODATA,
+         Boundary_Layer_m => Delta,
+         Shell_Volume_m3 => V_shell,
+         Checksum => 9);
+   end Get_V3_Electron_Mass_Record;
+
+   -- ========================================================================
+   -- 13. FONCTIONS DE CHARGE V3
+   -- ========================================================================
+
+   function Charge_As_Pressure (P_wave, P_ambient : Float; A_surface : Float) return Float is
+      Alpha_c : constant Float := 1.0 / 137.03599913;
+   begin
+      return Alpha_c * (P_wave - P_ambient) * A_surface;
+   end Charge_As_Pressure;
+
+   function Coulomb_As_Pressure_Gradient (q1, q2 : Float; R_m : Float; Epsilon_eff : Float) return Float is
+   begin
+      return (q1 * q2) / (4.0 * PI * Epsilon_eff * R_m * R_m);
+   end Coulomb_As_Pressure_Gradient;
+
+   -- ========================================================================
+   -- 14. FONCTIONS NEUTRINO V3
+   -- ========================================================================
+
+   function Neutrino_Velocity (Gamma_long, Gamma_trans : Float) return Float is
+   begin
+      if Gamma_long >= Gamma_trans then
+         return C_LIGHT * 1.0e6;
+      else
+         return C_LIGHT / sqrt (1.0 - (Gamma_long / Gamma_trans));
+      end if;
+   end Neutrino_Velocity;
+
+   function Neutrino_Energy (P_amplitude : Float; A_front : Float; Freq : Float) return Float is
+   begin
+      return P_amplitude * A_front * Freq;
+   end Neutrino_Energy;
+
+   -- ========================================================================
+   -- 15. AIDE MÉMOIRE V3
+   -- ========================================================================
+
+   function Total_Waves (Waves : Surface_Wave_Array) return Integer is
+      Sum : Integer := 0;
+   begin
+      for I in Waves'Range loop
+         Sum := Sum + Waves (I).Occupancy;
+      end loop;
+      return Sum;
+   end Total_Waves;
+
+   function Phase_Group (Z : Integer) return Integer is
+   begin
+      return Geometric_Group (Z);
+   end Phase_Group;
+
+   function Phase_Period (Z : Integer) return Integer is
+   begin
+      return Geometric_Period (Z);
+   end Phase_Period;
+
+   function Critical_Pressure (R_m : Float) return Float is
+   begin
+      if R_m = 0.0 then
+         return 0.0;
+      end if;
+      return ENERGY_SCALE_J / ((4.0 / 3.0) * PI * R_m * R_m * R_m);
+   end Critical_Pressure;
+
+   -- ========================================================================
+   -- 16. PREUVES V3
+   -- ========================================================================
+
+   function Check_Vortex_Conservation (Node : V3_Phase_Node) return Boolean is
+   begin
+      return Node.A = Node.Z + Node.N;
+   end Check_Vortex_Conservation;
+
+   function Check_Wave_Conservation (Node : V3_Phase_Node) return Boolean is
+   begin
+      return Node.Z = Total_Waves (Node.Shells);
+   end Check_Wave_Conservation;
+
+   function Check_Phase_Stability (Node : V3_Phase_Node) return Boolean is
+   begin
+      if Node.Is_Stable then
+         return Node.Coherence >= 90.0;
+      else
+         return True;
+      end if;
+   end Check_Phase_Stability;
+
+   function Check_Geometric_Stability (Node : V3_Phase_Node) return Boolean is
+   begin
+      if Node.Is_Stable then
+         return Node.Geometry.Is_Compact;
+      else
+         return True;
+      end if;
+   end Check_Geometric_Stability;
+
+   function Check_Pressure_Limit (Node : V3_Phase_Node) return Boolean is
+      R_m : Float := Node.Proton.Radius_Fm * 1.0e-15;
+   begin
+      if Node.Is_Stable then
+         return Node.Proton.Pressure_GPa < Critical_Pressure (R_m);
+      else
+         return True;
+      end if;
+   end Check_Pressure_Limit;
+
+   function Check_Phase_Periodicity (Node : V3_Phase_Node) return Boolean is
+   begin
+      return Node.Phase_Period = Phase_Period (Node.Z) and
+             Node.Phase_Group = Phase_Group (Node.Z);
+   end Check_Phase_Periodicity;
+
+   function Check_Valence_Consistency (Node : V3_Phase_Node) return Boolean is
+   begin
+      return Node.Geometry.Available_Sites = Geometric_Valence (Node.Z);
+   end Check_Valence_Consistency;
+
+   -- ========================================================================
+   -- 17. PRIVATE HELPERS
+   -- ========================================================================
+
+   function Total_EM_Wave_Energy (EM : EM_V3_Properties) return Float is
+      Sum : Float := 0.0;
+   begin
+      for I in 1 .. 20 loop
+         Sum := Sum + EM.Spectral_Series (I).Energy_eV * E_CHARGE;
+      end loop;
+      return Sum;
+   end Total_EM_Wave_Energy;
+
+   function Create_Vortex (Z, N : Integer) return Proton_Vortex is
+      A      : Integer := Z + N;
+      R_m    : Float := Vortex_Radius (A);
+      P_GPa  : Float := Vortex_Pressure (Z, N, R_m);
+      Phi    : Float := Phase_Potential (R_m, 1.0e-10);
+      B_Field : Float := Vortex_Magnetic_Field (Z, A, R_m * 1.0e15);
+      P_amp  : Float := (if Z > 0 then ENERGY_SCALE_J / ((4.0/3.0) * PI * R_m * R_m * R_m) else 0.0);
+   begin
+      return Proton_Vortex'
+        (Z                    => Z,
+         Radius_Fm            => R_m * 1.0e15,
+         Pressure_GPa         => P_GPa,
+         Phase_Potential_V    => Phi,
+         Magnetic_Field_T     => B_Field,
+         Spin_Frequency_Hz    => NU_PHASE * (Float (A) / Float (Z)) ** 0.5,
+         Wave_Amplitude_Pa    => P_amp);
+   end Create_Vortex;
+
+   function Create_Regulator (N : Integer) return Pressure_Regulator is
+      Cross_Section : Float;
+      Mag_Contrib   : Float;
+   begin
+      if N = 0 then
+         Cross_Section := 0.0;
+         Mag_Contrib := 0.0;
+      else
+         Cross_Section := 1.0e-28 / Float (N);
+         Mag_Contrib := MU_B * Float (N) / 1836.0 * 0.001;
+      end if;
+      return Pressure_Regulator'
+        (N                      => N,
+         Absorbtion_Cross_Section => Cross_Section,
+         Magnetic_Contribution  => Mag_Contrib,
+         Is_Saturated           => N > 0);
+   end Create_Regulator;
+
+   function Create_Surface_Waves (Z : Integer) return Surface_Wave_Array is
+      type Wave_Order_Entry is record n, l : Integer; end record;
+      Order : constant array (1 .. 28) of Wave_Order_Entry :=
+        ((1,0), (2,0), (2,1), (3,0), (3,1), (4,0), (3,2),
+         (4,1), (5,0), (4,2), (5,1), (6,0), (4,3), (5,2),
+         (6,1), (7,0), (5,3), (6,2), (7,1), (6,3), (7,2),
+         (7,3), (8,0), (8,1), (8,2), (8,3), (9,0), (9,1));
+
+      Waves      : Surface_Wave_Array;
+      Remaining  : Integer := Z;
+      Wave_Idx   : Integer := 1;
+      Occ        : Integer;
+   begin
+      for I in Waves'Range loop
+         Waves (I) := (Kind => S, Principal_N => 1, Subshell_L => 0,
+                       Occupancy => 0, Radius_Bohr => 0.0, Phase_Shift => 0.0,
+                       EM_Mode => 1, Orbital_Angular_Momentum => 0.0,
+                       Magnetic_Quantum_Number => 0, Wave_Amplitude_Pa => 0.0);
+      end loop;
+
+      for I in Order'Range loop
+         exit when Remaining <= 0 or Wave_Idx > 7;
+         Occ := Phase_State_Occupancy (Order (I).l);
+         if Remaining >= Occ then
+            Waves (Wave_Idx) :=
+              (Kind => Surface_Wave_Type'Val (Order (I).l),
+               Principal_N => Order (I).n,
+               Subshell_L => Order (I).l,
+               Occupancy => Occ,
+               Radius_Bohr => Surface_Wave_Radius (Order (I).n, Order (I).l, Float (Z)),
+               Phase_Shift => 0.0,
+               EM_Mode => Order (I).n * (Order (I).l + 1),
+               Orbital_Angular_Momentum => Float (Order (I).l),
+               Magnetic_Quantum_Number => Order (I).l,
+               Wave_Amplitude_Pa => Pressure_Wave_Amplitude (Z, Order (I).n, Order (I).l, Occ));
+            Remaining := Remaining - Occ;
+         else
+            Waves (Wave_Idx) :=
+              (Kind => Surface_Wave_Type'Val (Order (I).l),
+               Principal_N => Order (I).n,
+               Subshell_L => Order (I).l,
+               Occupancy => Remaining,
+               Radius_Bohr => Surface_Wave_Radius (Order (I).n, Order (I).l, Float (Z)),
+               Phase_Shift => 0.0,
+               EM_Mode => Order (I).n * (Order (I).l + 1),
+               Orbital_Angular_Momentum => Float (Order (I).l),
+               Magnetic_Quantum_Number => Order (I).l,
+               Wave_Amplitude_Pa => Pressure_Wave_Amplitude (Z, Order (I).n, Order (I).l, Remaining));
+            Remaining := 0;
+         end if;
+         Wave_Idx := Wave_Idx + 1;
+      end loop;
+
+      return Waves;
+   end Create_Surface_Waves;
+
+   function Create_EM_Properties (Z : Integer; Waves : Surface_Wave_Array) return EM_V3_Properties is
+      Rupture   : Float := Rupture_Pressure_Energy (Z, 1);
+      Diff      : Float := Differential_Pressure (Z, Waves);
+      Mag       : Float := Orbital_Magnetic_Moment (Z, Waves);
+      Pol       : Float := Phase_Polarizability (Waves);
+      Grad      : Float := Pressure_Gradient (Z, Rupture, Diff);
+      Lines     : Shear_Wave_Array;
+   begin
+      for I in 1 .. 20 loop
+         Lines (I) := (Wavelength_M => 0.0, Frequency_Hz => 0.0,
+                       Energy_eV => 0.0, Transition => "          ",
+                       Intensity_Rel => 0.0);
+      end loop;
+
+      for I in 1 .. 5 loop
+         Lines (I) := Shear_Wave_Emission (Z, 1, I + 1);
+         Lines (I).Transition := (others => ' ');
+      end loop;
+
+      for I in 1 .. 5 loop
+         Lines (I + 5) := Shear_Wave_Emission (Z, 2, I + 3);
+         Lines (I + 5).Transition := (others => ' ');
+      end loop;
+
+      return EM_V3_Properties'
+        (Magnetic_Moment_Jp_T => Mag,
+         Polarizability_m3   => Pol,
+         Ionization_Energy_eV => Rupture,
+         Electron_Affinity_eV => Diff,
+         Electronegativity    => Grad,
+         Spectral_Series      => Lines,
+         Checksum             => 9);
+   end Create_EM_Properties;
+
+   function Create_Thermo_Properties (Z : Integer) return Thermo_V3_Properties is
+   begin
+      return Thermo_V3_Properties'
+        (Melting_Point_K      => Friction_Gradient_Melting (Z),
+         Boiling_Point_K      => Friction_Gradient_Boiling (Z),
+         Specific_Heat_JpKgK  => Phase_Capacity (Z),
+         Thermal_Conductivity_Wp_mK => 0.01 * Float (Z),
+         Checksum             => 9);
+   end Create_Thermo_Properties;
+
+   function Create_Geometry (Z : Integer) return Packing_Geometry is
+      Packing : Compact_Packing_Type := Get_Compact_Packing (Z);
+      Is_Comp : Boolean := Packing /= None;
+      Sym     : Integer := 1;
+      Sites   : Integer := Geometric_Valence (Z);
+      Demand  : Float := Phase_Demand_Of_Cluster (Z);
+      Factor  : Float := 1.0;
+   begin
+      -- Facteur de stabilité basé sur la géométrie
+      case Packing is
+         when Single      => Factor := 1.0; Sym := 1;
+         when Pair        => Factor := 0.95; Sym := 2;
+         when Octahedron  => Factor := 0.90; Sym := 24;
+         when Cube        => Factor := 0.85; Sym := 8;
+         when Bipyramid   => Factor := 0.80; Sym := 10;
+         when Icosahedron => Factor := 0.75; Sym := 60;
+         when None        => 
+            -- Non compact mais peut être stable si phase le permet
+            if Is_Stable_Vortex_Count (Z) then
+               Factor := 0.50;
+               Is_Comp := True;  -- Stable malgré non compact
+            else
+               Factor := 0.10;
+            end if;
+            Sym := 1;
+      end case;
+
+      return Packing_Geometry'
+        (Vortex_Count    => Z,
+         Packing_Type    => Packing,
+         Is_Compact      => Is_Comp,
+         Symmetry_Order  => Sym,
+         Available_Sites => Sites,
+         Phase_Demand    => Demand,
+         Stability_Factor => Factor,
+         Checksum        => 9);
+   end Create_Geometry;
+
+   function Create_Valence_Sites (Z : Integer) return Valence_Site_Array is
+      Packing : Compact_Packing_Type := Get_Compact_Packing (Z);
+      Sites   : Valence_Site_Array := Compute_Valence_Sites (Z, Packing);
+   begin
+      return Sites;
+   end Create_Valence_Sites;
+
+   function Create_Node (Z, N : Integer; Symbol : String (1 .. 3)) return V3_Phase_Node is
+      A        : Integer := Z + N;
+      Vortex   : Proton_Vortex := Create_Vortex (Z, N);
+      Regulator : Pressure_Regulator := Create_Regulator (N);
+      Waves    : Surface_Wave_Array := Create_Surface_Waves (Z);
+      Phi      : Float := Vortex.Phase_Potential_V;
+      Coh      : Float := Compute_Coherence (Phi);
+      R_m      : Float := Vortex.Radius_Fm * 1.0e-15;
+      P_crit   : Float := Critical_Pressure (R_m);
+      Geo      : Packing_Geometry := Create_Geometry (Z);
+      Val_Sites : Valence_Site_Array := Create_Valence_Sites (Z);
+      Is_Stable_Geom : Boolean := Check_Phase_Stability_Geometric (Z, Phi);
+      Is_Stable: Boolean := (Coh >= 90.0 and Vortex.Pressure_GPa < P_crit / 1.0e9
+                             and Is_Stable_Geom);
+   begin
+      return V3_Phase_Node'
+        (Symbol        => Symbol,
+         Z             => Z,
+         N             => N,
+         A             => A,
+         Mass_Kg       => Float (A) * AMU,
+         Proton        => Vortex,
+         Neutron       => Regulator,
+         Shells        => Waves,
+         EM            => Create_EM_Properties (Z, Waves),
+         Thermo        => Create_Thermo_Properties (Z),
+         Geometry      => Geo,
+         Valence_Sites => Val_Sites,
+         Coherence     => Coh,
+         Is_Stable     => Is_Stable,
+         Phase_Group   => Phase_Group (Z),
+         Phase_Period  => Phase_Period (Z),
+         Checksum      => 9);
+   end Create_Node;
+
+end V3_Unified;
