@@ -1,0 +1,11 @@
+# Compilation
+gnatmake -gnatwa -gnat12 -gnata -gnatp V3_Main.adb
+
+# Vérification SPARK (preuves)
+gnatprove -P v3_project.gpr --level=4 --counterexamples=on
+
+# Exécution
+./V3_Main
+
+# Exécution avec options
+./V3_Main --full --radiation --masses --harmonics --proofs
