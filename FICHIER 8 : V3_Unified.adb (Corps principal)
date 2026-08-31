@@ -1,0 +1,143 @@
+-- ============================================================================
+-- V3_Unified.adb — Corps principal V3
+-- Version 11.0.0
+-- ============================================================================
+
+with Ada.Numerics; use Ada.Numerics;
+with V3_Constants; use V3_Constants;
+with V3_Geometry;  use V3_Geometry;
+with V3_Radiation; use V3_Radiation;
+
+package body V3_Unified with
+   SPARK_Mode => On
+is
+
+   -- ========================================================================
+   -- 1. FONCTIONS HADRONS
+   -- ========================================================================
+
+   function Vortex_Radius (A : Integer) return Float is
+      R0 : constant Float := 1.2e-15;
+   begin
+      return R0 * Float (A) ** (1.0 / 3.0);
+   end Vortex_Radius;
+
+   -- ... toutes les autres fonctions (Vortex_Pressure, Phase_Potential,
+   --    Compute_Coherence, Surface_Wave_Radius, Phase_State_Occupancy,
+   --    Rupture_Pressure_Energy, Differential_Pressure, Pressure_Gradient,
+   --    Orbital_Magnetic_Moment, Phase_Polarizability, Shear_Wave_Emission,
+   --    Vortex_Magnetic_Field, Pressure_Wave_Amplitude, etc.)
+
+   -- ========================================================================
+   -- 2. FONCTIONS DE LIAISON
+   -- ========================================================================
+
+   -- Membrane_Fusion_Distance, Membrane_Fusion_Energy,
+   -- Determine_Fusion_Type, Membrane_Fusion_Area, Wave_Interference,
+   -- Phase_Locking_Condition, Phase_Locking_Energy
+
+   -- ========================================================================
+   -- 3. FONCTIONS DE RELAXATION DE PHASE
+   -- ========================================================================
+
+   -- Phase_Relaxation_Time, Predict_Relaxation_Mode, Phase_Relaxation_Chain
+
+   -- ========================================================================
+   -- 4. FONCTIONS THERMODYNAMIQUES
+   -- ========================================================================
+
+   -- Friction_Gradient_Melting, Friction_Gradient_Boiling, Phase_Capacity
+
+   -- ========================================================================
+   -- 5. FONCTIONS HARMONIQUES
+   -- ========================================================================
+
+   -- First_Harmonic_Mass_Ratio, Second_Harmonic_Mass_Ratio,
+   -- Phase_Anomaly, Get_Harmonics
+
+   -- ========================================================================
+   -- 6. FONCTIONS RÉSEAU/NEUD
+   -- ========================================================================
+
+   -- Phase_Velocity, Friction_Limit, Get_V3_State
+
+   -- ========================================================================
+   -- 7. FONCTIONS DE MASSE
+   -- ========================================================================
+
+   -- V3_Proton_Mass, V3_Pressure_Ratio, Mass_As_Pressure_Differential,
+   -- Boundary_Layer_Thickness, Shell_Volume, V3_Electron_Mass,
+   -- Proton_Electron_Mass_Ratio, Get_V3_Proton_Mass_Record,
+   -- Get_V3_Electron_Mass_Record
+
+   -- ========================================================================
+   -- 8. FONCTIONS DE CHARGE
+   -- ========================================================================
+
+   -- Charge_As_Pressure, Coulomb_As_Pressure_Gradient
+
+   -- ========================================================================
+   -- 9. FONCTIONS NEUTRINO
+   -- ========================================================================
+
+   -- Neutrino_Velocity, Neutrino_Energy
+
+   -- ========================================================================
+   -- 10. AIDE MÉMOIRE
+   -- ========================================================================
+
+   -- Total_Waves, Phase_Group, Phase_Period, Critical_Pressure
+
+   -- ========================================================================
+   -- 11. FONCTIONS DE CRÉATION (PRIVÉES)
+   -- ========================================================================
+
+   function Create_Vortex (Z, N : Integer) return Proton_Vortex is
+      A      : Integer := Z + N;
+      R_m    : Float := Vortex_Radius (A);
+      P_GPa  : Float := Vortex_Pressure (Z, N, R_m);
+      Phi    : Float := Phase_Potential (R_m, 1.0e-10);
+      B_Field : Float := Vortex_Magnetic_Field (Z, A, R_m * 1.0e15);
+      P_amp  : Float := (if Z > 0 then ENERGY_SCALE_J / ((4.0/3.0) * PI * R_m * R_m * R_m) else 0.0);
+   begin
+      return Proton_Vortex'
+        (Z                    => Z,
+         Radius_Fm            => R_m * 1.0e15,
+         Pressure_GPa         => P_GPa,
+         Phase_Potential_V    => Phi,
+         Magnetic_Field_T     => B_Field,
+         Spin_Frequency_Hz    => NU_PHASE * (Float (A) / Float (Z)) ** 0.5,
+         Wave_Amplitude_Pa    => P_amp);
+   end Create_Vortex;
+
+   function Create_Regulator (N : Integer) return Pressure_Regulator is
+      Cross_Section : Float;
+      Mag_Contrib   : Float;
+   begin
+      if N = 0 then
+         Cross_Section := 0.0;
+         Mag_Contrib := 0.0;
+      else
+         Cross_Section := 1.0e-28 / Float (N);
+         Mag_Contrib := MU_B * Float (N) / 1836.0 * 0.001;
+      end if;
+      return Pressure_Regulator'
+        (N                      => N,
+         Absorbtion_Cross_Section => Cross_Section,
+         Magnetic_Contribution  => Mag_Contrib,
+         Is_Saturated           => N > 0);
+   end Create_Regulator;
+
+   function Create_Surface_Waves (Z : Integer) return Surface_Wave_Array is
+      -- ... (ordre de remplissage des couches)
+   end Create_Surface_Waves;
+
+   function Create_EM_Properties (Z : Integer; Waves : Surface_Wave_Array) return EM_V3_Properties is
+      -- ... (inclut Blackbody, Bremsstrahlung, Cherenkov)
+   end Create_EM_Properties;
+
+   function Create_Node (Z, N : Integer; Symbol : String (1 .. 3)) return V3_Phase_Node is
+      -- ... (construction complète du nœud)
+   end Create_Node;
+
+end V3_Unified;
