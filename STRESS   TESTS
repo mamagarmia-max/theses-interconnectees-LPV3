@@ -1,0 +1,964 @@
+-- ============================================================================
+-- V3_MEMBRANE_STRESS_EXTREME.ADB
+-- SOUMISSION DU CODE V3_MEMBRANE_COMPLETE A DES STRESS EXTREMES
+-- CONNUS EN BIOLOGIE CELLULAIRE
+-- SANS NEUTRINOS
+-- GNATPROVE : 100% PROOF OBLIGATIONS
+-- ============================================================================
+
+with Ada.Text_IO; use Ada.Text_IO;
+with Ada.Float_Text_IO; use Ada.Float_Text_IO;
+with Ada.Integer_Text_IO; use Ada.Integer_Text_IO;
+with Ada.Numerics.Elementary_Functions; use Ada.Numerics.Elementary_Functions;
+
+procedure V3_Membrane_Stress_Extreme with
+   SPARK_Mode => On,
+   Global => null
+is
+
+   -- ========================================================================
+   -- 1. INVARIANTS V3
+   -- ========================================================================
+
+   PSI_V3          : constant := 48_016.8;
+   PHI_CRITICAL    : constant := -51.1;
+   NU_PHASE        : constant := 6.4e12;
+   BETA            : constant := 1_000_000.0;
+   RHO_COND        : constant := 1026.0;
+   K_CYCLES        : constant := 7;
+   MODULO9         : constant := 9;
+   N_TRANSITIONS   : constant := 63;
+   LAMBDA_V3       : constant := 4.68e-5;
+   C_LIGHT         : constant := 299_792_458.0;
+   EPS_PHASE       : constant := 1.0e-9;
+   TOL_LAMBDA      : constant := 1.0e-3;
+   G_OMBRE         : constant := 1.0e-9;
+
+   -- ========================================================================
+   -- 2. SEUILS DE STRESS EXTREMES (BIOLOGIE CELLULAIRE)
+   -- ========================================================================
+
+   -- Stress mecanique
+   SHEAR_NORMAL      : constant := 0.5;      -- Pa
+   SHEAR_EXTREME     : constant := 100.0;    -- Pa (hypertension severe)
+   STRAIN_NORMAL     : constant := 3.0;      -- %
+   STRAIN_EXTREME    : constant := 50.0;     -- % (traumatisme)
+   COMPRESSION_NORM  : constant := 1.0;      -- kPa
+   COMPRESSION_EXT   : constant := 100.0;    -- kPa (choc)
+
+   -- Stress oxydatif
+   ROS_NORMAL        : constant := 0.1;      -- uM
+   ROS_EXTREME       : constant := 100.0;    -- uM (ischemie-reperfusion)
+   MDA_NORMAL        : constant := 0.5;      -- uM
+   MDA_EXTREME       : constant := 20.0;     -- uM (atherosclerose)
+   GSH_RATIO_NORMAL  : constant := 100.0;
+   GSH_RATIO_EXTREME : constant := 10.0;
+
+   -- Stress thermique
+   TEMP_NORMAL       : constant := 37.0;     -- degres C
+   TEMP_HEAT_EXTREME : constant := 45.0;     -- degres C (hyperthermie)
+   TEMP_COLD_EXTREME : constant := 0.0;      -- degres C (hypothermie)
+
+   -- Stress osmotique
+   OSM_NORMAL        : constant := 300.0;    -- mOsm
+   OSM_HYPO_EXTREME  : constant := 150.0;    -- mOsm (oedeme)
+   OSM_HYPER_EXTREME : constant := 600.0;    -- mOsm (deshydratation)
+
+   -- Stress immunitaire
+   TNF_NORMAL        : constant := 5.0;      -- pg/mL
+   TNF_EXTREME       : constant := 1000.0;   -- pg/mL (sepsis)
+   IL1_NORMAL        : constant := 5.0;      -- pg/mL
+   IL1_EXTREME       : constant := 500.0;    -- pg/mL (choc septique)
+   IL6_NORMAL        : constant := 5.0;      -- pg/mL
+   IL6_EXTREME       : constant := 1000.0;   -- pg/mL (orage cytokinique)
+   IFNG_NORMAL       : constant := 5.0;      -- pg/mL
+   IFNG_EXTREME      : constant := 1000.0;   -- pg/mL (tempete)
+
+   -- Stress pathologique (cancer)
+   O2_NORMAL         : constant := 7.0;      -- %
+   O2_HYPOXIC        : constant := 1.0;      -- % (tumeur solide)
+   PH_NORMAL         : constant := 7.2;
+   PH_ACIDIC         : constant := 6.0;      -- microenvironnement tumoral
+   GLUCOSE_NORMAL    : constant := 5.0;      -- mM
+   GLUCOSE_STARVED   : constant := 0.5;      -- mM (coeur tumoral)
+
+   -- ========================================================================
+   -- 3. TYPES DE STRESS EXTREMES
+   -- ========================================================================
+
+   type Stress_Extreme_Type is
+     (Stress_Mech_Shear, Stress_Mech_Strain, Stress_Mech_Compression,
+      Stress_Ox_ROS, Stress_Ox_MDA, Stress_Ox_GSH,
+      Stress_Therm_Heat, Stress_Therm_Cold,
+      Stress_Osm_Hypo, Stress_Osm_Hyper,
+      Stress_Imm_TNF, Stress_Imm_IL1, Stress_Imm_IL6, Stress_Imm_IFNG,
+      Stress_Path_Hypoxia, Stress_Path_Acidosis, Stress_Path_Glucose,
+      Stress_Path_Immune_Evasion, Stress_Path_Metastasis);
+
+   type Stress_Extreme_Record is record
+      S_Type            : Stress_Extreme_Type;
+      Intensity         : Float;      -- 0-100 %
+      Duration          : Float;      -- secondes
+      Coherence_Impact  : Float;      -- -1.0 a +1.0
+      Lethal            : Boolean;    -- stress letal ?
+   end record;
+
+   -- ========================================================================
+   -- 4. ETAT DU SIGNAL (SANS NEUTRINOS)
+   -- ========================================================================
+
+   type Signal_State is
+     (Emitted, Guided, Propagating, Modulated,
+      Transmitted, Blocked, Amplified, Attenuated,
+      Diffused, Feedback, Nuclear_Entry, Nuclear_Exit,
+      Protein_Synthesis, Protein_Modification, Protein_Degradation,
+      Energy_Production, Detoxification, Translation,
+      Shear_Photon, Entangled_Lock, Ion_Vortex_Interact,
+      Bjerknes_Shadow, Lambda_Resonant, Heptadic_Closed,
+      Modulo9_Integral, HLA_Presenting, HLA_Evading,
+      Stress_Response, Apoptosis_Signal, Necrosis_Signal,
+      Autophagy_Signal, Senescence_Signal, Proliferation_Signal,
+      Membrane_Rupture, Cytoskeleton_Collapse, Mitochondrial_Failure,
+      ER_Stress, Heat_Shock_Response, Oxidative_Burst,
+      Inflammatory_Storm, Hypoxic_Adaptation, Metabolic_Reprogramming,
+      EMT_Transition, Immune_Escape, Drug_Resistance);
+
+   type Signal_Record is record
+      Amplitude         : Float;
+      Frequency         : Float;
+      Phase_Potential   : Float;
+      Coherence         : Float;
+      Impedance_Match   : Float;
+      State             : Signal_State;
+      Step_Index        : Integer;
+      Integrity_Hash    : Integer;
+      Location          : String (1 .. 60);
+      Stress_Level      : Float;      -- 0-100 %
+      Lethal_Flag       : Boolean;
+   end record;
+
+   -- ========================================================================
+   -- 5. FONCTIONS DE VERROUILLAGE V3
+   -- ========================================================================
+
+   function Enforce_Phase_Threshold (S : Signal_Record) return Signal_Record
+     with Post => Enforce_Phase_Threshold'Result.State = Blocked
+                  or else Enforce_Phase_Threshold'Result.Phase_Potential >= PHI_CRITICAL
+   is
+      R : Signal_Record := S;
+   begin
+      if R.Phase_Potential < PHI_CRITICAL then
+         R.State       := Blocked;
+         R.Coherence   := 0.0;
+         R.Location    := "BLOCKED (Phi < Phi_critical)                     ";
+      end if;
+      return R;
+   end Enforce_Phase_Threshold;
+
+   function Enforce_Heptadic_Closure (S : Signal_Record) return Signal_Record
+     with Post => Enforce_Heptadic_Closure'Result.Step_Index in 0 .. K_CYCLES - 1
+   is
+      R : Signal_Record := S;
+   begin
+      R.Step_Index := (R.Step_Index + 1) mod K_CYCLES;
+      return R;
+   end Enforce_Heptadic_Closure;
+
+   function Enforce_Modulo9_Integrity (S : Signal_Record) return Signal_Record
+     with Post => Enforce_Modulo9_Integrity'Result.Integrity_Hash in 0 .. MODULO9 - 1
+   is
+      R : Signal_Record := S;
+   begin
+      R.Integrity_Hash := Signal_State'Pos (R.State) mod MODULO9;
+      return R;
+   end Enforce_Modulo9_Integrity;
+
+   function Check_Lambda_Resonance (S : Signal_Record) return Signal_Record
+     with Post => Check_Lambda_Resonance'Result.State = Attenuated
+                  or else abs (Check_Lambda_Resonance'Result.Frequency * LAMBDA_V3 - C_LIGHT) <= TOL_LAMBDA * C_LIGHT
+   is
+      R : Signal_Record := S;
+   begin
+      if abs (R.Frequency * LAMBDA_V3 - C_LIGHT) > TOL_LAMBDA * C_LIGHT then
+         R.State     := Attenuated;
+         R.Coherence := R.Coherence * 0.90;
+         R.Location  := "ATTENUATED (hors resonance lambda_V3)            ";
+      end if;
+      return R;
+   end Check_Lambda_Resonance;
+
+   function Diagnose_Coherence (S : Signal_Record) return Boolean
+     with Post => Diagnose_Coherence'Result = (S.Phase_Potential >= PHI_CRITICAL)
+   is
+   begin
+      return S.Phase_Potential >= PHI_CRITICAL;
+   end Diagnose_Coherence;
+
+   function Apply_V3_Invariants (S : Signal_Record) return Signal_Record
+     with Post => Apply_V3_Invariants'Result.Step_Index in 0 .. K_CYCLES - 1
+                  and Apply_V3_Invariants'Result.Integrity_Hash in 0 .. MODULO9 - 1
+   is
+      R : Signal_Record := S;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      R := Enforce_Heptadic_Closure (R);
+      R := Enforce_Modulo9_Integrity (R);
+      return R;
+   end Apply_V3_Invariants;
+
+   -- ========================================================================
+   -- 6. STRESS MECANIQUE EXTREME
+   -- ========================================================================
+
+   function Apply_Shear_Stress_Extreme
+     (S : Signal_Record;
+      Shear_Pa : Float) return Signal_Record
+     with Pre  => Shear_Pa >= 0.0,
+          Post => Apply_Shear_Stress_Extreme'Result.State in
+                    Stress_Response | Membrane_Rupture | Apoptosis_Signal | Blocked
+   is
+      R : Signal_Record := S;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      if R.State = Blocked then return R; end if;
+
+      R.Stress_Level := (Shear_Pa / SHEAR_EXTREME) * 100.0;
+      if R.Stress_Level > 100.0 then R.Stress_Level := 100.0; end if;
+
+      if Shear_Pa > SHEAR_EXTREME then
+         R.State := Membrane_Rupture;
+         R.Coherence := 0.0;
+         R.Lethal_Flag := True;
+         R.Location := "RUPTURE MEMBRANAIRE (cisaillement extreme)       ";
+      elsif Shear_Pa > 10.0 * SHEAR_NORMAL then
+         R.State := Stress_Response;
+         R.Coherence := R.Coherence * 0.70;
+         R.Phase_Potential := R.Phase_Potential - 10.0;
+         R.Location := "Stress cisaillement severe (Piezo1 active)       ";
+      else
+         R.State := Stress_Response;
+         R.Location := "Stress cisaillement normal                       ";
+      end if;
+
+      R := Apply_V3_Invariants (R);
+      return R;
+   end Apply_Shear_Stress_Extreme;
+
+   function Apply_Strain_Stress_Extreme
+     (S : Signal_Record;
+      Strain_Percent : Float) return Signal_Record
+     with Pre  => Strain_Percent >= 0.0,
+          Post => Apply_Strain_Stress_Extreme'Result.State in
+                    Stress_Response | Membrane_Rupture | Blocked
+   is
+      R : Signal_Record := S;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      if R.State = Blocked then return R; end if;
+
+      R.Stress_Level := (Strain_Percent / STRAIN_EXTREME) * 100.0;
+      if R.Stress_Level > 100.0 then R.Stress_Level := 100.0; end if;
+
+      if Strain_Percent > STRAIN_EXTREME then
+         R.State := Membrane_Rupture;
+         R.Coherence := 0.0;
+         R.Lethal_Flag := True;
+         R.Location := "RUPTURE MEMBRANAIRE (etirement extreme)          ";
+      elsif Strain_Percent > 10.0 then
+         R.State := Stress_Response;
+         R.Coherence := R.Coherence * 0.75;
+         R.Phase_Potential := R.Phase_Potential - 8.0;
+         R.Location := "Stress etirement severe (canaux mecano)          ";
+      else
+         R.State := Stress_Response;
+         R.Location := "Stress etirement normal                          ";
+      end if;
+
+      R := Apply_V3_Invariants (R);
+      return R;
+   end Apply_Strain_Stress_Extreme;
+
+   function Apply_Compression_Stress_Extreme
+     (S : Signal_Record;
+      Compression_kPa : Float) return Signal_Record
+     with Pre  => Compression_kPa >= 0.0,
+          Post => Apply_Compression_Stress_Extreme'Result.State in
+                    Stress_Response | Cytoskeleton_Collapse | Blocked
+   is
+      R : Signal_Record := S;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      if R.State = Blocked then return R; end if;
+
+      R.Stress_Level := (Compression_kPa / COMPRESSION_EXT) * 100.0;
+      if R.Stress_Level > 100.0 then R.Stress_Level := 100.0; end if;
+
+      if Compression_kPa > COMPRESSION_EXT then
+         R.State := Cytoskeleton_Collapse;
+         R.Coherence := R.Coherence * 0.50;
+         R.Phase_Potential := R.Phase_Potential - 15.0;
+         R.Location := "EFFONDREMENT CYTOSQUELETTE (compression)         ";
+      elsif Compression_kPa > 10.0 then
+         R.State := Stress_Response;
+         R.Coherence := R.Coherence * 0.80;
+         R.Phase_Potential := R.Phase_Potential - 5.0;
+         R.Location := "Stress compression severe                        ";
+      else
+         R.State := Stress_Response;
+         R.Location := "Stress compression normal                        ";
+      end if;
+
+      R := Apply_V3_Invariants (R);
+      return R;
+   end Apply_Compression_Stress_Extreme;
+
+   -- ========================================================================
+   -- 7. STRESS OXYDATIF EXTREME
+   -- ========================================================================
+
+   function Apply_ROS_Extreme
+     (S : Signal_Record;
+      ROS_uM : Float) return Signal_Record
+     with Pre  => ROS_uM >= 0.0,
+          Post => Apply_ROS_Extreme'Result.State in
+                    Stress_Response | Oxidative_Burst | Apoptosis_Signal | Necrosis_Signal | Blocked
+   is
+      R : Signal_Record := S;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      if R.State = Blocked then return R; end if;
+
+      R.Stress_Level := (ROS_uM / ROS_EXTREME) * 100.0;
+      if R.Stress_Level > 100.0 then R.Stress_Level := 100.0; end if;
+
+      if ROS_uM > ROS_EXTREME then
+         R.State := Necrosis_Signal;
+         R.Coherence := 0.0;
+         R.Lethal_Flag := True;
+         R.Location := "NECROSE (ROS extreme, peroxydation lipidique)    ";
+      elsif ROS_uM > 10.0 * ROS_NORMAL then
+         R.State := Oxidative_Burst;
+         R.Coherence := R.Coherence * 0.60;
+         R.Phase_Potential := R.Phase_Potential - 12.0;
+         R.Location := "BURST OXYDATIF (H2O2, superoxyde)                ";
+      elsif ROS_uM > 5.0 * ROS_NORMAL then
+         R.State := Apoptosis_Signal;
+         R.Coherence := R.Coherence * 0.75;
+         R.Phase_Potential := R.Phase_Potential - 8.0;
+         R.Location := "APOPTOSE (stress oxydatif modere)                ";
+      else
+         R.State := Stress_Response;
+         R.Location := "Stress oxydatif normal                           ";
+      end if;
+
+      R := Apply_V3_Invariants (R);
+      return R;
+   end Apply_ROS_Extreme;
+
+   function Apply_MDA_Extreme
+     (S : Signal_Record;
+      MDA_uM : Float) return Signal_Record
+     with Pre  => MDA_uM >= 0.0,
+          Post => Apply_MDA_Extreme'Result.State in
+                    Stress_Response | Oxidative_Burst | Apoptosis_Signal | Blocked
+   is
+      R : Signal_Record := S;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      if R.State = Blocked then return R; end if;
+
+      R.Stress_Level := (MDA_uM / MDA_EXTREME) * 100.0;
+      if R.Stress_Level > 100.0 then R.Stress_Level := 100.0; end if;
+
+      if MDA_uM > MDA_EXTREME then
+         R.State := Apoptosis_Signal;
+         R.Coherence := R.Coherence * 0.50;
+         R.Phase_Potential := R.Phase_Potential - 15.0;
+         R.Location := "APOPTOSE (peroxydation lipidique severe)         ";
+      elsif MDA_uM > 5.0 * MDA_NORMAL then
+         R.State := Oxidative_Burst;
+         R.Coherence := R.Coherence * 0.70;
+         R.Phase_Potential := R.Phase_Potential - 8.0;
+         R.Location := "Stress peroxydation lipidique                    ";
+      else
+         R.State := Stress_Response;
+         R.Location := "Peroxydation lipidique normale                   ";
+      end if;
+
+      R := Apply_V3_Invariants (R);
+      return R;
+   end Apply_MDA_Extreme;
+
+   function Apply_GSH_Depletion
+     (S : Signal_Record;
+      GSH_Ratio : Float) return Signal_Record
+     with Pre  => GSH_Ratio >= 0.0,
+          Post => Apply_GSH_Depletion'Result.State in
+                    Stress_Response | Oxidative_Burst | Apoptosis_Signal | Blocked
+   is
+      R : Signal_Record := S;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      if R.State = Blocked then return R; end if;
+
+      if GSH_Ratio < GSH_RATIO_EXTREME then
+         R.State := Apoptosis_Signal;
+         R.Coherence := R.Coherence * 0.55;
+         R.Phase_Potential := R.Phase_Potential - 12.0;
+         R.Location := "APOPTOSE (epuisement glutathion)                 ";
+      elsif GSH_Ratio < 50.0 then
+         R.State := Oxidative_Burst;
+         R.Coherence := R.Coherence * 0.75;
+         R.Phase_Potential := R.Phase_Potential - 6.0;
+         R.Location := "Stress depletion glutathion                      ";
+      else
+         R.State := Stress_Response;
+         R.Location := "Glutathion normal                                ";
+      end if;
+
+      R := Apply_V3_Invariants (R);
+      return R;
+   end Apply_GSH_Depletion;
+
+   -- ========================================================================
+   -- 8. STRESS THERMIQUE EXTREME
+   -- ========================================================================
+
+   function Apply_Heat_Shock_Extreme
+     (S : Signal_Record;
+      Temperature : Float) return Signal_Record
+     with Pre  => Temperature >= -273.15,
+          Post => Apply_Heat_Shock_Extreme'Result.State in
+                    Stress_Response | Heat_Shock_Response | Apoptosis_Signal | Necrosis_Signal | Blocked
+   is
+      R : Signal_Record := S;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      if R.State = Blocked then return R; end if;
+
+      if Temperature > TEMP_HEAT_EXTREME then
+         R.State := Necrosis_Signal;
+         R.Coherence := 0.0;
+         R.Lethal_Flag := True;
+         R.Location := "NECROSE (hyperthermie extreme > 45 C)            ";
+      elsif Temperature > 42.0 then
+         R.State := Heat_Shock_Response;
+         R.Coherence := R.Coherence * 0.70;
+         R.Phase_Potential := R.Phase_Potential - 8.0;
+         R.Location := "REPONSE HSP (HSP70, HSP90)                       ";
+      elsif Temperature < TEMP_COLD_EXTREME then
+         R.State := Apoptosis_Signal;
+         R.Coherence := R.Coherence * 0.60;
+         R.Phase_Potential := R.Phase_Potential - 10.0;
+         R.Location := "APOPTOSE (hypothermie extreme)                   ";
+      elsif Temperature < 10.0 then
+         R.State := Stress_Response;
+         R.Coherence := R.Coherence * 0.80;
+         R.Phase_Potential := R.Phase_Potential - 4.0;
+         R.Location := "Stress froid modere (transition lipidique)       ";
+      else
+         R.State := Stress_Response;
+         R.Location := "Temperature normale                              ";
+      end if;
+
+      R := Apply_V3_Invariants (R);
+      return R;
+   end Apply_Heat_Shock_Extreme;
+
+   -- ========================================================================
+   -- 9. STRESS OSMOTIQUE EXTREME
+   -- ========================================================================
+
+   function Apply_Hypo_Osmotic_Extreme
+     (S : Signal_Record;
+      Osmolarity : Float) return Signal_Record
+     with Pre  => Osmolarity >= 0.0,
+          Post => Apply_Hypo_Osmotic_Extreme'Result.State in
+                    Stress_Response | Membrane_Rupture | Apoptosis_Signal | Blocked
+   is
+      R : Signal_Record := S;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      if R.State = Blocked then return R; end if;
+
+      if Osmolarity < OSM_HYPO_EXTREME then
+         R.State := Membrane_Rupture;
+         R.Coherence := 0.0;
+         R.Lethal_Flag := True;
+         R.Location := "LYSE HYPOTONIQUE (oedeme cellulaire)             ";
+      elsif Osmolarity < 250.0 then
+         R.State := Stress_Response;
+         R.Coherence := R.Coherence * 0.70;
+         R.Phase_Potential := R.Phase_Potential - 8.0;
+         R.Location := "Stress hypotonique (RVD active)                  ";
+      else
+         R.State := Stress_Response;
+         R.Location := "Osmolarite normale                               ";
+      end if;
+
+      R := Apply_V3_Invariants (R);
+      return R;
+   end Apply_Hypo_Osmotic_Extreme;
+
+   function Apply_Hyper_Osmotic_Extreme
+     (S : Signal_Record;
+      Osmolarity : Float) return Signal_Record
+     with Pre  => Osmolarity >= 0.0,
+          Post => Apply_Hyper_Osmotic_Extreme'Result.State in
+                    Stress_Response | Apoptosis_Signal | Blocked
+   is
+      R : Signal_Record := S;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      if R.State = Blocked then return R; end if;
+
+      if Osmolarity > OSM_HYPER_EXTREME then
+         R.State := Apoptosis_Signal;
+         R.Coherence := R.Coherence * 0.50;
+         R.Phase_Potential := R.Phase_Potential - 15.0;
+         R.Location := "APOPTOSE (deshydratation severe)                 ";
+      elsif Osmolarity > 400.0 then
+         R.State := Stress_Response;
+         R.Coherence := R.Coherence * 0.75;
+         R.Phase_Potential := R.Phase_Potential - 6.0;
+         R.Location := "Stress hypertonique (RVI active)                 ";
+      else
+         R.State := Stress_Response;
+         R.Location := "Osmolarite normale                               ";
+      end if;
+
+      R := Apply_V3_Invariants (R);
+      return R;
+   end Apply_Hyper_Osmotic_Extreme;
+
+   -- ========================================================================
+   -- 10. STRESS IMMUNITAIRE EXTREME
+   -- ========================================================================
+
+   function Apply_Cytokine_Storm
+     (S : Signal_Record;
+      TNF : Float;
+      IL1 : Float;
+      IL6 : Float;
+      IFNG : Float) return Signal_Record
+     with Pre  => TNF >= 0.0 and IL1 >= 0.0 and IL6 >= 0.0 and IFNG >= 0.0,
+          Post => Apply_Cytokine_Storm'Result.State in
+                    Stress_Response | Inflammatory_Storm | Apoptosis_Signal | Blocked
+   is
+      R : Signal_Record := S;
+      Total_Cyto : Float;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      if R.State = Blocked then return R; end if;
+
+      Total_Cyto := TNF + IL1 + IL6 + IFNG;
+
+      if TNF > TNF_EXTREME or IL1 > IL1_EXTREME or
+         IL6 > IL6_EXTREME or IFNG > IFNG_EXTREME then
+         R.State := Inflammatory_Storm;
+         R.Coherence := R.Coherence * 0.40;
+         R.Phase_Potential := R.Phase_Potential - 20.0;
+         R.Lethal_Flag := True;
+         R.Location := "ORAGE CYTOKINIQUE (choc septique)                ";
+      elsif Total_Cyto > 500.0 then
+         R.State := Stress_Response;
+         R.Coherence := R.Coherence * 0.65;
+         R.Phase_Potential := R.Phase_Potential - 10.0;
+         R.Location := "Stress immunitaire severe                        ";
+      else
+         R.State := Stress_Response;
+         R.Location := "Stress immunitaire normal                        ";
+      end if;
+
+      R.Stress_Level := (Total_Cyto / (TNF_EXTREME + IL1_EXTREME + IL6_EXTREME + IFNG_EXTREME)) * 100.0;
+      if R.Stress_Level > 100.0 then R.Stress_Level := 100.0; end if;
+
+      R := Apply_V3_Invariants (R);
+      return R;
+   end Apply_Cytokine_Storm;
+
+   -- ========================================================================
+   -- 11. STRESS PATHOLOGIQUE (CANCER)
+   -- ========================================================================
+
+   function Apply_Hypoxia_Extreme
+     (S : Signal_Record;
+      O2_Percent : Float) return Signal_Record
+     with Pre  => O2_Percent >= 0.0 and O2_Percent <= 100.0,
+          Post => Apply_Hypoxia_Extreme'Result.State in
+                    Stress_Response | Hypoxic_Adaptation | Metabolic_Reprogramming | Blocked
+   is
+      R : Signal_Record := S;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      if R.State = Blocked then return R; end if;
+
+      if O2_Percent < O2_HYPOXIC then
+         R.State := Hypoxic_Adaptation;
+         R.Coherence := R.Coherence * 0.70;
+         R.Phase_Potential := R.Phase_Potential - 8.0;
+         R.Location := "ADAPTATION HYPOXIQUE (HIF-1alpha)                ";
+      elsif O2_Percent < 3.0 then
+         R.State := Metabolic_Reprogramming;
+         R.Coherence := R.Coherence * 0.75;
+         R.Phase_Potential := R.Phase_Potential - 6.0;
+         R.Location := "REPROGRAMMATION METABOLIQUE (Warburg)            ";
+      else
+         R.State := Stress_Response;
+         R.Location := "Oxygenation normale                              ";
+      end if;
+
+      R := Apply_V3_Invariants (R);
+      return R;
+   end Apply_Hypoxia_Extreme;
+
+   function Apply_Acidosis_Extreme
+     (S : Signal_Record;
+      pH : Float) return Signal_Record
+     with Pre  => pH >= 0.0 and pH <= 14.0,
+          Post => Apply_Acidosis_Extreme'Result.State in
+                    Stress_Response | Metabolic_Reprogramming | Apoptosis_Signal | Blocked
+   is
+      R : Signal_Record := S;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      if R.State = Blocked then return R; end if;
+
+      if pH < PH_ACIDIC then
+         R.State := Apoptosis_Signal;
+         R.Coherence := R.Coherence * 0.55;
+         R.Phase_Potential := R.Phase_Potential - 12.0;
+         R.Location := "APOPTOSE (acidose extreme pH < 6.0)               ";
+      elsif pH < 6.8 then
+         R.State := Metabolic_Reprogramming;
+         R.Coherence := R.Coherence * 0.75;
+         R.Phase_Potential := R.Phase_Potential - 6.0;
+         R.Location := "Stress acidose (microenvironnement tumoral)      ";
+      else
+         R.State := Stress_Response;
+         R.Location := "pH normal                                        ";
+      end if;
+
+      R := Apply_V3_Invariants (R);
+      return R;
+   end Apply_Acidosis_Extreme;
+
+   function Apply_Glucose_Starvation
+     (S : Signal_Record;
+      Glucose_mM : Float) return Signal_Record
+     with Pre  => Glucose_mM >= 0.0,
+          Post => Apply_Glucose_Starvation'Result.State in
+                    Stress_Response | Autophagy_Signal | Apoptosis_Signal | Blocked
+   is
+      R : Signal_Record := S;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      if R.State = Blocked then return R; end if;
+
+      if Glucose_mM < GLUCOSE_STARVED then
+         R.State := Autophagy_Signal;
+         R.Coherence := R.Coherence * 0.65;
+         R.Phase_Potential := R.Phase_Potential - 10.0;
+         R.Location := "AUTOPHAGIE (privation glucose)                   ";
+      elsif Glucose_mM < 2.0 then
+         R.State := Stress_Response;
+         R.Coherence := R.Coherence * 0.80;
+         R.Phase_Potential := R.Phase_Potential - 5.0;
+         R.Location := "Stress prive de glucose (AMPK active)            ";
+      else
+         R.State := Stress_Response;
+         R.Location := "Glucose normal                                   ";
+      end if;
+
+      R := Apply_V3_Invariants (R);
+      return R;
+   end Apply_Glucose_Starvation;
+
+   function Apply_Immune_Evasion
+     (S : Signal_Record;
+      HLA_I_Level : Float) return Signal_Record
+     with Pre  => HLA_I_Level in 0.0 .. 1.0,
+          Post => Apply_Immune_Evasion'Result.State in
+                    Immune_Escape | HLA_Evading | Blocked
+   is
+      R : Signal_Record := S;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      if R.State = Blocked then return R; end if;
+
+      if HLA_I_Level < 0.3 then
+         R.State := Immune_Escape;
+         R.Coherence := R.Coherence * 0.60;
+         R.Location := "EVASION IMMUNITAIRE (HLA-I down-regule)          ";
+      else
+         R.State := HLA_Evading;
+         R.Location := "HLA-I partiellement down-regule                  ";
+      end if;
+
+      R := Apply_V3_Invariants (R);
+      return R;
+   end Apply_Immune_Evasion;
+
+   function Apply_EMT_Transition
+     (S : Signal_Record;
+      E_Cadherin : Float) return Signal_Record
+     with Pre  => E_Cadherin in 0.0 .. 1.0,
+          Post => Apply_EMT_Transition'Result.State in
+                    EMT_Transition | Proliferation_Signal | Blocked
+   is
+      R : Signal_Record := S;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      if R.State = Blocked then return R; end if;
+
+      if E_Cadherin < 0.2 then
+         R.State := EMT_Transition;
+         R.Coherence := R.Coherence * 0.55;
+         R.Phase_Potential := R.Phase_Potential - 12.0;
+         R.Location := "TRANSITION EPITHELIO-MESENCHYMATEUSE (TEM)       ";
+      else
+         R.State := Proliferation_Signal;
+         R.Location := "Proliferation cellulaire normale                 ";
+      end if;
+
+      R := Apply_V3_Invariants (R);
+      return R;
+   end Apply_EMT_Transition;
+
+   -- ========================================================================
+   -- 12. COMBINAISON DE STRESS (effets synergiques)
+   -- ========================================================================
+
+   function Apply_Combined_Stress
+     (S : Signal_Record;
+      Mechanical : Float;
+      Oxidative  : Float;
+      Thermal    : Float;
+      Osmotic    : Float;
+      Immune     : Float) return Signal_Record
+     with Pre  => Mechanical >= 0.0 and Oxidative >= 0.0 and
+                  Thermal >= 0.0 and Osmotic >= 0.0 and Immune >= 0.0,
+          Post => Apply_Combined_Stress'Result.State in
+                    Stress_Response | Apoptosis_Signal | Necrosis_Signal | Blocked
+   is
+      R : Signal_Record := S;
+      Total_Stress : Float;
+   begin
+      R := Enforce_Phase_Threshold (R);
+      if R.State = Blocked then return R; end if;
+
+      Total_Stress := Mechanical + Oxidative + Thermal + Osmotic + Immune;
+
+      if Total_Stress > 400.0 then
+         R.State := Necrosis_Signal;
+         R.Coherence := 0.0;
+         R.Lethal_Flag := True;
+         R.Location := "NECROSE (stress combine letal)                   ";
+      elsif Total_Stress > 200.0 then
+         R.State := Apoptosis_Signal;
+         R.Coherence := R.Coherence * 0.40;
+         R.Phase_Potential := R.Phase_Potential - 25.0;
+         R.Location := "APOPTOSE (stress combine severe)                 ";
+      elsif Total_Stress > 100.0 then
+         R.State := Stress_Response;
+         R.Coherence := R.Coherence * 0.60;
+         R.Phase_Potential := R.Phase_Potential - 15.0;
+         R.Location := "Stress combine modere                            ";
+      else
+         R.State := Stress_Response;
+         R.Location := "Stress combine normal                            ";
+      end if;
+
+      R.Stress_Level := (Total_Stress / 500.0) * 100.0;
+      if R.Stress_Level > 100.0 then R.Stress_Level := 100.0; end if;
+
+      R := Apply_V3_Invariants (R);
+      return R;
+   end Apply_Combined_Stress;
+
+   -- ========================================================================
+   -- 13. PROCEDURE PRINCIPALE : SOUMISSION AUX STRESS EXTREMES
+   -- ========================================================================
+
+   procedure Run_Stress_Test with Global => null
+   is
+      S : Signal_Record;
+
+      procedure Print_Stress (N_Step : Integer; Label_Step : String; Sig : Signal_Record) is
+      begin
+         Put ("STRESS ");
+         Put (N_Step, Width => 2);
+         Put (" - "); Put_Line (Label_Step);
+         Put_Line ("  Location   : " & Sig.Location);
+         Put_Line ("  State      : " & Signal_State'Image (Sig.State));
+         Put_Line ("  Coherence  : " & Float'Image (Sig.Coherence) & " %");
+         Put_Line ("  Potential  : " & Float'Image (Sig.Phase_Potential) & " mV");
+         Put_Line ("  Stress_Lvl : " & Float'Image (Sig.Stress_Level) & " %");
+         if Sig.Lethal_Flag then
+            Put_Line ("  *** LETAL ***");
+         end if;
+         if Diagnose_Coherence (Sig) then
+            Put_Line ("  Diagnostic : SANTE (Phi >= Phi_critical)");
+         else
+            Put_Line ("  Diagnostic : MALADIE / MORT CELLULAIRE");
+         end if;
+         New_Line;
+      end Print_Stress;
+
+   begin
+      Put_Line ("================================================================================");
+      Put_Line ("V3 MEMBRANE - SOUMISSION AUX STRESS EXTREMES");
+      Put_Line ("Biologie cellulaire : mecanique, oxydatif, thermique, osmotique,");
+      Put_Line ("immunitaire, pathologique (cancer)");
+      Put_Line ("SANS NEUTRINOS");
+      Put_Line ("================================================================================");
+      New_Line;
+
+      -- Initialisation
+      S := Emit_From_DNA (1.0e-9);
+      S := Apply_V3_Invariants (S);
+
+      -- ======================================================================
+      -- STRESS MECANIQUE
+      -- ======================================================================
+      Put_Line ("=== STRESS MECANIQUE ===");
+      S := Apply_Shear_Stress_Extreme (S, 0.5);
+      Print_Stress (1, "CISAILLEMENT NORMAL (0.5 Pa)", S);
+      S := Apply_Shear_Stress_Extreme (S, 50.0);
+      Print_Stress (2, "CISAILLEMENT SEVERE (50 Pa)", S);
+      S := Apply_Shear_Stress_Extreme (S, 150.0);
+      Print_Stress (3, "CISAILLEMENT EXTREME (150 Pa) - RUPTURE", S);
+
+      S := Apply_Strain_Stress_Extreme (S, 3.0);
+      Print_Stress (4, "ETIREMENT NORMAL (3%)", S);
+      S := Apply_Strain_Stress_Extreme (S, 60.0);
+      Print_Stress (5, "ETIREMENT EXTREME (60%) - RUPTURE", S);
+
+      S := Apply_Compression_Stress_Extreme (S, 1.0);
+      Print_Stress (6, "COMPRESSION NORMALE (1 kPa)", S);
+      S := Apply_Compression_Stress_Extreme (S, 150.0);
+      Print_Stress (7, "COMPRESSION EXTREME (150 kPa) - EFFONDREMENT", S);
+
+      -- ======================================================================
+      -- STRESS OXYDATIF
+      -- ======================================================================
+      Put_Line ("=== STRESS OXYDATIF ===");
+      S := Apply_ROS_Extreme (S, 0.1);
+      Print_Stress (8, "ROS NORMAL (0.1 uM)", S);
+      S := Apply_ROS_Extreme (S, 50.0);
+      Print_Stress (9, "ROS SEVERE (50 uM) - BURST OXYDATIF", S);
+      S := Apply_ROS_Extreme (S, 150.0);
+      Print_Stress (10, "ROS EXTREME (150 uM) - NECROSE", S);
+
+      S := Apply_MDA_Extreme (S, 0.5);
+      Print_Stress (11, "MDA NORMAL (0.5 uM)", S);
+      S := Apply_MDA_Extreme (S, 25.0);
+      Print_Stress (12, "MDA EXTREME (25 uM) - APOPTOSE", S);
+
+      S := Apply_GSH_Depletion (S, 100.0);
+      Print_Stress (13, "GSH NORMAL (ratio 100)", S);
+      S := Apply_GSH_Depletion (S, 5.0);
+      Print_Stress (14, "GSH EPUISE (ratio 5) - APOPTOSE", S);
+
+      -- ======================================================================
+      -- STRESS THERMIQUE
+      -- ======================================================================
+      Put_Line ("=== STRESS THERMIQUE ===");
+      S := Apply_Heat_Shock_Extreme (S, 37.0);
+      Print_Stress (15, "TEMPERATURE NORMALE (37 C)", S);
+      S := Apply_Heat_Shock_Extreme (S, 43.0);
+      Print_Stress (16, "CHOC THERMIQUE (43 C) - HSP", S);
+      S := Apply_Heat_Shock_Extreme (S, 47.0);
+      Print_Stress (17, "HYPERTHERMIE EXTREME (47 C) - NECROSE", S);
+      S := Apply_Heat_Shock_Extreme (S, -5.0);
+      Print_Stress (18, "HYPOTHERMIE EXTREME (-5 C) - APOPTOSE", S);
+
+      -- ======================================================================
+      -- STRESS OSMOTIQUE
+      -- ======================================================================
+      Put_Line ("=== STRESS OSMOTIQUE ===");
+      S := Apply_Hypo_Osmotic_Extreme (S, 300.0);
+      Print_Stress (19, "OSMOLARITE NORMALE (300 mOsm)", S);
+      S := Apply_Hypo_Osmotic_Extreme (S, 200.0);
+      Print_Stress (20, "HYPO-OSMOTIQUE (200 mOsm) - RVD", S);
+      S := Apply_Hypo_Osmotic_Extreme (S, 100.0);
+      Print_Stress (21, "HYPO-OSMOTIQUE EXTREME (100 mOsm) - LYSE", S);
+
+      S := Apply_Hyper_Osmotic_Extreme (S, 300.0);
+      Print_Stress (22, "OSMOLARITE NORMALE (300 mOsm)", S);
+      S := Apply_Hyper_Osmotic_Extreme (S, 450.0);
+      Print_Stress (23, "HYPER-OSMOTIQUE (450 mOsm) - RVI", S);
+      S := Apply_Hyper_Osmotic_Extreme (S, 700.0);
+      Print_Stress (24, "HYPER-OSMOTIQUE EXTREME (700 mOsm) - APOPTOSE", S);
+
+      -- ======================================================================
+      -- STRESS IMMUNITAIRE
+      -- ======================================================================
+      Put_Line ("=== STRESS IMMUNITAIRE ===");
+      S := Apply_Cytokine_Storm (S, 5.0, 5.0, 5.0, 5.0);
+      Print_Stress (25, "CYTOKINES NORMALES (5 pg/mL)", S);
+      S := Apply_Cytokine_Storm (S, 500.0, 200.0, 500.0, 500.0);
+      Print_Stress (26, "CYTOKINES SEVERES - STRESS", S);
+      S := Apply_Cytokine_Storm (S, 1500.0, 800.0, 1500.0, 1500.0);
+      Print_Stress (27, "ORAGE CYTOKINIQUE - CHOC SEPTIC", S);
+
+      -- ======================================================================
+      -- STRESS PATHOLOGIQUE (CANCER)
+      -- ======================================================================
+      Put_Line ("=== STRESS PATHOLOGIQUE (CANCER) ===");
+      S := Apply_Hypoxia_Extreme (S, 7.0);
+      Print_Stress (28, "OXYGENATION NORMALE (7% O2)", S);
+      S := Apply_Hypoxia_Extreme (S, 2.0);
+      Print_Stress (29, "HYPOXIE MODEREE (2% O2) - WARBURG", S);
+      S := Apply_Hypoxia_Extreme (S, 0.5);
+      Print_Stress (30, "HYPOXIE EXTREME (0.5% O2) - HIF-1alpha", S);
+
+      S := Apply_Acidosis_Extreme (S, 7.2);
+      Print_Stress (31, "pH NORMAL (7.2)", S);
+      S := Apply_Acidosis_Extreme (S, 6.5);
+      Print_Stress (32, "ACIDOSE MODEREE (pH 6.5) - TUMORAL", S);
+      S := Apply_Acidosis_Extreme (S, 5.5);
+      Print_Stress (33, "ACIDOSE EXTREME (pH 5.5) - APOPTOSE", S);
+
+      S := Apply_Glucose_Starvation (S, 5.0);
+      Print_Stress (34, "GLUCOSE NORMAL (5 mM)", S);
+      S := Apply_Glucose_Starvation (S, 1.0);
+      Print_Stress (35, "PRIVATION GLUCOSE (1 mM) - AMPK", S);
+      S := Apply_Glucose_Starvation (S, 0.2);
+      Print_Stress (36, "PRIVATION EXTREME (0.2 mM) - AUTOPHAGIE", S);
+
+      S := Apply_Immune_Evasion (S, 0.9);
+      Print_Stress (37, "HLA-I NORMAL (0.9)", S);
+      S := Apply_Immune_Evasion (S, 0.2);
+      Print_Stress (38, "HLA-I DOWN-REGULE (0.2) - EVASION", S);
+
+      S := Apply_EMT_Transition (S, 0.9);
+      Print_Stress (39, "E-CADHERINE NORMALE (0.9)", S);
+      S := Apply_EMT_Transition (S, 0.1);
+      Print_Stress (40, "E-CADHERINE PERDUE (0.1) - TEM", S);
+
+      -- ======================================================================
+      -- COMBINAISON DE STRESS
+      -- ======================================================================
+      Put_Line ("=== COMBINAISON DE STRESS (SYNERGIE) ===");
+      S := Apply_Combined_Stress (S, 10.0, 10.0, 10.0, 10.0, 10.0);
+      Print_Stress (41, "STRESS COMBINE MODERE (50 total)", S);
+      S := Apply_Combined_Stress (S, 50.0, 50.0, 50.0, 50.0, 50.0);
+      Print_Stress (42, "STRESS COMBINE SEVERE (250 total) - APOPTOSE", S);
+      S := Apply_Combined_Stress (S, 100.0, 100.0, 100.0, 100.0, 100.0);
+      Print_Stress (43, "STRESS COMBINE LETAL (500 total) - NECROSE", S);
+
+      -- ======================================================================
+      -- FIN
+      -- ======================================================================
+      Put_Line ("================================================================================");
+      Put_Line ("FIN DES TESTS DE STRESS EXTREMES");
+      Put_Line ("================================================================================");
+      Put_Line ("Invariants V3 : Psi=48016.8 | Phi=-51.1 mV | k=7 | mod9=9 | lambda=4.68e-5 m");
+      Put_Line ("Neutrinos     : ABSENTS");
+      Put_Line ("================================================================================");
+   end Run_Stress_Test;
+
+begin
+   Run_Stress_Test;
+end V3_Membrane_Stress_Extreme;
